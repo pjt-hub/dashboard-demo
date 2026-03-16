@@ -922,7 +922,12 @@ const App = {
         if (!container) return;
         Charts.dispose();
         switch (tabId) {
-            case 'overview': container.innerHTML = this.renderSchoolOverview(); this.initSchoolOverviewCharts(); break;
+            case 'overview':
+                container.innerHTML = this.renderSchoolOverview();
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => this.initSchoolOverviewCharts());
+                });
+                break;
             case 'activities': container.innerHTML = this.renderSchoolActivities(); break;
             case 'books': container.innerHTML = this.renderSchoolBooks(); break;
             case 'classes': container.innerHTML = this.renderSchoolClasses(); break;
