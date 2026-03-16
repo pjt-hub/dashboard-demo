@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Debug Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="js/mockData.js"></script>
+    <style>
+        body {
+            background: #0f172a;
+            color: white;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .chart-container {
+            width: 100%;
+            height: 400px;
+            background: #1e293b;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        .debug-info {
+            background: #334155;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Dashboard 调试图</h1>
+    
+    <div class="debug-info">
+        <h3>调试信息:</h3>
+        <div id="debug-output"></div>
+    </div>
+    
+    <h2>测试图表容器:</h2>
+    <div class="chart-container" id="test-chart"></div>
+    
+    <h2>原始图表容器测试:</h2>
+    <div class="chart-container" id="overview-trend-chart"></div>
+    <div class="chart-container" id="overview-type-chart"></div>
+
+    <script>
+        // 显示调试信息
+        function log(message) {
+            const output = document.getElementById('debug-output');
+            output.innerHTML += `<div>${message}</div>`;
+            console.log(message);
+        }
+        
+        // 页面加载完成后执行测试
+        document.addEventListener('DOMContentLoaded', function() {
+            log('页面DOM加载完成');
+            log('ECharts可用性: ' + (typeof echarts !== 'undefined'));
+            log('MockData可用性: ' + (typeof MockData !== 'undefined'));
+            
+            if (typeof MockData !== 'undefined') {
+                log('MockData.getTrendData函数: ' + (typeof MockData.getTrendData));
+            }
+            
+            // 测试基本图表
+            testBasicChart();
+            
+            // 测试原始图表容器
+            testOriginalCharts();
+        });
+        
+        function testBasicChart() {
+            log('开始测试基础图表...');
+            const chartDom = document.getElementById('test-chart');
+            if (!chartDom) {
+                log('❌ 测试图表容器未找到');
+                return;
+            }
+            log('✅ 测试图表容器找到');
+            
+            try {
+                const chart = echarts.init(chartDom);
+                log('✅ ECharts实例创建成功');
+                
+                const option = {
+                    title: {
+                        text: '测试图表',
+                        textStyle: { color: '#ffffff' }
+                    },
+                    backgroundColor: 'transparent',
+                    tooltip: {},
+                    xAxis: {
+                        type: 'category',
+                        data: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                        axisLine: { lineStyle: { color: '#475569' } },
+                        axisLabel: { color: '#94a3b8' }
+                    },
+                    yAxis: {
+                        type: 'value',
+                        axisLine: { lineStyle: { color: '#475569' } },
+                        axisLabel: { color: '#94a3b8' }
+                    },
+                    series: [{
+                        data: [120, 200, 150, 80, 70, 110, 130],
+                        type: 'bar',
+                        itemStyle: { color: '#3b82f6' }
+                    }]
+                };
+                
+                chart.setOption(option);
+                log('✅ 基础图表渲染成功');
+            } catch (error) {
+                log('❌ 基础图表创建失败: ' + error.message);
+                console.error(error);
+            }
+        }
+        
+        function testOriginalCharts() {
+            log('开始测试原始图表容器...');
+            
+            // 测试趋势图容器
+            const trendChartDom = document.getElementById('overview-trend-chart');
+            log('趋势图容器存在: ' + !!trendChartDom);
+            
+            // 测试类型图容器
+            const typeChartDom = document.getElementById('overview-type-chart');
+            log('类型图容器存在: ' + !!typeChartDom);
+            
+            if (trendChartDom && typeof echarts !== 'undefined') {
+                try {
+                    const chart = echarts.init(trendChartDom);
+                    const data = MockData.getTrendData('week');
+                    
+                    const option = {
+                        backgroundColor: 'transparent',
+                        tooltip: {
+                            trigger: 'axis',
+                            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                            borderColor: 'rgba(71, 85, 105, 0.5)',
+                            textStyle: { color: '#fff' }
+                        },
+                        xAxis: {
+                            type: 'category',
+                            data: data.labels,
+                            axisLine: { lineStyle: { color: '#475569' } },
+                            axisLabel: { color: '#94a3b8' }
+                        },
+                        yAxis: {
+                            type: 'value',
+                            axisLine: { lineStyle: { color: '#475569' } },
+                            axisLabel: { color: '#94a3b8' }
+                        },
+                        series: [{
+                            name: '活动次数',
+                            type: 'line',
+                            smooth: true,
+                            data: data.activities,
+                            itemStyle: { color: '#3b82f6' }
+                        }]
+                    };
+                    
+                    chart.setOption(option);
+                    log('✅ 原始趋势图表渲染成功');
+                } catch (error) {
+                    log('❌ 原始趋势图表创建失败: ' + error.message);
+                    console.error(error);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

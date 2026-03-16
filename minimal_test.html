@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>最小化测试</title>
+    <style>
+        body {
+            background: #0f172a;
+            color: white;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .test-card {
+            background: #1e293b;
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border-left: 4px solid #3b82f6;
+        }
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #3b82f6;
+        }
+        .ranking-item {
+            padding: 8px;
+            margin: 4px 0;
+            background: #334155;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔬 最小化功能测试</h1>
+    
+    <div class="test-card">
+        <h2>📊 核心指标测试</h2>
+        <div class="grid">
+            <div>
+                <div>绘本活动次数</div>
+                <div class="metric-value" id="test-activity">-</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="test-card">
+        <h2>🏆 班级排行榜测试</h2>
+        <div id="test-ranking"></div>
+    </div>
+    
+    <div class="test-card">
+        <h2>📋 调试信息</h2>
+        <div id="debug-info"></div>
+    </div>
+
+    <script>
+        function log(message) {
+            const debugInfo = document.getElementById('debug-info');
+            const entry = document.createElement('div');
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            entry.style.margin = '2px 0';
+            entry.style.fontFamily = 'monospace';
+            entry.style.fontSize = '12px';
+            debugInfo.appendChild(entry);
+            console.log(message);
+        }
+        
+        // 模拟数据
+        const mockData = {
+            classRanking: [
+                { name: '大一班', activities: 342 },
+                { name: '大二班', activities: 318 },
+                { name: '中一班', activities: 298 },
+                { name: '中二班', activities: 287 },
+                { name: '小一班', activities: 265 }
+            ]
+        };
+        
+        // 测试核心指标更新
+        function testMetrics() {
+            log('开始测试核心指标...');
+            
+            const activityElement = document.getElementById('test-activity');
+            if (activityElement) {
+                log('✅ 找到活动次数元素');
+                // 模拟数字动画
+                let currentValue = 0;
+                const targetValue = 212;
+                const interval = setInterval(() => {
+                    currentValue += 5;
+                    if (currentValue >= targetValue) {
+                        currentValue = targetValue;
+                        clearInterval(interval);
+                    }
+                    activityElement.textContent = currentValue;
+                }, 50);
+                log('✅ 核心指标动画启动');
+            } else {
+                log('❌ 未找到活动次数元素');
+            }
+        }
+        
+        // 测试排行榜渲染
+        function testRanking() {
+            log('开始测试排行榜...');
+            
+            const rankingContainer = document.getElementById('test-ranking');
+            if (rankingContainer) {
+                log('✅ 找到排行榜容器');
+                
+                rankingContainer.innerHTML = mockData.classRanking.map((cls, index) => `
+                    <div class="ranking-item">
+                        <span><strong>${index + 1}.</strong> ${cls.name}</span>
+                        <span>${cls.activities}次</span>
+                    </div>
+                `).join('');
+                
+                log('✅ 排行榜渲染完成');
+            } else {
+                log('❌ 未找到排行榜容器');
+            }
+        }
+        
+        // 主测试函数
+        function runTest() {
+            log('=== 开始最小化测试 ===');
+            
+            // 测试数据可用性
+            log('检查数据源...');
+            log(`MockData 可用: ${typeof mockData !== 'undefined'}`);
+            log(`班级数据条数: ${mockData.classRanking?.length || 0}`);
+            
+            // 执行测试
+            setTimeout(testMetrics, 500);
+            setTimeout(testRanking, 1000);
+            
+            log('=== 测试完成 ===');
+        }
+        
+        // 页面加载完成后执行
+        document.addEventListener('DOMContentLoaded', function() {
+            log('页面DOM加载完成');
+            runTest();
+        });
+    </script>
+</body>
+</html>

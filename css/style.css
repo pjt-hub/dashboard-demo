@@ -1,0 +1,450 @@
+/* AI绘本阅读室数据统计平台 - 明亮科技风样式 */
+
+/* 全局基础 - 更亮的蓝紫色渐变 */
+body {
+    background: linear-gradient(135deg, #3d4f6f 0%, #4a6285 35%, #506a8e 50%, #4a6285 65%, #3d4f6f 100%);
+    min-height: 100vh;
+}
+
+/* 侧边栏 - 更亮 */
+#sidebar {
+    background: linear-gradient(180deg, #3a4d68 0%, #425a7a 100%);
+    border-right: 1px solid rgba(140, 180, 240, 0.3);
+}
+
+/* 侧边栏导航项 */
+.sidebar-nav-item {
+    color: #a0aec0;
+    margin-bottom: 2px;
+}
+.sidebar-nav-item:hover {
+    background: rgba(96, 165, 250, 0.12);
+    color: #e2e8f0;
+}
+.sidebar-nav-item.active {
+    background: linear-gradient(90deg, rgba(59, 130, 246, 0.2) 0%, rgba(6, 182, 212, 0.1) 100%);
+    color: #60a5fa;
+    font-weight: 500;
+    border-left: 3px solid #3b82f6;
+}
+.sidebar-nav-item.active svg {
+    color: #60a5fa;
+}
+
+/* 顶部栏 - 更亮 */
+header {
+    background: rgba(55, 72, 98, 0.85) !important;
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(140, 180, 240, 0.35) !important;
+}
+header * {
+    color: #c0cad6 !important;
+}
+
+/* 面包屑 */
+#breadcrumb {
+    color: #8896a6 !important;
+}
+
+/* 页面标题 */
+h2.text-2xl {
+    background: linear-gradient(90deg, #60a5fa, #22d3ee);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* 主内容区 */
+main {
+    background: transparent;
+}
+
+/* 卡片样式 - 更亮的毛玻璃 */
+.stat-card,
+.bg-white {
+    background: rgba(75, 95, 125, 0.75) !important;
+    backdrop-filter: blur(14px);
+    border: 1px solid rgba(150, 190, 255, 0.35) !important;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+.bg-white:hover {
+    border-color: rgba(96, 165, 250, 0.35) !important;
+    box-shadow: 0 8px 24px rgba(59, 130, 246, 0.1);
+}
+
+/* 指标卡片内文字 */
+.bg-white .text-slate-500,
+.bg-white .text-sm.text-slate-500 {
+    color: #a0aec0 !important;
+}
+.bg-white .text-3xl,
+.bg-white .text-2xl,
+.bg-white .text-xl {
+    color: #f1f5f9 !important;
+}
+.bg-white .text-xs.text-green-500 {
+    color: #34d399 !important;
+}
+.bg-white .text-slate-800,
+.bg-white .font-medium.text-slate-700,
+.bg-white .text-slate-700 {
+    color: #e2e8f0 !important;
+}
+
+/* 图表区域标题 */
+.bg-white h3,
+.bg-white h4 {
+    color: #f1f5f9 !important;
+}
+
+/* 指标卡片图标背景 - 更亮 */
+.bg-blue-50 { background: rgba(59, 130, 246, 0.18) !important; }
+.bg-emerald-50 { background: rgba(16, 185, 129, 0.18) !important; }
+.bg-purple-50 { background: rgba(139, 92, 246, 0.18) !important; }
+.bg-amber-50 { background: rgba(245, 158, 11, 0.18) !important; }
+.bg-cyan-50 { background: rgba(6, 182, 212, 0.18) !important; }
+.bg-green-50 { background: rgba(34, 197, 94, 0.18) !important; }
+.bg-red-50 { background: rgba(239, 68, 68, 0.18) !important; }
+
+/* 指标卡片数值颜色 - 更鲜亮 */
+.text-blue-600 { color: #60a5fa !important; }
+.text-emerald-600 { color: #34d399 !important; }
+.text-purple-600 { color: #a78bfa !important; }
+.text-amber-600 { color: #fbbf24 !important; }
+.text-cyan-600 { color: #22d3ee !important; }
+.text-green-600 { color: #4ade80 !important; }
+.text-red-600 { color: #f87171 !important; }
+
+/* 表格样式 - 更亮 */
+table {
+    color: #f0f4f8;
+}
+thead tr {
+    background: rgba(60, 80, 108, 0.85) !important;
+}
+thead th {
+    color: #d1dce8 !important;
+    border-bottom: 1px solid rgba(140, 180, 240, 0.35) !important;
+}
+tbody tr {
+    border-bottom: 1px solid rgba(110, 135, 165, 0.45) !important;
+}
+tbody tr:hover {
+    background: rgba(96, 165, 250, 0.18) !important;
+}
+td {
+    color: #e2e8f0 !important;
+}
+td .font-medium {
+    color: #f1f5f9 !important;
+}
+td .font-semibold {
+    color: #60a5fa !important;
+}
+td .text-slate-500,
+td .text-xs {
+    color: #8896a6 !important;
+}
+
+/* 标签badge */
+.rounded-full.text-xs.bg-blue-50 {
+    background: rgba(59, 130, 246, 0.2) !important;
+    color: #60a5fa !important;
+}
+.rounded-full.text-xs.bg-red-50 {
+    background: rgba(239, 68, 68, 0.2) !important;
+    color: #f87171 !important;
+}
+.rounded-full.text-xs.bg-green-50 {
+    background: rgba(34, 197, 94, 0.2) !important;
+    color: #4ade80 !important;
+}
+.rounded-full.text-xs.bg-purple-50 {
+    background: rgba(139, 92, 246, 0.2) !important;
+    color: #a78bfa !important;
+}
+
+/* 排名徽章 */
+.bg-amber-100 {
+    background: rgba(245, 158, 11, 0.28) !important;
+    color: #fbbf24 !important;
+}
+.bg-slate-100 {
+    background: rgba(85, 100, 120, 0.45) !important;
+    color: #b0bec5 !important;
+}
+
+/* 筛选器区域 - 更亮 */
+.bg-slate-50 {
+    background: rgba(60, 80, 108, 0.6) !important;
+    border: 1px solid rgba(120, 150, 190, 0.5);
+    border-radius: 12px;
+}
+
+/* 输入框和下拉框 - 更亮 */
+input[type="text"],
+input[type="date"],
+input[type="password"],
+select {
+    background: rgba(70, 92, 120, 0.85) !important;
+    border: 1px solid rgba(130, 160, 200, 0.55) !important;
+    color: #f0f4f8 !important;
+}
+input::placeholder {
+    color: #8a9ab0 !important;
+}
+input:focus, select:focus {
+    border-color: rgba(96, 165, 250, 0.5) !important;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
+}
+label {
+    color: #a0aec0 !important;
+}
+
+/* 按钮样式 */
+.bg-blue-500 {
+    background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+.bg-blue-500:hover {
+    background: linear-gradient(135deg, #60a5fa, #3b82f6) !important;
+}
+.bg-green-500 {
+    background: linear-gradient(135deg, #10b981, #059669) !important;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+.bg-slate-200 {
+    background: rgba(70, 88, 112, 0.7) !important;
+    color: #b0bec5 !important;
+}
+.bg-slate-200:hover {
+    background: rgba(85, 105, 130, 0.7) !important;
+}
+
+/* 标签页导航 - 更亮 */
+.school-tab {
+    color: #b8c6d8 !important;
+    transition: all 0.2s ease;
+}
+.school-tab:hover {
+    color: #f1f5f9 !important;
+    background: rgba(96, 165, 250, 0.18) !important;
+}
+.school-tab.text-blue-600 {
+    color: #7ab8ff !important;
+    background: rgba(59, 130, 246, 0.22) !important;
+    border-bottom: 2px solid #60a5fa !important;
+}
+.border-b.border-slate-200 {
+    border-color: rgba(100, 120, 150, 0.55) !important;
+}
+
+/* 分页 */
+.text-slate-600 {
+    color: #a0aec0 !important;
+}
+button.bg-blue-500.text-white {
+    color: #fff !important;
+}
+
+/* 操作按钮 */
+.text-blue-500 {
+    color: #60a5fa !important;
+}
+.text-blue-500:hover {
+    color: #93c5fd !important;
+}
+.text-amber-500 {
+    color: #fbbf24 !important;
+}
+
+/* 分页文字 */
+.text-sm.text-slate-500 {
+    color: #8896a6 !important;
+}
+
+/* 设备状态指示灯 */
+.bg-green-500 {
+    background: #4ade80 !important;
+}
+.bg-red-500 {
+    background: #f87171 !important;
+}
+
+/* 模态框 - 更亮 */
+#modal-content {
+    background: linear-gradient(135deg, #4a5f7d, #3d5370) !important;
+    border: 1px solid rgba(150, 190, 255, 0.45);
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+}
+#modal-content h3 {
+    color: #f1f5f9 !important;
+}
+#modal-content h4 {
+    color: #e2e8f0 !important;
+}
+#modal-content label {
+    color: #a0aec0 !important;
+}
+#modal-content span {
+    color: #cbd5e1;
+}
+#modal-content .text-slate-500 {
+    color: #8896a6 !important;
+}
+#modal-content .text-slate-700,
+#modal-content .text-slate-800,
+#modal-content .font-medium {
+    color: #e2e8f0 !important;
+}
+#modal-content .bg-slate-50 {
+    background: rgba(50, 68, 92, 0.6) !important;
+    border: 1px solid rgba(85, 105, 130, 0.4);
+}
+#modal-content input,
+#modal-content select {
+    background: rgba(40, 55, 75, 0.8) !important;
+    border: 1px solid rgba(110, 135, 165, 0.4) !important;
+    color: #e8ecf0 !important;
+}
+#modal-content input[readonly] {
+    background: rgba(50, 68, 92, 0.4) !important;
+    color: #8a9ab0 !important;
+}
+#modal-content table thead tr {
+    background: rgba(35, 50, 70, 0.6) !important;
+}
+#modal-content table td {
+    color: #cbd5e1 !important;
+}
+
+/* 园所数据概述 - 分类数据项 */
+.bg-slate-50 .text-sm.font-medium {
+    color: #e2e8f0 !important;
+}
+.bg-slate-50 .text-xs.text-slate-400 {
+    color: #8896a6 !important;
+}
+.bg-slate-50 .text-lg.font-bold {
+    color: #60a5fa !important;
+}
+
+/* 用户头像 */
+.bg-blue-500.rounded-full {
+    background: linear-gradient(135deg, #3b82f6, #06b6d4) !important;
+}
+
+/* 滚动条 - 更亮 */
+::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+}
+::-webkit-scrollbar-track {
+    background: rgba(50, 70, 100, 0.35);
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(96, 165, 250, 0.4);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(96, 165, 250, 0.6);
+}
+
+/* Toast通知 */
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+.animate-slide-in {
+    animation: slideIn 0.3s ease-out;
+}
+
+/* 模态框动画 */
+#modal-content {
+    animation: modalIn 0.25s ease-out;
+}
+@keyframes modalIn {
+    from { transform: scale(0.9) translateY(20px); opacity: 0; }
+    to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+/* 装饰性光效 - 更亮的科技光晕 */
+main::before {
+    content: '';
+    position: fixed;
+    top: -50%;
+    right: -30%;
+    width: 80%;
+    height: 80%;
+    background: radial-gradient(circle, rgba(96, 165, 250, 0.1) 0%, rgba(34, 211, 238, 0.05) 40%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* 页面内容层级 */
+#page-container {
+    position: relative;
+    z-index: 1;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+    #sidebar {
+        width: 0;
+        overflow: hidden;
+    }
+    main {
+        margin-left: 0 !important;
+    }
+}
+
+/* 分页按钮 */
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+}
+
+/* 数据概述分类卡片hover */
+.bg-slate-50:hover {
+    background: rgba(45, 58, 80, 0.6) !important;
+    border-color: rgba(96, 165, 250, 0.2);
+}
+
+/* 角色切换器样式 */
+.role-option.active {
+    background: rgba(59, 130, 246, 0.15) !important;
+    border-color: rgba(59, 130, 246, 0.4) !important;
+}
+.role-option.active .text-slate-200 {
+    color: #60a5fa !important;
+}
+
+/* 角色标签显示 */
+.role-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-size: 10px;
+}
+.role-badge.admin {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+.role-badge.principal {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.role-badge.teacher {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* 侧边栏角色相关隐藏 */
+.sidebar-nav-item.hidden-role {
+    display: none !important;
+}

@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>详细调试诊断</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="js/mockData.js"></script>
+    <script src="js/charts.js"></script>
+    <style>
+        body {
+            background: #0f172a;
+            color: white;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .debug-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #1e293b;
+            border-radius: 8px;
+            border-left: 4px solid #3b82f6;
+        }
+        .error {
+            border-left-color: #ef4444;
+        }
+        .success {
+            border-left-color: #10b981;
+        }
+        .chart-container {
+            width: 100%;
+            height: 300px;
+            background: #334155;
+            margin: 10px 0;
+            border-radius: 8px;
+        }
+        .ranking-item {
+            padding: 8px;
+            margin: 4px 0;
+            background: #334155;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .log-entry {
+            font-family: monospace;
+            font-size: 12px;
+            margin: 2px 0;
+            padding: 2px 4px;
+            background: #0f172a;
+            border-radius: 3px;
+        }
+        .log-error { color: #f87171; }
+        .log-success { color: #34d399; }
+        .log-warning { color: #fbbf24; }
+        .log-info { color: #93c5fd; }
+    </style>
+</head>
+<body>
+    <h1>📊 大数据总览页面详细调试诊断</h1>
+    
+    <div class="debug-section">
+        <h2>📋 调试日志</h2>
+        <div id="debug-log"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h2>🔍 数据源检查</h2>
+        <div id="data-check"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h2>🎯 核心指标测试</h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="metric-card bg-gradient-to-br from-blue-600/20 to-blue-800/20 backdrop-blur rounded-2xl p-5 border border-blue-500/30">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center">
+                        <span>📚</span>
+                    </div>
+                    <span class="text-xs text-slate-400">绘本活动次数</span>
+                </div>
+                <div class="text-3xl font-bold text-white mb-1" id="test-metric-1">-</div>
+                <div class="text-sm text-slate-400">次</div>
+            </div>
+            
+            <div class="metric-card bg-gradient-to-br from-emerald-600/20 to-emerald-800/20 backdrop-blur rounded-2xl p-5 border border-emerald-500/30">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="w-10 h-10 bg-emerald-500/20 rounded-xl flex items-center justify-center">
+                        <span>⏱️</span>
+                    </div>
+                    <span class="text-xs text-slate-400">绘本活动时长</span>
+                </div>
+                <div class="text-3xl font-bold text-white mb-1" id="test-metric-2">-</div>
+                <div class="text-sm text-slate-400">小时</div>
+            </div>
+            
+            <div class="metric-card bg-gradient-to-br from-amber-600/20 to-amber-800/20 backdrop-blur rounded-2xl p-5 border border-amber-500/30">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="w-10 h-10 bg-amber-500/20 rounded-xl flex items-center justify-center">
+                        <span>👥</span>
+                    </div>
+                    <span class="text-xs text-slate-400">参与活动人次</span>
+                </div>
+                <div class="text-3xl font-bold text-white mb-1" id="test-metric-3">-</div>
+                <div class="text-sm text-slate-400">人次</div>
+            </div>
+            
+            <div class="metric-card bg-gradient-to-br from-purple-600/20 to-purple-800/20 backdrop-blur rounded-2xl p-5 border border-purple-500/30">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="w-10 h-10 bg-purple-500/20 rounded-xl flex items-center justify-center">
+                        <span>📖</span>
+                    </div>
+                    <span class="text-xs text-slate-400">绘本阅读时长</span>
+                </div>
+                <div class="text-3xl font-bold text-white mb-1" id="test-metric-4">-</div>
+                <div class="text-sm text-slate-400">小时</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="debug-section">
+        <h2>📊 图表容器检查</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <h3>绘本类型占比图表</h3>
+                <div class="chart-container" id="book-type-chart"></div>
+            </div>
+            <div>
+                <h3>能力分布图表</h3>
+                <div class="chart-container" id="ability-distribution-chart"></div>
+            </div>
+            <div>
+                <h3>活动趋势图表</h3>
+                <div class="chart-container" id="activity-trend-chart"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="debug-section">
+        <h2>🏆 排行榜数据测试</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <h3>班级排行榜</h3>
+                <div id="class-ranking-test"></div>
+            </div>
+            <div>
+                <h3>教师排行榜</h3>
+                <div id="teacher-ranking-test"></div>
+            </div>
+            <div>
+                <h3>热门绘本</h3>
+                <div id="book-ranking-test"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 日志记录函数
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('debug-log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`[${type.toUpperCase()}]`, message);
+        }
+        
+        // 错误记录函数
+        function logError(message) {
+            log(message, 'error');
+        }
+        
+        function logSuccess(message) {
+            log(message, 'success');
+        }
+        
+        function logWarning(message) {
+            log(message, 'warning');
+        }
+        
+        // 数据检查函数
+        function checkDataSources() {
+            const dataCheck = document.getElementById('data-check');
+            let html = '';
+            
+            // 检查MockData
+            if (typeof MockData === 'undefined') {
+                html += '<div class="log-error">❌ MockData 未定义</div>';
+                logError('MockData 未定义');
+            } else {
+                logSuccess('MockData 已加载');
+                html += '<div class="log-success">✅ MockData 已加载</div>';
+                
+                // 检查具体数据
+                const checks = [
+                    { name: 'bookTypes', data: MockData.bookTypes },
+                    { name: 'classRanking', data: MockData.classRanking },
+                    { name: 'popularBooks', data: MockData.popularBooks },
+                    { name: 'abilityDistribution', data: MockData.abilityDistribution }
+                ];
+                
+                checks.forEach(check => {
+                    if (check.data && check.data.length > 0) {
+                        html += `<div class="log-success">✅ ${check.name}: ${check.data.length} 条数据</div>`;
+                        logSuccess(`${check.name} 包含 ${check.data.length} 条数据`);
+                    } else {
+                        html += `<div class="log-error">❌ ${check.name}: 数据缺失或为空</div>`;
+                        logError(`${check.name} 数据缺失或为空`);
+                    }
+                });
+            }
+            
+            // 检查ECharts
+            if (typeof echarts === 'undefined') {
+                html += '<div class="log-error">❌ ECharts 未加载</div>';
+                logError('ECharts 未加载');
+            } else {
+                logSuccess('ECharts 已加载');
+                html += '<div class="log-success">✅ ECharts 已加载</div>';
+            }
+            
+            dataCheck.innerHTML = html;
+        }
+        
+        // 测试核心指标
+        function testCoreMetrics() {
+            if (typeof MockData === 'undefined') return;
+            
+            const metrics = [
+                { id: 'test-metric-1', value: 212, suffix: '' },
+                { id: 'test-metric-2', value: 99.38, suffix: '' },
+                { id: 'test-metric-3', value: 191, suffix: '' },
+                { id: 'test-metric-4', value: 7.37, suffix: '' }
+            ];
+            
+            metrics.forEach(metric => {
+                const element = document.getElementById(metric.id);
+                if (element) {
+                    element.textContent = metric.value;
+                    logSuccess(`核心指标 ${metric.id} 设置为 ${metric.value}`);
+                }
+            });
+        }
+        
+        // 测试图表
+        function testCharts() {
+            if (typeof echarts === 'undefined' || typeof MockData === 'undefined') {
+                logError('缺少必要的依赖，无法测试图表');
+                return;
+            }
+            
+            // 测试绘本类型图表
+            const bookTypeChart = document.getElementById('book-type-chart');
+            if (bookTypeChart && MockData.bookTypes) {
+                try {
+                    const chart = echarts.init(bookTypeChart);
+                    chart.setOption({
+                        backgroundColor: 'transparent',
+                        tooltip: { trigger: 'item' },
+                        series: [{
+                            type: 'pie',
+                            radius: '70%',
+                            data: MockData.bookTypes.map(item => ({
+                                value: item.value,
+                                name: item.name
+                            }))
+                        }]
+                    });
+                    logSuccess('绘本类型图表渲染成功');
+                } catch (error) {
+                    logError('绘本类型图表渲染失败: ' + error.message);
+                }
+            }
+            
+            // 测试能力分布图表
+            const abilityChart = document.getElementById('ability-distribution-chart');
+            if (abilityChart && MockData.abilityDistribution) {
+                try {
+                    const chart = echarts.init(abilityChart);
+                    chart.setOption({
+                        backgroundColor: 'transparent',
+                        radar: {
+                            indicator: MockData.abilityDistribution.map(item => ({ 
+                                name: item.name, 
+                                max: item.max 
+                            }))
+                        },
+                        series: [{
+                            type: 'radar',
+                            data: [{
+                                value: MockData.abilityDistribution.map(item => item.value),
+                                name: '能力分布'
+                            }]
+                        }]
+                    });
+                    logSuccess('能力分布图表渲染成功');
+                } catch (error) {
+                    logError('能力分布图表渲染失败: ' + error.message);
+                }
+            }
+            
+            // 测试活动趋势图表
+            const trendChart = document.getElementById('activity-trend-chart');
+            if (trendChart) {
+                try {
+                    const chart = echarts.init(trendChart);
+                    const dates = [];
+                    const values = [];
+                    for (let i = 0; i < 7; i++) {
+                        dates.push(`第${i+1}天`);
+                        values.push(Math.floor(Math.random() * 100) + 50);
+                    }
+                    
+                    chart.setOption({
+                        backgroundColor: 'transparent',
+                        tooltip: { trigger: 'axis' },
+                        xAxis: { type: 'category', data: dates },
+                        yAxis: { type: 'value' },
+                        series: [{
+                            data: values,
+                            type: 'line',
+                            smooth: true
+                        }]
+                    });
+                    logSuccess('活动趋势图表渲染成功');
+                } catch (error) {
+                    logError('活动趋势图表渲染失败: ' + error.message);
+                }
+            }
+        }
+        
+        // 测试排行榜
+        function testRankings() {
+            if (typeof MockData === 'undefined') return;
+            
+            // 班级排行
+            const classContainer = document.getElementById('class-ranking-test');
+            if (classContainer && MockData.classRanking) {
+                classContainer.innerHTML = MockData.classRanking.slice(0, 5).map((cls, index) => `
+                    <div class="ranking-item">
+                        <span><strong>${index + 1}.</strong> ${cls.name}</span>
+                        <span>${cls.activities}次</span>
+                    </div>
+                `).join('');
+                logSuccess('班级排行榜渲染成功');
+            }
+            
+            // 教师排行
+            const teacherContainer = document.getElementById('teacher-ranking-test');
+            if (teacherContainer) {
+                const teachers = [
+                    { name: '张老师', class: '大一班', count: 156 },
+                    { name: '李老师', class: '大二班', count: 142 },
+                    { name: '王老师', class: '中一班', count: 138 }
+                ];
+                teacherContainer.innerHTML = teachers.map((teacher, index) => `
+                    <div class="ranking-item">
+                        <span><strong>${index + 1}.</strong> ${teacher.name}</span>
+                        <span>${teacher.count}次</span>
+                    </div>
+                `).join('');
+                logSuccess('教师排行榜渲染成功');
+            }
+            
+            // 热门绘本
+            const bookContainer = document.getElementById('book-ranking-test');
+            if (bookContainer && MockData.popularBooks) {
+                bookContainer.innerHTML = MockData.popularBooks.slice(0, 5).map((book, index) => `
+                    <div class="ranking-item">
+                        <span><strong>${index + 1}.</strong> ${book.name}</span>
+                        <span>${book.reads}次</span>
+                    </div>
+                `).join('');
+                logSuccess('热门绘本排行榜渲染成功');
+            }
+        }
+        
+        // 主要诊断函数
+        function runDiagnostics() {
+            log('开始详细诊断...', 'info');
+            
+            // 检查基础环境
+            log('检查基础环境...', 'info');
+            checkDataSources();
+            
+            // 测试各项功能
+            log('测试核心指标...', 'info');
+            testCoreMetrics();
+            
+            log('测试图表渲染...', 'info');
+            testCharts();
+            
+            log('测试排行榜...', 'info');
+            testRankings();
+            
+            log('诊断完成!', 'success');
+        }
+        
+        // 页面加载完成后执行诊断
+        document.addEventListener('DOMContentLoaded', function() {
+            log('页面DOM加载完成', 'success');
+            setTimeout(runDiagnostics, 1000); // 等待所有资源加载完成
+        });
+    </script>
+</body>
+</html>

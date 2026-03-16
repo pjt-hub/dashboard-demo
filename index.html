@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI绘本阅读室数据统计平台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-slate-700 via-slate-600 to-slate-700 min-h-screen text-white font-['Noto_Sans_SC'] flex">
+
+    <!-- ========== 左侧导航栏（对标远程平台） ========== -->
+    <aside id="sidebar" class="w-56 bg-slate-800 min-h-screen flex flex-col fixed left-0 top-0 z-40 transition-all duration-300">
+        <!-- Logo区域 -->
+        <div class="px-4 py-5 border-b border-slate-700 flex items-center gap-3">
+            <div class="w-9 h-9 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                </svg>
+            </div>
+            <div class="overflow-hidden">
+                <h1 class="text-white text-sm font-bold truncate">AI绘本阅读室</h1>
+                <p class="text-slate-400 text-xs truncate">数据统计平台</p>
+            </div>
+        </div>
+
+        <!-- 导航菜单 -->
+        <nav class="flex-1 py-4 overflow-y-auto">
+            <!-- 基础设置分组 -->
+            <div class="px-3 mb-1">
+                <div class="sidebar-group-title flex items-center justify-between px-3 py-2 text-slate-400 text-xs font-medium uppercase tracking-wider cursor-pointer hover:text-slate-300" data-group="baseSettings">
+                    <span>基础设置</span>
+                    <svg class="w-3 h-3 transition-transform duration-200 group-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </div>
+                <div class="sidebar-group" id="group-baseSettings">
+                    <a class="sidebar-nav-item active flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm cursor-pointer transition-all duration-200" data-page="dataOverview" id="nav-dataOverview">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h2a2 2 0 01-2-2z"></path></svg>
+                        <span>大数据总览</span>
+                    </a>
+                    <a class="sidebar-nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm cursor-pointer transition-all duration-200" data-page="schoolData">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                        <span>园所数据</span>
+                    </a>
+                    <a class="sidebar-nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm cursor-pointer transition-all duration-200" data-page="aiAnalysis" id="nav-aiAnalysis">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+                        <span>AI分析</span>
+                    </a>
+                </div>
+            </div>
+        </nav>
+
+        <!-- 底部用户信息 -->
+        <div class="px-4 py-3 border-t border-slate-700">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-full flex items-center justify-center text-white text-xs font-bold cursor-pointer hover:scale-105 transition-transform" id="user-avatar" onclick="App.toggleRoleSwitcher()">彭</div>
+                <div class="flex-1 overflow-hidden">
+                    <div class="text-white text-sm truncate">jtpeng</div>
+                    <div class="text-slate-400 text-xs truncate flex items-center gap-1">
+                        <span id="current-role-text">教育局管理员</span>
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </div>
+                </div>
+            </div>
+            <!-- 角色切换器 -->
+            <div id="role-switcher" class="hidden mt-3 space-y-2">
+                <div class="text-xs text-slate-500 mb-2">切换角色</div>
+                <button class="role-option w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all hover:bg-blue-500/10 border border-transparent" data-role="admin" onclick="App.switchRole('admin')">
+                    <span class="text-base">👔</span>
+                    <div class="text-left">
+                        <div class="text-slate-200">教育局管理员</div>
+                        <div class="text-xs text-slate-500">查看全区数据</div>
+                    </div>
+                </button>
+                <button class="role-option w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all hover:bg-blue-500/10 border border-transparent" data-role="principal" onclick="App.switchRole('principal')">
+                    <span class="text-base">🏫</span>
+                    <div class="text-left">
+                        <div class="text-slate-200">园长</div>
+                        <div class="text-xs text-slate-500">查看本园数据</div>
+                    </div>
+                </button>
+                <button class="role-option w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all hover:bg-blue-500/10 border border-transparent" data-role="teacher" onclick="App.switchRole('teacher')">
+                    <span class="text-base">👩‍🏫</span>
+                    <div class="text-left">
+                        <div class="text-slate-200">教师</div>
+                        <div class="text-xs text-slate-500">查看本班数据</div>
+                    </div>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ========== 右侧主内容区 ========== -->
+    <main class="flex-1 ml-56 min-h-screen">
+        <!-- 顶部栏 -->
+        <header class="bg-slate-800/70 backdrop-blur-md border-b border-slate-700/50 sticky top-0 z-30 px-6 py-3 flex items-center justify-between">
+            <div>
+                <div id="breadcrumb" class="text-sm text-slate-500">首页 > 基础设置 > 大数据总览</div>
+            </div>
+            <div class="flex items-center gap-4">
+                <span id="current-time" class="text-sm text-slate-500"></span>
+                <button class="text-slate-400 hover:text-slate-600 transition-colors" title="全屏" onclick="App.toggleFullscreen()">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- 页面内容容器 -->
+        <div id="page-container" class="p-6">
+            <!-- 页面内容由JS动态渲染 -->
+        </div>
+    </main>
+
+    <!-- ========== 模态框容器 ========== -->
+    <div id="modal-overlay" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center" onclick="App.closeModal(event)">
+        <div id="modal-content" class="bg-white rounded-xl shadow-2xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
+        </div>
+    </div>
+
+    <!-- Toast通知 -->
+    <div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2"></div>
+
+    <script src="js/mockData.js"></script>
+    <script src="js/charts.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
