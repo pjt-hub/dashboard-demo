@@ -448,3 +448,13 @@ button:disabled {
 .sidebar-nav-item.hidden-role {
     display: none !important;
 }
+
+.sidebar-group-title {
+    display: none !important;
+}
+
+.sidebar-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
