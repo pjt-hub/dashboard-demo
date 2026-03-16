@@ -450,6 +450,19 @@ const App = {
         };
     },
 
+    getSchoolOverviewBookRecommendations() {
+        const books = (MockData.schoolData?.books || []).slice().sort((a, b) => b.readCount - a.readCount);
+        const roleReasonMap = {
+            principal: '园所整体阅读热度较高，适合纳入近期重点推荐。',
+            teacher: '班级活动适配度较高，适合近期课堂共读与互动延展。'
+        };
+        return books.slice(0, 4).map((book, index) => ({
+            ...book,
+            highlight: index === 0 ? '优先推荐' : index === 1 ? '高热度' : '可延展',
+            reason: roleReasonMap[this.currentRole] || '近期阅读表现较好，建议持续关注。'
+        }));
+    },
+
     updateSidebarForRole() {
         // 管理员和园长可以看到大数据总览，教师看不到
         const dataOverviewItem = document.getElementById('nav-dataOverview');
@@ -940,6 +953,7 @@ const App = {
     // 园所数据 - 数据概述
     renderSchoolOverview() {
         const d = this.getSchoolOverviewDataForCurrentRange();
+        const recommendations = this.getSchoolOverviewBookRecommendations();
         return `
         <div class="space-y-6">
             ${this.renderDateFilterBar('schoolOverview')}
@@ -991,6 +1005,28 @@ const App = {
                     <div id="school-category-bar" class="h-64"></div>
                 </div>
             </div>
+            ${this.currentRole !== 'admin' ? this.card(`
+                <div class="flex items-center justify-between gap-3 mb-4">
+                    ${this.chartTitle('绘本推荐栏', 'bg-rose-500')}
+                    <div class="text-xs text-slate-400 px-3 py-1.5 rounded-full border border-rose-500/20 bg-rose-500/10">${this.currentRole === 'principal' ? '园所视角推荐' : '班级视角推荐'}</div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                    ${recommendations.map(book => `
+                        <div class="rounded-2xl border border-slate-500/25 bg-slate-800/40 p-4 hover:border-rose-400/30 hover:bg-slate-700/40 transition-all">
+                            <div class="flex items-start justify-between gap-3 mb-3">
+                                <div class="w-11 h-14 rounded-xl bg-gradient-to-br from-rose-500/20 to-amber-500/20 border border-rose-500/20 flex items-center justify-center text-lg">📖</div>
+                                ${this.badge(book.highlight, book.highlight === '优先推荐' ? 'red' : book.highlight === '高热度' ? 'amber' : 'purple')}
+                            </div>
+                            <div class="text-white font-semibold leading-6 mb-2">${book.name}</div>
+                            <div class="flex items-center gap-2 text-xs text-slate-400 mb-3">
+                                ${this.badge(book.type, 'blue')}
+                                <span>阅读 ${book.readCount} 次</span>
+                            </div>
+                            <p class="text-sm text-slate-300 leading-6">${book.reason}</p>
+                        </div>
+                    `).join('')}
+                </div>
+            `) : ''}
         </div>`;
     },
 
