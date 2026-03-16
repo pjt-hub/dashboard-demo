@@ -1541,52 +1541,9 @@ const App = {
     // 园所AI分析内容
     renderSchoolAiAnalysis() {
         const data = MockData.aiAnalysis.school;
-        const health = data.healthDimensions;
 
         return `
             <div class="space-y-6">
-                <!-- 园所健康度评分 -->
-                ${this.card(`
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <h3 class="text-lg font-semibold text-white mb-2">园所整体健康度</h3>
-                            <p class="text-slate-400 text-sm">基于多维度指标综合评估</p>
-                        </div>
-                        <div class="w-28 h-28 relative">
-                            <svg class="w-full h-full transform -rotate-90">
-                                <circle cx="56" cy="56" r="48" fill="none" stroke="rgba(100,116,139,0.3)" stroke-width="8"/>
-                                <circle cx="56" cy="56" r="48" fill="none" stroke="url(#healthGradient)" stroke-width="8"
-                                    stroke-dasharray="${data.healthScore * 3.02} 302" stroke-linecap="round"/>
-                                <defs>
-                                    <linearGradient id="healthGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                                        <stop offset="0%" style="stop-color:#3b82f6"/>
-                                        <stop offset="100%" style="stop-color:#22d3ee"/>
-                                    </linearGradient>
-                                </defs>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center">
-                                <div class="text-center">
-                                    <span class="text-3xl font-bold text-white">${data.healthScore}</span>
-                                    <span class="text-slate-400 text-sm">分</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-                        ${health.map(h => `
-                            <div class="p-3 rounded-xl bg-slate-500/20 border border-slate-500/20">
-                                <div class="flex items-center justify-between mb-2">
-                                    <span class="text-sm text-slate-300">${h.name}</span>
-                                    <span class="text-sm font-medium ${h.score >= 80 ? 'text-emerald-400' : h.score >= 60 ? 'text-amber-400' : 'text-red-400'}">${h.score}分</span>
-                                </div>
-                                <div class="w-full bg-slate-600/50 rounded-full h-2">
-                                    <div class="h-2 rounded-full ${h.score >= 80 ? 'bg-emerald-400' : h.score >= 60 ? 'bg-amber-400' : 'bg-red-400'}" style="width: ${h.score}%"></div>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                `)}
-
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <!-- 趋势洞察 - 周月对比 -->
                     ${this.card(`
