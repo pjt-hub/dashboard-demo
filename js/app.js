@@ -214,8 +214,7 @@ const App = {
                 const activityCount = this.scaleNumber(baseCount, ratio, activities.length ? 1 : 0);
                 return {
                     ...kindergarten,
-                    activityCount,
-                    avgPerClass: kindergarten.classCount ? (activityCount / kindergarten.classCount).toFixed(1) : '0.0'
+                    activityCount
                 };
             })
             .sort((a, b) => b.activityCount - a.activityCount);
@@ -792,11 +791,11 @@ const App = {
                             <div class="text-sm font-semibold text-white truncate">${item.name}</div>
                             <div class="text-xs text-slate-400 truncate">${item.district} · ${item.classCount} 班 · ${item.teacherCount} 教师 · ${item.studentCount} 幼儿</div>
                         </div>
-                        <div>
+                        <div class="min-w-0">
                             <div class="h-2 rounded-full bg-slate-700/70 overflow-hidden">
                                 <div class="h-full rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500" style="width: ${Math.max(12, item.activityCount / maxCount * 100)}%"></div>
                             </div>
-                            <div class="text-xs text-slate-400 mt-1">班均 ${item.avgPerClass} 次</div>
+                            <div class="text-xs text-slate-400 mt-1"></div>
                         </div>
                         <div class="text-right">
                             <div class="text-2xl font-bold text-cyan-300">${item.activityCount}</div>
