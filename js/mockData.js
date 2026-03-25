@@ -34,6 +34,14 @@ const MockData = {
         { id: 5, name: '童星幼儿园', district: '西城区', studentCount: 225, classCount: 15, teacherCount: 35 }
     ],
 
+    kindergartenClassUsageComparison: [
+        { kindergartenId: 1, name: '阳光幼儿园', avgActivityCount: 10.6, avgActivityDuration: 4.9, avgDeviceUseCount: 28.1, avgParticipantCount: 16.8 },
+        { kindergartenId: 2, name: '彩虹幼儿园', avgActivityCount: 8.9, avgActivityDuration: 4.1, avgDeviceUseCount: 24.6, avgParticipantCount: 15.2 },
+        { kindergartenId: 3, name: '花朵幼儿园', avgActivityCount: 11.8, avgActivityDuration: 5.3, avgDeviceUseCount: 30.4, avgParticipantCount: 17.6 },
+        { kindergartenId: 4, name: '希望幼儿园', avgActivityCount: 7.6, avgActivityDuration: 3.7, avgDeviceUseCount: 21.3, avgParticipantCount: 13.9 },
+        { kindergartenId: 5, name: '童星幼儿园', avgActivityCount: 9.7, avgActivityDuration: 4.5, avgDeviceUseCount: 26.8, avgParticipantCount: 16.1 }
+    ],
+
     currentKindergarten: null,
     currentClass: null,
     currentStudent: null,
@@ -580,16 +588,16 @@ const MockData = {
                     needsImprovement: [0, 0, 0, 0, 0]
                 },
                 bestTimeSlots: [
-                    { timeSlot: '上午 9:00-10:00', description: '最佳阅读时段，参与率最高', effectiveness: 95 },
-                    { timeSlot: '下午 15:00-16:00', description: '次佳阅读时段', effectiveness: 88 },
-                    { timeSlot: '上午 10:00-11:00', description: '效果良好', effectiveness: 82 }
+                    { timeSlot: '上午 9:00-10:00', description: '最佳阅读时段，适合安排核心共读活动' },
+                    { timeSlot: '下午 15:00-16:00', description: '孩子状态较稳定，适合安排轻互动阅读' },
+                    { timeSlot: '上午 10:00-11:00', description: '课程衔接自然，可灵活安排延展活动' }
                 ],
                 bookTypeEffectiveness: [
-                    { type: '人际交往', score: 95, suggestion: '效果极佳，建议继续保持' },
-                    { type: '日常生活', score: 88, suggestion: '效果良好' },
-                    { type: '情商品格', score: 82, suggestion: '效果良好' },
-                    { type: '国学文化', score: 70, suggestion: '需要改进，可从简单节日故事开始' },
-                    { type: '科普百科', score: 62, suggestion: '需要改进，推荐简单科普绘本' }
+                    { type: '人际交往', suggestion: '孩子接受度高，可继续作为班级高频主题' },
+                    { type: '日常生活', suggestion: '内容容易代入，适合作为稳定的常规阅读素材' },
+                    { type: '情商品格', suggestion: '适合放在情绪表达和讨论环节中使用' },
+                    { type: '国学文化', suggestion: '建议从简单节日故事和生活化情境切入' },
+                    { type: '科普百科', suggestion: '更适合搭配小实验或动手探索活动一起使用' }
                 ]
             },
 
@@ -619,13 +627,13 @@ const MockData = {
                 {
                     area: '科普阅读',
                     urgency: 'high',
-                    currentStatus: '当前科普类绘本效果评分仅62分，学生参与度较低。',
+                    currentStatus: '当前科普类绘本在班级中的参与度偏低，孩子容易出现分心情况。',
                     suggestion: '先从《好饿的毛毛虫》等简单趣味科普开始，结合科学探索小游戏，每周1个小知识分享。'
                 },
                 {
                     area: '文化素养',
                     urgency: 'medium',
-                    currentStatus: '文化素养类评分70分，有提升空间。',
+                    currentStatus: '文化素养类内容已有基础反馈，但还有较大的拓展空间。',
                     suggestion: '引入传统节日绘本，每周1个小故事，请家长配合讲传统故事。'
                 },
                 {

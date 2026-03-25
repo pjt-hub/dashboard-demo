@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(node:*)",
-      "Bash(start:*)"
+      "Bash(start:*)",
+      "Read(//d//**)",
+      "Bash(mkdir -p dashboard-v2/css/pages dashboard-v2/js/data dashboard-v2/js/components dashboard-v2/js/pages dashboard-v2/js/charts dashboard-v2/js/utils dashboard-v2/assets/images)",
+      "Read(//d/绘本阅读机器人/**)",
+      "Bash(mkdir:*)"
     ]
   }
 }

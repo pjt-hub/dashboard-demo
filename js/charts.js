@@ -42,7 +42,8 @@ const Charts = {
             weeklyActivity: MockData.weeklyActivity,
             classRanking: MockData.classRanking,
             teacherRanking: MockData.teacherRanking,
-            parentReading: MockData.parentReading
+            parentReading: MockData.parentReading,
+            classUsageComparison: null
         };
         this.safeInit(() => this.initBookTypePie(data.bookTypes));
         this.safeInit(() => this.initAbilityRadar(data.abilityDistribution));
@@ -50,6 +51,7 @@ const Charts = {
         this.safeInit(() => this.initClassRankingBar(data.classRanking));
         this.safeInit(() => this.initTeacherRankingBar(data.teacherRanking));
         this.safeInit(() => this.initParentReadingLine(data.parentReading));
+        this.safeInit(() => this.initClassUsageCompareRadar(data.classUsageComparison));
     },
 
     // 绘本类型占比 - 饼图
@@ -103,19 +105,66 @@ const Charts = {
         window.addEventListener('resize', () => chart.resize());
     },
 
+    initClassUsageCompareRadar(customData = null) {
+        const chart = this.createChart('class-usage-compare-chart');
+        if (!chart || !customData || !customData.series?.length) return;
+        const palette = ['#22d3ee', '#3b82f6', '#a855f7', '#f59e0b'];
+        chart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: this.darkTheme.tooltip,
+            legend: { bottom: 0, textStyle: { color: '#a0aec0', fontSize: 12 } },
+            color: palette,
+            radar: {
+                indicator: customData.indicators,
+                shape: 'polygon',
+                radius: '62%',
+                splitNumber: 4,
+                axisName: { color: '#cbd5f5', fontSize: 12 },
+                splitLine: { lineStyle: { color: 'rgba(85,100,120,0.35)' } },
+                splitArea: { areaStyle: { color: ['rgba(15,23,42,0.12)', 'rgba(30,41,59,0.18)', 'rgba(51,65,85,0.14)', 'rgba(71,85,105,0.08)'] } },
+                axisLine: { lineStyle: { color: 'rgba(85,100,120,0.35)' } }
+            },
+            series: [{
+                type: 'radar',
+                data: customData.series.map((item, index) => ({
+                    ...item,
+                    symbol: 'circle',
+                    symbolSize: 7,
+                    lineStyle: { width: 2, color: palette[index % palette.length] },
+                    itemStyle: { color: palette[index % palette.length] },
+                    areaStyle: { color: palette[index % palette.length], opacity: 0.12 }
+                }))
+            }]
+        });
+        window.addEventListener('resize', () => chart.resize());
+    },
+
     // 近七日活动 - 柱状图
     initWeeklyActivityBar(customData = null) {
         const chart = this.createChart('weekly-activity-chart');
         if (!chart) return;
         const data = customData || MockData.weeklyActivity;
+        const isMonthly = data.granularity === 'month';
+        const rotate = !isMonthly && data.dates.length > 14 ? 35 : 0;
         chart.setOption({
             backgroundColor: 'transparent',
             tooltip: { ...this.darkTheme.tooltip, trigger: 'axis', axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(59,130,246,0.05)' } } },
             grid: { left: 40, right: 20, top: 20, bottom: 30 },
-            xAxis: { type: 'category', data: data.dates, axisLabel: { color: '#8896a6', fontSize: 11 }, axisLine: { lineStyle: { color: 'rgba(85,100,120,0.35)' } }, axisTick: { show: false } },
+            xAxis: {
+                type: 'category',
+                data: data.dates,
+                axisLabel: {
+                    color: '#8896a6',
+                    fontSize: 11,
+                    rotate,
+                    interval: data.dates.length > 16 ? 2 : 0
+                },
+                axisLine: { lineStyle: { color: 'rgba(85,100,120,0.35)' } },
+                axisTick: { show: false }
+            },
             yAxis: { type: 'value', axisLabel: { color: '#8896a6', fontSize: 11 }, splitLine: { lineStyle: { color: 'rgba(85,100,120,0.3)' } } },
             series: [{
-                type: 'bar', data: data.values, barWidth: '40%',
+                type: 'bar', data: data.values, barWidth: data.dates.length > 12 ? '55%' : '40%',
                 itemStyle: {
                     borderRadius: [6, 6, 0, 0],
                     color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#06b6d4' }, { offset: 1, color: '#3b82f6' }]),

@@ -117,8 +117,13 @@ const App = {
         const start = new Date(end);
         if (preset === '7d') start.setDate(end.getDate() - 6);
         else if (preset === '1m') start.setMonth(end.getMonth() - 1);
-        else if (preset === '6m') start.setMonth(end.getMonth() - 6);
-        else if (preset === '1y') start.setFullYear(end.getFullYear() - 1);
+        else if (preset === '6m') {
+            start.setDate(1);
+            start.setMonth(end.getMonth() - 5);
+        } else if (preset === '1y') {
+            start.setDate(1);
+            start.setMonth(end.getMonth() - 11);
+        }
         start.setHours(0, 0, 0, 0);
         return {
             startDate: this.formatDateInput(start),
@@ -195,6 +200,75 @@ const App = {
         };
     },
 
+    getOverviewSeriesGranularity(range) {
+        if (!range) return 'day';
+        if (['6m', '1y'].includes(range.preset)) return 'month';
+        if (['7d', '1m'].includes(range.preset)) return 'day';
+
+        if (range.startDate && range.endDate) {
+            const start = new Date(`${range.startDate}T00:00:00`);
+            const end = new Date(`${range.endDate}T23:59:59`);
+            if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+                const diffDays = Math.floor((end - start) / (1000 * 60 * 60 * 24)) + 1;
+                return diffDays > 31 ? 'month' : 'day';
+            }
+        }
+
+        return 'day';
+    },
+
+    buildOverviewActivitySeries(activities, valueGetter) {
+        const range = this.dateRanges.dataOverview || {};
+        const start = range?.startDate ? new Date(`${range.startDate}T00:00:00`) : null;
+        const end = range?.endDate ? new Date(`${range.endDate}T23:59:59`) : null;
+        const granularity = this.getOverviewSeriesGranularity(range);
+        const bucketMap = new Map();
+
+        activities.forEach(item => {
+            const current = this.parseActivityDate(item.endTime);
+            if (Number.isNaN(current.getTime())) return;
+            const key = granularity === 'month'
+                ? `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`
+                : item.endTime.slice(0, 10);
+            bucketMap.set(key, (bucketMap.get(key) || 0) + valueGetter(item));
+        });
+
+        if (!start || !end) {
+            return {
+                dates: [],
+                values: [],
+                granularity
+            };
+        }
+
+        const dates = [];
+        const values = [];
+
+        if (granularity === 'month') {
+            const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+            const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+            while (cursor <= endMonth) {
+                const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
+                dates.push(key);
+                values.push(bucketMap.get(key) || 0);
+                cursor.setMonth(cursor.getMonth() + 1);
+            }
+        } else {
+            const cursor = new Date(start);
+            cursor.setHours(0, 0, 0, 0);
+            const endDate = new Date(end);
+            endDate.setHours(0, 0, 0, 0);
+            while (cursor <= endDate) {
+                const key = this.formatDateInput(cursor);
+                dates.push(key.slice(5));
+                values.push(bucketMap.get(key) || 0);
+                cursor.setDate(cursor.getDate() + 1);
+            }
+        }
+
+        return { dates, values, granularity };
+    },
+
     buildRanking(map, limit = 10, extraMapper = null) {
         return [...map.entries()]
             .map(([name, count]) => ({ name, count, ...(extraMapper ? extraMapper(name) : {}) }))
@@ -218,6 +292,25 @@ const App = {
                 };
             })
             .sort((a, b) => b.activityCount - a.activityCount);
+    },
+
+    getAdminClassUsageComparison() {
+        const source = MockData.kindergartenClassUsageComparison || [];
+        const schools = source.map(item => {
+            const kindergarten = MockData.kindergartens.find(entry => entry.id === item.kindergartenId) || {};
+            return {
+                ...item,
+                district: kindergarten.district || '-',
+                classCount: kindergarten.classCount || 0
+            };
+        });
+        const schoolCount = schools.length || 1;
+        const summary = {
+            avgActivityCount: Number((schools.reduce((sum, item) => sum + item.avgActivityCount, 0) / schoolCount).toFixed(1)),
+            avgParticipantCount: Number((schools.reduce((sum, item) => sum + item.avgParticipantCount, 0) / schoolCount).toFixed(1))
+        };
+
+        return { schools, summary };
     },
 
     scaleNumber(value, ratio, minimum = 0) {
@@ -380,7 +473,7 @@ const App = {
         const ratio = activities.length / totalActivities;
         const totalDuration = activities.length * 0.5;
         const participantCount = activities.reduce((sum, item) => sum + (item.studentCount || 0), 0);
-        const weeklyActivity = this.buildDailySeries(activities, () => 1);
+        const weeklyActivity = this.buildOverviewActivitySeries(activities, () => 1);
         const parentReadingBase = this.buildDailySeries(activities, item => item.studentCount || 0);
         const classMap = new Map();
         const teacherMap = new Map();
@@ -414,6 +507,7 @@ const App = {
                 pushCount: parentReadingBase.values.map(value => Math.max(1, Math.round(value / 2))),
                 readCount: parentReadingBase.values.map(value => Math.max(1, Math.round(value / 3)))
             },
+            classUsageComparison: this.currentRole === 'admin' ? this.getAdminClassUsageComparison() : null,
             bookRanking: source.bookRanking.map(item => ({
                 ...item,
                 reads: this.scaleNumber(item.reads, ratio, activities.length ? 1 : 0),
@@ -625,6 +719,157 @@ const App = {
         return `<h3 class="text-base font-semibold text-white mb-4 flex items-center gap-2"><span class="w-1.5 h-5 ${colorClass} rounded-full"></span>${title}</h3>`;
     },
 
+    renderAdminClassUsageComparison(data) {
+        if (!data || !data.schools || data.schools.length === 0) {
+            return `
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between gap-3">
+                        ${this.chartTitle('园所班均使用对比', 'bg-cyan-500')}
+                        <div class="text-xs text-slate-300 px-3 py-1.5 rounded-full border border-slate-400/20 bg-slate-700/30">区域内各园所班均数据</div>
+                    </div>
+                    <div class="rounded-2xl border border-dashed border-slate-500/30 bg-slate-800/35 px-4 py-10 text-center text-slate-400">
+                        暂无园所班均使用数据
+                    </div>
+                </div>
+            `;
+        }
+
+        const schools = data.schools;
+        const topActivitySchool = schools.reduce((best, item) => item.avgActivityCount > best.avgActivityCount ? item : best, schools[0]);
+        const topParticipantSchool = schools.reduce((best, item) => item.avgParticipantCount > best.avgParticipantCount ? item : best, schools[0]);
+        const metricConfigs = [
+            { key: 'avgActivityCount', title: '班均活动次数', unit: '次/班', accent: 'sky', avgValue: data.summary.avgActivityCount },
+            { key: 'avgParticipantCount', title: '班均参与人次', unit: '人次/班', accent: 'blue', avgValue: data.summary.avgParticipantCount }
+        ];
+        const accentMap = {
+            sky: {
+                text: 'text-sky-300',
+                badge: 'bg-slate-800/50 text-slate-200 border-slate-500/20',
+                bar: 'from-[#38bdf8] via-[#7dd3fc] to-[#60a5fa]',
+                barBg: 'bg-slate-700/50',
+                dot: 'bg-sky-400',
+                percent: 'text-slate-400'
+            },
+            blue: {
+                text: 'text-blue-300',
+                badge: 'bg-slate-800/50 text-slate-200 border-slate-500/20',
+                bar: 'from-[#60a5fa] via-[#93c5fd] to-[#3b82f6]',
+                barBg: 'bg-slate-700/50',
+                dot: 'bg-blue-400',
+                percent: 'text-slate-400'
+            }
+        };
+        const medalClass = index => {
+            if (index === 0) return 'bg-[#1e3a5f]/60 border border-[#3b82f6]/30 text-blue-200';
+            if (index === 1) return 'bg-slate-700/40 border border-slate-500/20 text-slate-300';
+            if (index === 2) return 'bg-[#0c4a6e]/40 border border-sky-500/20 text-sky-200';
+            return 'bg-slate-800/40 border border-slate-600/20 text-slate-400';
+        };
+        const renderMetricRanking = config => {
+            const accent = accentMap[config.accent];
+            const ranked = [...schools].sort((a, b) => b[config.key] - a[config.key]);
+            const maxValue = ranked[0]?.[config.key] || 1;
+            return `
+                <div class="rounded-[24px] border border-slate-600/20 bg-gradient-to-b from-slate-900/90 to-slate-800/70 p-5 shadow-xl">
+                    <div class="flex items-center justify-between gap-3 mb-4">
+                        <div>
+                            <div class="text-sm font-semibold text-white">${config.title}</div>
+                            <div class="text-xs text-slate-400 mt-0.5">区域平均 ${config.avgValue}${config.unit}</div>
+                        </div>
+                        <span class="px-2.5 py-1 rounded-full border text-xs ${accent.badge}">${ranked.length} 所园所</span>
+                    </div>
+                    <div class="space-y-3">
+                        ${ranked.map((item, index) => {
+                            const percent = Math.max(14, Math.round(item[config.key] / maxValue * 100));
+                            return `
+                                <div class="rounded-2xl border border-slate-600/15 bg-slate-800/40 px-4 py-3">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="flex items-start gap-3 min-w-0">
+                                            <span class="shrink-0 w-7 h-7 rounded-lg border text-xs font-semibold flex items-center justify-center ${medalClass(index)}">${index + 1}</span>
+                                            <div class="min-w-0">
+                                                <div class="text-sm font-semibold text-white truncate">${item.name}</div>
+                                                <div class="text-xs text-slate-400 truncate">${item.district} · ${item.classCount}个班</div>
+                                            </div>
+                                        </div>
+                                        <div class="text-right shrink-0">
+                                            <div class="text-xl font-bold ${accent.text}">${item[config.key]}</div>
+                                            <div class="text-[11px] text-slate-500">${config.unit}</div>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 space-y-2">
+                                        <div class="h-1.5 rounded-full ${accent.barBg} overflow-hidden">
+                                            <div class="h-full rounded-full bg-gradient-to-r ${accent.bar}" style="width: ${percent}%"></div>
+                                        </div>
+                                        <div class="flex items-center justify-between text-[11px] ${accent.percent}">
+                                            <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full ${accent.dot}"></span>相对最高值</span>
+                                            <span>${percent}%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        };
+
+        return `
+            <div class="space-y-5">
+                <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+                    ${this.chartTitle('园所班均使用对比', 'bg-cyan-500')}
+                    <div class="text-xs text-slate-300 px-3 py-1.5 rounded-full border border-slate-400/20 bg-slate-700/30 w-fit">区域内各园所班均数据</div>
+                </div>
+                <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.45fr)] gap-5">
+                    <div class="rounded-[26px] border border-slate-600/20 bg-gradient-to-br from-slate-900/95 via-slate-800/90 to-slate-900/85 p-5 shadow-xl">
+                        <div class="text-xs uppercase tracking-[0.24em] text-sky-200/70">区域概览</div>
+                        <div class="mt-2 text-2xl font-semibold text-white leading-tight">区域园所班均使用概览</div>
+                        <div class="mt-5 grid grid-cols-2 gap-3">
+                            <div class="rounded-2xl border border-slate-600/20 bg-gradient-to-br from-[#0e7490]/20 to-slate-900/40 px-4 py-4">
+                                <div class="text-xs text-sky-100/80">区域平均班均活动次数</div>
+                                <div class="mt-2 text-3xl font-bold text-white">${data.summary.avgActivityCount}</div>
+                                <div class="mt-1 text-xs text-slate-400">区域内平均每班活动次数</div>
+                            </div>
+                            <div class="rounded-2xl border border-slate-600/20 bg-gradient-to-br from-[#2563eb]/20 to-slate-900/40 px-4 py-4">
+                                <div class="text-xs text-blue-100/80">区域平均班均参与人次</div>
+                                <div class="mt-2 text-3xl font-bold text-white">${data.summary.avgParticipantCount}</div>
+                                <div class="mt-1 text-xs text-slate-400">区域内平均每班参与人次</div>
+                            </div>
+                        </div>
+                        <div class="mt-5 space-y-3">
+                            <div class="rounded-2xl border border-slate-600/15 bg-slate-900/50 px-4 py-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div>
+                                        <div class="text-xs text-slate-500">班均活动次数最高园所</div>
+                                        <div class="mt-1 text-lg font-semibold text-white">${topActivitySchool.name}</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-2xl font-bold text-sky-300">${topActivitySchool.avgActivityCount}</div>
+                                        <div class="text-xs text-slate-500">次/班</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="rounded-2xl border border-slate-600/15 bg-slate-900/50 px-4 py-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div>
+                                        <div class="text-xs text-slate-500">班均参与人次最高园所</div>
+                                        <div class="mt-1 text-lg font-semibold text-white">${topParticipantSchool.name}</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-2xl font-bold text-blue-300">${topParticipantSchool.avgParticipantCount}</div>
+                                        <div class="text-xs text-slate-500">人次/班</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 2xl:grid-cols-2 gap-4">
+                        ${metricConfigs.map(renderMetricRanking).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
     // 筛选器容器
     filterBar(content) {
         return `<div class="flex flex-wrap items-end gap-3 mb-5 bg-slate-700/50 rounded-xl p-4 border border-slate-500/30">${content}</div>`;
@@ -714,7 +959,7 @@ const App = {
 
             <!-- 图表第二行 -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                ${this.card(this.chartTitle('园所绘本活动次数', 'bg-cyan-500') + '<div id="weekly-activity-chart" class="h-72"></div>')}
+                ${this.card(this.chartTitle(this.currentRole === 'admin' ? '区域绘本活动次数' : '园所绘本活动次数', 'bg-cyan-500') + '<div id="weekly-activity-chart" class="h-72"></div>')}
                 ${this.card(this.chartTitle('绘本活动次数排名前十班级', 'bg-amber-500') + '<div id="class-ranking-chart" class="h-72"></div>')}
             </div>
 
@@ -723,6 +968,8 @@ const App = {
                 ${this.card(this.chartTitle('绘本活动次数排名前十教师', 'bg-purple-500') + '<div id="teacher-ranking-chart" class="h-72"></div>')}
                 ${this.card(this.chartTitle('绘本活动推送及家长阅读次数', 'bg-rose-500') + '<div id="parent-reading-chart" class="h-72"></div>')}
             </div>
+
+            ${this.currentRole === 'admin' ? this.card(this.renderAdminClassUsageComparison(overviewData.classUsageComparison), 'overflow-hidden') : ''}
 
             <!-- 绘本排行表格（管理员不可见） -->
             ${this.currentRole !== 'admin' ? this.card(this.chartTitle('阅读次数排名前十绘本', 'bg-indigo-500') + '<div id="book-ranking-table-wrap"></div>') : ''}
@@ -1833,18 +2080,12 @@ const App = {
                             <span class="text-emerald-400 text-xl">⏰</span>
                             <h3 class="text-lg font-semibold text-white">最佳活动时段</h3>
                         </div>
-                        <p class="text-slate-400 text-sm mb-4">基于历史数据的活动效果分析</p>
+                        <p class="text-slate-400 text-sm mb-4">基于历史活动表现的时段洞察</p>
                         <div class="space-y-3">
                             ${insights.bestTimeSlots.map(t => `
-                                <div class="flex items-center justify-between p-3 rounded-xl bg-slate-500/20 border border-slate-500/20">
-                                    <div>
-                                        <div class="text-white font-medium">${t.timeSlot}</div>
-                                        <div class="text-slate-400 text-xs">${t.description}</div>
-                                    </div>
-                                    <div class="text-right">
-                                        <div class="text-emerald-400 font-bold">${t.effectiveness}%</div>
-                                        <div class="text-slate-400 text-xs">效果评分</div>
-                                    </div>
+                                <div class="p-3 rounded-xl bg-slate-500/20 border border-slate-500/20">
+                                    <div class="text-white font-medium">${t.timeSlot}</div>
+                                    <div class="text-slate-400 text-xs">${t.description}</div>
                                 </div>
                             `).join('')}
                         </div>
@@ -1858,15 +2099,9 @@ const App = {
                         <p class="text-slate-400 text-sm mb-4">不同类型绘本的课堂接受度</p>
                         <div class="space-y-3">
                             ${insights.bookTypeEffectiveness.map(b => `
-                                <div>
-                                    <div class="flex items-center justify-between mb-1">
-                                        <span class="text-white text-sm">${b.type}</span>
-                                        <span class="text-sm ${b.score >= 80 ? 'text-emerald-400' : b.score >= 60 ? 'text-amber-400' : 'text-red-400'}">${b.score}%</span>
-                                    </div>
-                                    <div class="w-full bg-slate-600/50 rounded-full h-2">
-                                        <div class="h-2 rounded-full ${b.score >= 80 ? 'bg-emerald-400' : b.score >= 60 ? 'bg-amber-400' : 'bg-red-400'}" style="width: ${b.score}%"></div>
-                                    </div>
-                                    <p class="text-slate-400 text-xs mt-1">${b.suggestion}</p>
+                                <div class="p-3 rounded-xl bg-slate-500/20 border border-slate-500/20">
+                                    <div class="text-white text-sm font-medium mb-1">${b.type}</div>
+                                    <p class="text-slate-400 text-xs">${b.suggestion}</p>
                                 </div>
                             `).join('')}
                         </div>
@@ -2022,17 +2257,9 @@ const App = {
                             <span class="text-amber-400 text-xl">🤝</span>
                             <h3 class="text-lg font-semibold text-white">社交参与分析</h3>
                         </div>
-                        <div class="space-y-3">
+                        <div class="flex flex-wrap gap-2">
                             ${studentData.socialEngagement.metrics.map(m => `
-                                <div>
-                                    <div class="flex items-center justify-between mb-1">
-                                        <span class="text-white text-sm">${m.name}</span>
-                                        <span class="text-sm font-medium ${m.score >= 80 ? 'text-emerald-400' : m.score >= 60 ? 'text-amber-400' : 'text-red-400'}">${m.score}分</span>
-                                    </div>
-                                    <div class="w-full bg-slate-600/50 rounded-full h-2">
-                                        <div class="h-2 rounded-full ${m.score >= 80 ? 'bg-emerald-400' : m.score >= 60 ? 'bg-amber-400' : 'bg-red-400'}" style="width: ${m.score}%"></div>
-                                    </div>
-                                </div>
+                                <span class="px-3 py-2 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/20 text-sm">${m.name}</span>
                             `).join('')}
                         </div>
                         <div class="mt-4 pt-4 border-t border-slate-500/20">
