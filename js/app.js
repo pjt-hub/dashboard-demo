@@ -1,4 +1,4 @@
-// 应用程序主逻辑 - 深色科技风数据大屏
+﻿// 应用程序主逻辑 - 深色科技风数据大屏
 const App = {
     currentPage: 'dataOverview',
     schoolDataTab: 'overview',
@@ -2067,10 +2067,10 @@ const App = {
 
         return `
             <div class="space-y-6">
-                <!-- 课堂洞察 - 完成质量 -->
+                <!-- 班级活动趋势 -->
                 ${this.card(`
-                    ${this.chartTitle('活动完成质量分析')}
-                    <div id="ai-quality-chart" style="height: 300px;"></div>
+                    ${this.chartTitle('班级活动趋势')}
+                    <div id="ai-quality-chart" style="height: 280px;"></div>
                 `)}
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -2481,47 +2481,42 @@ const App = {
 
     // 初始化教师班级分析图表
     initTeacherClassAiCharts() {
-        const data = MockData.aiAnalysis.teacherClass;
-        const quality = data.lessonInsights.completionQuality;
+        const cls = this.selectedClass || MockData.classes[0];
+        const activities = this.getFilteredActivitiesByDateRange('dataOverview').filter(a => a.className === cls.name);
+        
+        // 计算每日活动趋势
+        const dailyData = {};
+        activities.forEach(a => {
+            const day = a.endTime.slice(0, 10);
+            dailyData[day] = (dailyData[day] || 0) + 1;
+        });
+        const dates = Object.keys(dailyData).sort().slice(-7);
+        const values = dates.map(d => dailyData[d]);
 
-        // 活动完成质量分析
-        const qualityEl = document.getElementById('ai-quality-chart');
-        if (qualityEl) {
-            const chart = echarts.init(qualityEl);
+        // 班级活动趋势图
+        const trendEl = document.getElementById('ai-quality-chart');
+        if (trendEl) {
+            const chart = echarts.init(trendEl);
             chart.setOption({
-                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-                legend: { data: ['优秀', '良好', '一般', '需改进'], textStyle: { color: '#94a3b8' }, bottom: 0 },
-                grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
-                xAxis: { type: 'category', data: quality.labels, axisLine: { lineStyle: { color: '#475569' } }, axisLabel: { color: '#94a3b8' } },
-                yAxis: { type: 'value', axisLine: { lineStyle: { color: '#475569' } }, axisLabel: { color: '#94a3b8' }, splitLine: { lineStyle: { color: '#334155' } } },
-                series: [
-                    { type: 'bar', name: '优秀', stack: 'total', data: quality.excellent, itemStyle: { color: '#10b981' } },
-                    { type: 'bar', name: '良好', stack: 'total', data: quality.good, itemStyle: { color: '#3b82f6' } },
-                    { type: 'bar', name: '一般', stack: 'total', data: quality.average, itemStyle: { color: '#f59e0b' } },
-                    { type: 'bar', name: '需改进', stack: 'total', data: quality.needsImprovement, itemStyle: { color: '#ef4444' } }
-                ]
-            });
-            Charts.instances.push(chart);
-        }
-
-        // 互动模式分析
-        const interactionEl = document.getElementById('ai-interaction-chart');
-        if (interactionEl) {
-            const chart = echarts.init(interactionEl);
-            chart.setOption({
-                tooltip: { trigger: 'item' },
+                tooltip: { trigger: 'axis' },
+                grid: { left: '3%', right: '4%', bottom: '10%', containLabel: true },
+                xAxis: { 
+                    type: 'category', 
+                    data: dates.length > 0 ? dates.map(d => d.slice(5)) : ['暂无数据'],
+                    axisLine: { lineStyle: { color: '#475569' } }, 
+                    axisLabel: { color: '#94a3b8' } 
+                },
+                yAxis: { 
+                    type: 'value', 
+                    axisLine: { lineStyle: { color: '#475569' } }, 
+                    axisLabel: { color: '#94a3b8' }, 
+                    splitLine: { lineStyle: { color: '#334155' } } 
+                },
                 series: [{
-                    type: 'pie',
-                    radius: ['40%', '70%'],
-                    data: data.interactionPatterns.chartData,
-                    itemStyle: {
-                        color: function(params) {
-                            const colors = ['#3b82f6', '#06b6d4', '#8b5cf6', '#f59e0b', '#10b981'];
-                            return colors[params.dataIndex % colors.length];
-                        },
-                        borderRadius: 4
-                    },
-                    label: { color: '#94a3b8' }
+                    type: 'bar',
+                    data: values.length > 0 ? values : [0],
+                    itemStyle: { color: '#3b82f6', borderRadius: [4, 4, 0, 0] },
+                    barWidth: '50%'
                 }]
             });
             Charts.instances.push(chart);
