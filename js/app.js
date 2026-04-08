@@ -2131,8 +2131,6 @@ const App = {
                                         <th class="text-left py-2 px-2">学生</th>
                                         <th class="text-center py-2 px-2">分层</th>
                                         <th class="text-center py-2 px-2">活动数</th>
-                                        <th class="text-center py-2 px-2">参与度</th>
-                                        <th class="text-center py-2 px-2">趋势</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -2145,12 +2143,6 @@ const App = {
                                                 </span>
                                             </td>
                                             <td class="py-2 px-2 text-center text-blue-400">${s.activityCount}</td>
-                                            <td class="py-2 px-2 text-center">${s.engagement}%</td>
-                                            <td class="py-2 px-2 text-center">
-                                                <span class="${s.trend === 'up' ? 'text-emerald-400' : s.trend === 'down' ? 'text-red-400' : 'text-slate-400'}">
-                                                    ${s.trend === 'up' ? '↑' : s.trend === 'down' ? '↓' : '→'}
-                                                </span>
-                                            </td>
                                         </tr>
                                     `).join('')}
                                 </tbody>
@@ -2396,7 +2388,6 @@ const App = {
                                         <div class="flex items-center gap-2 text-xs text-slate-400">
                                             <span class="px-2 py-0.5 rounded-full bg-slate-500/30">${b.bookType}</span>
                                             <span>${b.date}</span>
-                                            <span class="text-emerald-400">${b.engagement || 80}% 投入度</span>
                                         </div>
                                     </div>
                                     <div class="text-slate-400 text-sm">${b.duration}分钟</div>

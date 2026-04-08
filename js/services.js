@@ -57,13 +57,10 @@ const DataService = {
         const studentActivityCounts = {};
         readingRecords.forEach(r => {
             if (!studentActivityCounts[r.studentId]) {
-                studentActivityCounts[r.studentId] = { count: 0, totalDuration: 0, engagements: [] };
+                studentActivityCounts[r.studentId] = { count: 0, totalDuration: 0 };
             }
             studentActivityCounts[r.studentId].count++;
             studentActivityCounts[r.studentId].totalDuration += r.duration;
-            if (r.engagement) {
-                studentActivityCounts[r.studentId].engagements.push(r.engagement);
-            }
         });
 
         // 计算统计数据
@@ -77,18 +74,13 @@ const DataService = {
         // 分层
         const segments = { high: [], medium: [], low: [] };
         students.forEach(student => {
-            const data = studentActivityCounts[student.id] || { count: 0, totalDuration: 0, engagements: [] };
-            const avgEngagement = data.engagements.length > 0
-                ? Math.round(data.engagements.reduce((a, b) => a + b) / data.engagements.length)
-                : 0;
+            const data = studentActivityCounts[student.id] || { count: 0, totalDuration: 0 };
 
             const studentData = {
                 ...student,
                 activityCount: data.count,
                 totalDuration: data.totalDuration,
-                avgEngagement,
-                segment: 'medium',
-                trend: this.calculateTrend(data.engagements)
+                segment: 'medium'
             };
 
             if (data.count > mean + stdDev) {
@@ -257,16 +249,12 @@ const DataService = {
                     name: book ? book.name : '未知',
                     type: book ? book.type : '未知',
                     duration: r.duration,
-                    date: r.date,
-                    engagement: r.engagement
+                    date: r.date
                 };
             });
 
         // 统计数据
         const totalDuration = studentRecords.reduce((sum, r) => sum + r.duration, 0);
-        const avgEngagement = studentRecords.length > 0
-            ? Math.round(studentRecords.reduce((sum, r) => sum + (r.engagement || 0), 0) / studentRecords.length)
-            : 0;
 
         return {
             student: {
@@ -278,8 +266,7 @@ const DataService = {
                 totalBooks: new Set(studentRecords.map(r => r.bookId)).size,
                 totalDuration: Math.round(totalDuration / 60 * 10) / 10,
                 avgDurationPerBook: studentRecords.length > 0 ? Math.round(totalDuration / studentRecords.length) : 0,
-                activityCount: studentRecords.length,
-                avgEngagement
+                activityCount: studentRecords.length
             },
             abilityCoverage,
             preferenceType,
@@ -318,10 +305,7 @@ const DataService = {
             weeklyData.push({
                 week: `第${weeks - i}周`,
                 count: weekRecords.length,
-                duration: weekRecords.reduce((sum, r) => sum + r.duration, 0),
-                avgEngagement: weekRecords.length > 0
-                    ? Math.round(weekRecords.reduce((sum, r) => sum + (r.engagement || 0), 0) / weekRecords.length)
-                    : 0
+                duration: weekRecords.reduce((sum, r) => sum + r.duration, 0)
             });
         }
 
