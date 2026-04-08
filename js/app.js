@@ -425,9 +425,7 @@ const App = {
                 bookTypes: MockData.bookTypes,
                 abilityDistribution: MockData.abilityDistribution,
                 weeklyActivity: MockData.weeklyActivity,
-                classRanking: MockData.classRanking,
                 teacherRanking: MockData.teacherRanking,
-                parentReading: MockData.parentReading,
                 bookRanking: MockData.bookRanking
             };
         } else if (this.currentRole === 'principal') {
@@ -447,9 +445,7 @@ const App = {
                 })),
                 abilityDistribution: MockData.abilityDistribution, // 能力分布暂时复用全局
                 weeklyActivity: MockData.weeklyActivity, // 近七日活动暂时复用全局
-                classRanking: MockData.classRanking, // 班级排名暂时复用全局
                 teacherRanking: MockData.teacherRanking, // 教师排名暂时复用全局
-                parentReading: MockData.parentReading, // 家长阅读暂时复用全局
                 bookRanking: MockData.bookRanking // 绘本排名暂时复用全局
             };
         }
@@ -459,9 +455,7 @@ const App = {
             bookTypes: MockData.bookTypes,
             abilityDistribution: MockData.abilityDistribution,
             weeklyActivity: MockData.weeklyActivity,
-            classRanking: MockData.classRanking,
             teacherRanking: MockData.teacherRanking,
-            parentReading: MockData.parentReading,
             bookRanking: MockData.bookRanking
         };
     },
@@ -474,11 +468,8 @@ const App = {
         const totalDuration = activities.length * 0.5;
         const participantCount = activities.reduce((sum, item) => sum + (item.studentCount || 0), 0);
         const weeklyActivity = this.buildOverviewActivitySeries(activities, () => 1);
-        const parentReadingBase = this.buildDailySeries(activities, item => item.studentCount || 0);
-        const classMap = new Map();
         const teacherMap = new Map();
         activities.forEach(item => {
-            classMap.set(item.className, (classMap.get(item.className) || 0) + 1);
             teacherMap.set(item.teacher, (teacherMap.get(item.teacher) || 0) + 1);
         });
 
@@ -496,17 +487,9 @@ const App = {
             })),
             abilityDistribution: source.abilityDistribution,
             weeklyActivity,
-            classRanking: this.buildRanking(classMap, 10, name => ({
-                teacher: MockData.classRanking.find(item => item.name === name)?.teacher || ''
-            })),
             teacherRanking: this.buildRanking(teacherMap, 10, name => ({
                 class: MockData.teacherRanking.find(item => item.name === name)?.class || ''
             })),
-            parentReading: {
-                dates: parentReadingBase.dates,
-                pushCount: parentReadingBase.values.map(value => Math.max(1, Math.round(value / 2))),
-                readCount: parentReadingBase.values.map(value => Math.max(1, Math.round(value / 3)))
-            },
             classUsageComparison: this.currentRole === 'admin' ? this.getAdminClassUsageComparison() : null,
             bookRanking: source.bookRanking.map(item => ({
                 ...item,
@@ -960,13 +943,7 @@ const App = {
             <!-- 图表第二行 -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 ${this.card(this.chartTitle(this.currentRole === 'admin' ? '区域绘本活动次数' : '园所绘本活动次数', 'bg-cyan-500') + '<div id="weekly-activity-chart" class="h-72"></div>')}
-                ${this.card(this.chartTitle('绘本活动次数排名前十班级', 'bg-amber-500') + '<div id="class-ranking-chart" class="h-72"></div>')}
-            </div>
-
-            <!-- 图表第三行 -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 ${this.card(this.chartTitle('绘本活动次数排名前十教师', 'bg-purple-500') + '<div id="teacher-ranking-chart" class="h-72"></div>')}
-                ${this.card(this.chartTitle('绘本活动推送及家长阅读次数', 'bg-rose-500') + '<div id="parent-reading-chart" class="h-72"></div>')}
             </div>
 
             ${this.currentRole === 'admin' ? this.card(this.renderAdminClassUsageComparison(overviewData.classUsageComparison), 'overflow-hidden') : ''}
@@ -1058,7 +1035,8 @@ const App = {
     //  页面2：园所数据（7个标签页）
     // ============================================================
     renderSchoolDataPage() {
-        const tabs = [
+        // 基础标签页（园长和教师可见）
+        const baseTabs = [
             { id: 'overview', label: '数据概述', icon: '📊' },
             { id: 'activities', label: '绘本活动', icon: '📚' },
             { id: 'books', label: '绘本', icon: '📖' },
@@ -1067,30 +1045,50 @@ const App = {
             { id: 'students', label: '幼儿', icon: '👶' }
         ];
 
-        // 角色相关标题和选择器
-        const roleTitleMap = {
-            admin: '全区园所综合数据统计',
-            principal: this.selectedSchool ? `${this.selectedSchool.name}数据统计` : '园所数据统计',
-            teacher: this.selectedClass ? `${this.selectedClass.name}数据统计` : '班级数据统计'
-        };
-
-        // 数据范围选择器（只显示徽章，不显示下拉）
-        let scopeSelector = '';
+        // 教育局管理员：未选学校时只显示全区数据概览和学校筛选，选了学校后显示完整标签
+        let tabs;
         if (this.currentRole === 'admin') {
-            // 教育局：显示全区
-            scopeSelector = `<span class="role-badge admin">👔 全区数据</span>`;
+            if (!this.selectedSchool) {
+                tabs = [
+                    { id: 'overview', label: '全区数据概览', icon: '📊' },
+                    { id: 'schools', label: '学校筛选', icon: '🏫' }
+                ];
+            } else {
+                tabs = baseTabs;
+            }
+        } else {
+            tabs = baseTabs;
+        }
+
+        // 角色相关标题和选择器
+        let titleText;
+        let scopeSelector = '';
+
+        if (this.currentRole === 'admin') {
+            if (this.selectedSchool) {
+                titleText = `${this.selectedSchool.name}数据统计`;
+                scopeSelector = `
+                    <span class="role-badge admin">🏫 ${this.selectedSchool.name}</span>
+                    <button onclick="App.clearSelectedSchool()" class="px-3 py-1.5 rounded-lg bg-slate-600/50 border border-slate-500/30 text-slate-300 text-sm hover:bg-slate-500/50 hover:text-white transition-all flex items-center gap-1.5">
+                        <span>←</span> 返回学校筛选
+                    </button>
+                `;
+            } else {
+                titleText = '全区园所综合数据统计';
+                scopeSelector = `<span class="role-badge admin">👔 全区数据</span>`;
+            }
         } else if (this.currentRole === 'principal') {
-            // 园长：只显示固定徽章
+            titleText = this.selectedSchool ? `${this.selectedSchool.name}数据统计` : '园所数据统计';
             scopeSelector = `<span class="role-badge principal">🏫 ${this.selectedSchool ? this.selectedSchool.name : '本园'}</span>`;
         } else if (this.currentRole === 'teacher') {
-            // 教师：只显示固定徽章
+            titleText = this.selectedClass ? `${this.selectedClass.name}数据统计` : '班级数据统计';
             scopeSelector = `<span class="role-badge teacher">👩‍🏫 ${this.selectedClass ? this.selectedClass.name : '本班'}</span>`;
         }
 
         return `
         <div class="space-y-6">
             <div class="flex items-center justify-between">
-                <h2 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">${roleTitleMap[this.currentRole]}</h2>
+                <h2 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">${titleText}</h2>
                 <div class="flex items-center gap-3">
                     ${scopeSelector}
                 </div>
@@ -1128,16 +1126,7 @@ const App = {
                 header.prepend(grid);
             }
             const title = header.querySelector('h2');
-            if (title && !header.querySelector('.school-hero-kicker')) {
-                const intro = document.createElement('div');
-                intro.className = 'relative space-y-3';
-                intro.innerHTML = `
-                    <div class="school-hero-kicker inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs text-cyan-200">
-                        <span class="w-1.5 h-1.5 rounded-full bg-cyan-300 shadow-[0_0_12px_rgba(103,232,249,0.8)]"></span>
-                        园所数据驾驶舱
-                    </div>
-                `;
-                title.parentNode.insertBefore(intro, title);
+            if (title) {
                 title.className = 'text-2xl lg:text-3xl font-bold bg-gradient-to-r from-white via-cyan-100 to-blue-200 bg-clip-text text-transparent';
                 const scopeWrap = title.nextElementSibling;
                 if (scopeWrap) scopeWrap.classList.add('relative');
@@ -1173,7 +1162,15 @@ const App = {
 
     initSchoolDataPage() {
         this.enhanceSchoolDataLayout();
-        this.renderSchoolTabContent(this.schoolDataTab);
+        // 教育局管理员：默认显示全区数据概览
+        let defaultTab;
+        if (this.currentRole === 'admin') {
+            defaultTab = this.selectedSchool ? 'overview' : 'overview';
+        } else {
+            defaultTab = this.schoolDataTab || 'overview';
+        }
+        this.schoolDataTab = defaultTab;
+        this.renderSchoolTabContent(defaultTab);
     },
 
     renderSchoolTabContent(tabId) {
@@ -1181,6 +1178,7 @@ const App = {
         if (!container) return;
         Charts.dispose();
         switch (tabId) {
+            case 'schools': container.innerHTML = this.renderSchoolsView(); break;
             case 'overview':
                 container.innerHTML = this.renderSchoolOverview();
                 requestAnimationFrame(() => {
@@ -1196,19 +1194,119 @@ const App = {
         }
     },
 
+    // 学校视图（教育局管理员专属）
+    renderSchoolsView() {
+        const schools = MockData.kindergartens;
+        const usageData = MockData.kindergartenClassUsageComparison;
+
+        return `
+        <div class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                ${schools.map(school => {
+                    const usage = usageData.find(u => u.kindergartenId === school.id) || {};
+                    return `
+                    <div class="school-card group relative overflow-hidden rounded-2xl border border-slate-500/30 bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur-sm p-5 hover:border-cyan-400/30 hover:shadow-[0_0_30px_rgba(34,211,238,0.15)] transition-all duration-300">
+                        <!-- 背景装饰 -->
+                        <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-cyan-400/5 to-blue-500/5 rounded-full blur-2xl"></div>
+
+                        <!-- 学校标识 -->
+                        <div class="relative flex items-center gap-3 mb-4">
+                            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-400/20 to-blue-500/20 border border-cyan-400/20 flex items-center justify-center text-2xl shadow-lg">
+                                🏫
+                            </div>
+                            <div class="flex-1">
+                                <h3 class="text-lg font-bold text-white group-hover:text-cyan-200 transition-colors">${school.name}</h3>
+                                <p class="text-xs text-slate-400">${school.district}</p>
+                            </div>
+                        </div>
+
+                        <!-- 基础信息 -->
+                        <div class="relative grid grid-cols-3 gap-3 mb-4">
+                            <div class="bg-slate-700/40 rounded-lg p-3 text-center border border-slate-600/30">
+                                <div class="text-2xl font-bold text-cyan-400">${school.classCount}</div>
+                                <div class="text-xs text-slate-400 mt-1">班级数</div>
+                            </div>
+                            <div class="bg-slate-700/40 rounded-lg p-3 text-center border border-slate-600/30">
+                                <div class="text-2xl font-bold text-emerald-400">${school.studentCount}</div>
+                                <div class="text-xs text-slate-400 mt-1">幼儿数</div>
+                            </div>
+                            <div class="bg-slate-700/40 rounded-lg p-3 text-center border border-slate-600/30">
+                                <div class="text-2xl font-bold text-purple-400">${school.teacherCount}</div>
+                                <div class="text-xs text-slate-400 mt-1">教师数</div>
+                            </div>
+                        </div>
+
+                        <!-- 活动数据 -->
+                        <div class="relative bg-slate-700/30 rounded-xl p-4 border border-slate-600/20">
+                            <div class="text-xs text-slate-400 mb-3 flex items-center gap-2">
+                                <span class="text-amber-400">📊</span> 活动统计
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <div class="text-sm text-slate-400">平均活动次数</div>
+                                    <div class="text-lg font-semibold text-white">${(usage.avgActivityCount || 0).toFixed(1)}<span class="text-xs text-slate-500 ml-1">次/班</span></div>
+                                </div>
+                                <div>
+                                    <div class="text-sm text-slate-400">平均活动时长</div>
+                                    <div class="text-lg font-semibold text-white">${(usage.avgActivityDuration || 0).toFixed(1)}<span class="text-xs text-slate-500 ml-1">h/班</span></div>
+                                </div>
+                                <div>
+                                    <div class="text-sm text-slate-400">设备使用次数</div>
+                                    <div class="text-lg font-semibold text-white">${(usage.avgDeviceUseCount || 0).toFixed(1)}<span class="text-xs text-slate-500 ml-1">次/班</span></div>
+                                </div>
+                                <div>
+                                    <div class="text-sm text-slate-400">平均参与人数</div>
+                                    <div class="text-lg font-semibold text-white">${(usage.avgParticipantCount || 0).toFixed(1)}<span class="text-xs text-slate-500 ml-1">人/次</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 操作按钮 -->
+                        <div class="relative mt-4 flex justify-end">
+                            <button onclick="App.viewSchoolDetail(${school.id})" class="px-4 py-2 rounded-lg bg-cyan-400/10 border border-cyan-400/20 text-cyan-300 text-sm font-medium hover:bg-cyan-400/20 hover:border-cyan-400/30 transition-all flex items-center gap-2">
+                                <span>查看详情</span>
+                                <span class="text-xs">→</span>
+                            </button>
+                        </div>
+                    </div>
+                    `;
+                }).join('')}
+            </div>
+        </div>`;
+    },
+
+    // 查看学校详情
+    viewSchoolDetail(schoolId) {
+        const school = MockData.kindergartens.find(k => k.id === schoolId);
+        if (school) {
+            this.selectedSchool = school;
+            this.schoolDataTab = 'overview';
+            this.loadPage('schoolData');
+        }
+    },
+
+    // 返回学校筛选（教育局管理员）
+    clearSelectedSchool() {
+        this.selectedSchool = null;
+        this.schoolDataTab = 'schools';
+        this.loadPage('schoolData');
+    },
+
     // 园所数据 - 数据概述
     renderSchoolOverview() {
         const d = this.getSchoolOverviewDataForCurrentRange();
         const recommendations = this.getSchoolOverviewBookRecommendations();
+        // 教育局管理员显示"全区"，其他角色显示"园所"
+        const scopeLabel = this.currentRole === 'admin' && !this.selectedSchool ? '全区' : '园所';
         return `
         <div class="space-y-6">
             ${this.renderDateFilterBar('schoolOverview')}
             <div>
-                ${this.chartTitle('园所绘本活动概况', 'bg-blue-500')}
+                ${this.chartTitle(scopeLabel + '绘本活动概览', 'bg-blue-500')}
                 <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     ${this.miniStat('绘本活动总次数', d.activityTotal, 'blue')}
                     ${this.miniStat('绘本活动总时长', d.activityDuration + 'h', 'emerald')}
-                    ${this.miniStat('绘本总数', d.bookTotal, 'purple')}
+                    ${this.miniStat('绘本阅读总数', d.bookTotal, 'purple')}
                     ${this.miniStat('绘本阅读次数', d.bookReadCount, 'amber')}
                 </div>
             </div>
@@ -1225,7 +1323,7 @@ const App = {
             </div>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
-                    ${this.chartTitle('园所设备概况', 'bg-cyan-500')}
+                    ${this.chartTitle(scopeLabel + '设备概况', 'bg-cyan-500')}
                     <div class="grid grid-cols-3 gap-3">
                         ${this.miniStat('设备总数', d.deviceTotal, 'cyan')}
                         ${this.miniStat('使用次数', d.deviceUseCount, 'cyan')}
@@ -1233,7 +1331,7 @@ const App = {
                     </div>
                 </div>
                 <div>
-                    ${this.chartTitle('园所基础信息', 'bg-amber-500')}
+                    ${this.chartTitle(scopeLabel + '基础信息', 'bg-amber-500')}
                     <div class="grid grid-cols-3 gap-3">
                         ${this.miniStat('班级总数', d.classTotal, 'amber')}
                         ${this.miniStat('教师总数', d.teacherTotal, 'amber')}
@@ -1243,7 +1341,7 @@ const App = {
             </div>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div class="bg-slate-700/40 rounded-xl p-4 border border-slate-500/30">
-                    <h4 class="text-sm font-medium text-slate-300 mb-2">绘本分类阅读占比</h4>
+                    <h4 class="text-sm font-medium text-slate-300 mb-2">绘本分类阅读次数占比</h4>
                     <div id="school-category-pie" class="h-64"></div>
                 </div>
                 <div class="bg-slate-700/40 rounded-xl p-4 border border-slate-500/30">
@@ -2108,23 +2206,7 @@ const App = {
                     `)}
                 </div>
 
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <!-- 互动模式分析 -->
-                    ${this.card(`
-                        <div class="flex items-center gap-2 mb-4">
-                            <span class="text-purple-400 text-xl">👥</span>
-                            <h3 class="text-lg font-semibold text-white">师生互动模式</h3>
-                        </div>
-                        <div id="ai-interaction-chart" style="height: 260px;"></div>
-                        <div class="mt-4 space-y-2">
-                            ${data.interactionPatterns.patterns.map(p => `
-                                <div class="flex items-start gap-2 text-sm">
-                                    <span class="text-purple-400 mt-0.5">•</span>
-                                    <span class="text-slate-300">${p}</span>
-                                </div>
-                            `).join('')}
-                        </div>
-                    `)}
+                <div>
                     <!-- 最佳实践 -->
                     ${this.card(`
                         <div class="flex items-center gap-2 mb-4">
@@ -2181,7 +2263,6 @@ const App = {
         const studentData = MockData.aiAnalysis.student[this.aiSelectedStudent] || MockData.aiAnalysis.student[1];
         const cls = this.selectedClass || MockData.classes[0];
         const growth = studentData.growthPath;
-        const learningStyle = studentData.learningStyle;
 
         return `
             <div class="space-y-6">
@@ -2195,7 +2276,7 @@ const App = {
                     `).join('')}
                 </div>
 
-                <!-- 学生基本信息 + 学习风格 -->
+                <!-- 学生基本信息 -->
                 ${this.card(`
                     <div class="flex flex-col lg:flex-row items-start lg:items-center gap-6">
                         <div class="w-20 h-20 bg-gradient-to-br from-purple-500/30 to-pink-500/30 rounded-2xl flex items-center justify-center text-3xl border border-purple-500/20">
@@ -2206,67 +2287,17 @@ const App = {
                                 <h3 class="text-xl font-bold text-white">${studentData.name}</h3>
                                 <span class="text-slate-500 text-sm">${studentData.code}</span>
                             </div>
-                            <div class="text-slate-400 text-sm mb-3">${cls.name}</div>
-                            <div class="flex flex-wrap gap-2">
-                                ${studentData.personalityTags.map(t => `<span class="px-3 py-1 rounded-full text-xs bg-purple-500/15 text-purple-400 border border-purple-500/20">${t}</span>`).join('')}
-                            </div>
-                        </div>
-                        <div class="w-full lg:w-64 p-4 rounded-xl bg-purple-500/10 border border-purple-500/20">
-                            <div class="text-purple-400 text-sm font-medium mb-2">学习风格识别</div>
-                            <div class="text-white font-bold mb-1">${learningStyle.type}</div>
-                            <p class="text-slate-400 text-xs">${learningStyle.description}</p>
+                            <div class="text-slate-400 text-sm">${cls.name}</div>
                         </div>
                     </div>
                 `)}
 
+                <!-- 成长轨迹 + 阅读记录 -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <!-- 成长轨迹 - 能力发展时间轴 -->
                     ${this.card(`
                         ${this.chartTitle('成长轨迹：能力发展时间轴')}
                         <div id="ai-growth-chart" style="height: 300px;"></div>
                     `)}
-                    <!-- 学习风格偏好 -->
-                    ${this.card(`
-                        <div class="flex items-center gap-2 mb-4">
-                            <span class="text-cyan-400 text-xl">🎯</span>
-                            <h3 class="text-lg font-semibold text-white">学习偏好分析</h3>
-                        </div>
-                        <div class="mb-4">
-                            <div class="text-sm text-slate-300 mb-3">优势学习方式</div>
-                            <div class="flex flex-wrap gap-2">
-                                ${learningStyle.strengths.map(s => `
-                                    <span class="px-3 py-2 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 text-sm">${s}</span>
-                                `).join('')}
-                            </div>
-                        </div>
-                        <div class="pt-4 border-t border-slate-500/20">
-                            <div class="text-sm text-slate-300 mb-3">推荐绘本类型</div>
-                            <div class="flex flex-wrap gap-2">
-                                ${learningStyle.preferences.map(p => `
-                                    <span class="px-3 py-2 rounded-lg bg-blue-500/15 text-blue-400 border border-blue-500/20 text-sm">${p}</span>
-                                `).join('')}
-                            </div>
-                        </div>
-                    `)}
-                </div>
-
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <!-- 社交参与分析 -->
-                    ${this.card(`
-                        <div class="flex items-center gap-2 mb-4">
-                            <span class="text-amber-400 text-xl">🤝</span>
-                            <h3 class="text-lg font-semibold text-white">社交参与分析</h3>
-                        </div>
-                        <div class="flex flex-wrap gap-2">
-                            ${studentData.socialEngagement.metrics.map(m => `
-                                <span class="px-3 py-2 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/20 text-sm">${m.name}</span>
-                            `).join('')}
-                        </div>
-                        <div class="mt-4 pt-4 border-t border-slate-500/20">
-                            <p class="text-slate-400 text-sm">${studentData.socialEngagement.summary}</p>
-                        </div>
-                    `)}
-                    <!-- 最近阅读记录 -->
                     ${this.card(`
                         ${this.chartTitle('阅读记录')}
                         <div class="space-y-3">
@@ -2521,6 +2552,7 @@ const App = {
             });
             Charts.instances.push(chart);
         }
+
     },
 
     // 初始化学生分析图表

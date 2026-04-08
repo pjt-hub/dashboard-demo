@@ -84,7 +84,7 @@ const SchoolData = {
                 </h2>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                     <div class="bg-slate-800/40 backdrop-blur rounded-2xl p-5 border border-slate-700/50">
-                        <div class="text-sm text-slate-400 mb-1">绘本总数</div>
+                        <div class="text-sm text-slate-400 mb-1">绘本阅读总数</div>
                         <div class="text-2xl font-bold text-white">${d.bookTotal}<span class="text-sm text-slate-400 ml-1">本</span></div>
                     </div>
                     <div class="bg-slate-800/40 backdrop-blur rounded-2xl p-5 border border-slate-700/50">

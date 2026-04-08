@@ -40,17 +40,13 @@ const Charts = {
             bookTypes: MockData.bookTypes,
             abilityDistribution: MockData.abilityDistribution,
             weeklyActivity: MockData.weeklyActivity,
-            classRanking: MockData.classRanking,
             teacherRanking: MockData.teacherRanking,
-            parentReading: MockData.parentReading,
             classUsageComparison: null
         };
         this.safeInit(() => this.initBookTypePie(data.bookTypes));
         this.safeInit(() => this.initAbilityRadar(data.abilityDistribution));
         this.safeInit(() => this.initWeeklyActivityBar(data.weeklyActivity));
-        this.safeInit(() => this.initClassRankingBar(data.classRanking));
         this.safeInit(() => this.initTeacherRankingBar(data.teacherRanking));
-        this.safeInit(() => this.initParentReadingLine(data.parentReading));
         this.safeInit(() => this.initClassUsageCompareRadar(data.classUsageComparison));
     },
 
@@ -175,35 +171,6 @@ const Charts = {
         window.addEventListener('resize', () => chart.resize());
     },
 
-    // 班级排名 - 横向柱状图
-    initClassRankingBar(customData = null) {
-        const chart = this.createChart('class-ranking-chart');
-        if (!chart) return;
-        const data = (customData || MockData.classRanking).slice().reverse();
-        chart.setOption({
-            backgroundColor: 'transparent',
-            tooltip: { ...this.darkTheme.tooltip, trigger: 'axis', axisPointer: { type: 'shadow' } },
-            grid: { left: 70, right: 50, top: 10, bottom: 10 },
-            xAxis: { type: 'value', axisLabel: { color: '#8896a6', fontSize: 11 }, splitLine: { lineStyle: { color: 'rgba(85,100,120,0.3)' } } },
-            yAxis: { type: 'category', data: data.map(d => d.name), axisLabel: { color: '#a0aec0', fontSize: 11 }, axisLine: { show: false }, axisTick: { show: false } },
-            series: [{
-                type: 'bar', barWidth: '50%',
-                data: data.map((d, i) => ({
-                    value: d.count,
-                    itemStyle: {
-                        borderRadius: [0, 4, 4, 0],
-                        color: i >= data.length - 3
-                            ? new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#f59e0b' }, { offset: 1, color: '#f97316' }])
-                            : new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#3b82f6' }, { offset: 1, color: '#60a5fa' }]),
-                        shadowBlur: 6, shadowColor: 'rgba(59,130,246,0.15)'
-                    }
-                })),
-                label: { show: true, position: 'right', color: '#a0aec0', fontSize: 11, formatter: '{c}次' }
-            }]
-        });
-        window.addEventListener('resize', () => chart.resize());
-    },
-
     // 教师排名 - 横向柱状图
     initTeacherRankingBar(customData = null) {
         const chart = this.createChart('teacher-ranking-chart');
@@ -229,36 +196,6 @@ const Charts = {
                 })),
                 label: { show: true, position: 'right', color: '#a0aec0', fontSize: 11, formatter: '{c}次' }
             }]
-        });
-        window.addEventListener('resize', () => chart.resize());
-    },
-
-    // 家长阅读趋势 - 折线图
-    initParentReadingLine(customData = null) {
-        const chart = this.createChart('parent-reading-chart');
-        if (!chart) return;
-        const data = customData || MockData.parentReading;
-        chart.setOption({
-            backgroundColor: 'transparent',
-            tooltip: { ...this.darkTheme.tooltip, trigger: 'axis' },
-            legend: { bottom: 0, textStyle: { color: '#a0aec0', fontSize: 12 } },
-            grid: { left: 40, right: 20, top: 20, bottom: 40 },
-            xAxis: { type: 'category', data: data.dates, axisLabel: { color: '#8896a6', fontSize: 11 }, axisLine: { lineStyle: { color: 'rgba(85,100,120,0.35)' } }, axisTick: { show: false } },
-            yAxis: { type: 'value', axisLabel: { color: '#8896a6', fontSize: 11 }, splitLine: { lineStyle: { color: 'rgba(85,100,120,0.3)' } } },
-            series: [
-                {
-                    name: '推送次数', type: 'line', data: data.pushCount, smooth: true,
-                    lineStyle: { color: '#3b82f6', width: 2, shadowBlur: 8, shadowColor: 'rgba(59,130,246,0.3)' },
-                    itemStyle: { color: '#3b82f6' },
-                    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(59,130,246,0.2)' }, { offset: 1, color: 'rgba(59,130,246,0)' }]) }
-                },
-                {
-                    name: '家长阅读次数', type: 'line', data: data.readCount, smooth: true,
-                    lineStyle: { color: '#f59e0b', width: 2, shadowBlur: 8, shadowColor: 'rgba(245,158,11,0.3)' },
-                    itemStyle: { color: '#f59e0b' },
-                    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(245,158,11,0.2)' }, { offset: 1, color: 'rgba(245,158,11,0)' }]) }
-                }
-            ]
         });
         window.addEventListener('resize', () => chart.resize());
     },
