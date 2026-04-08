@@ -1884,116 +1884,170 @@ const App = {
 
     // 园所AI分析内容
     renderSchoolAiAnalysis() {
-        const data = MockData.aiAnalysis.school;
+        // 使用数据服务计算真实数据
+        const schoolData = MockData.schoolData.overview;
+        const classes = MockData.classes;
+        const students = MockData.students;
+        const readingRecords = MockData.readingRecords || [];
+        const books = MockData.books || [];
+
+        // 计算能力分布
+        const abilityDistribution = DataService.calculateAbilityDistribution(readingRecords, books);
+
+        // 计算类型分布
+        const typeDistribution = DataService.calculateTypeDistribution(readingRecords, books);
+
+        // 准备AI分析数据
+        const analysisData = DataService.prepareSchoolAnalysisData(schoolData, classes, students, readingRecords, books);
 
         return `
             <div class="space-y-6">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <!-- 趋势洞察 - 周月对比 -->
-                    ${this.card(`
-                        ${this.chartTitle('趋势洞察：周/月活动对比')}
-                        <div id="ai-trend-chart" style="height: 300px;"></div>
-                    `)}
-                    <!-- 月度趋势预测 -->
-                    ${this.card(`
-                        ${this.chartTitle('趋势与预测')}
-                        <div id="ai-monthly-chart" style="height: 300px;"></div>
-                    `)}
+                <!-- 数据概览 -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    ${this.miniStat('活动总数', analysisData.summary.totalActivities, 'blue')}
+                    ${this.miniStat('参与幼儿', `${analysisData.summary.participatingStudents}/${analysisData.summary.totalStudents}`, 'emerald')}
+                    ${this.miniStat('阅读时长', `${analysisData.summary.totalDuration}h`, 'purple')}
+                    ${this.miniStat('人均时长', `${analysisData.summary.avgDurationPerStudent}分钟`, 'amber')}
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <!-- 异常检测 -->
+                    <!-- 能力维度分布 -->
                     ${this.card(`
                         <div class="flex items-center gap-2 mb-4">
-                            <span class="text-amber-400 text-xl">⚠️</span>
-                            <h3 class="text-lg font-semibold text-white">异常检测预警</h3>
+                            <span class="text-cyan-400 text-xl">🎯</span>
+                            <h3 class="text-lg font-semibold text-white">能力维度分布</h3>
                         </div>
-                        <div class="space-y-3">
-                            ${data.anomalyDetection.alerts.map(alert => `
-                                <div class="flex items-start gap-3 p-3 rounded-xl ${alert.level === 'high' ? 'bg-red-500/10 border border-red-500/20' : alert.level === 'medium' ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-blue-500/10 border border-blue-500/20'}">
-                                    <span class="${alert.level === 'high' ? 'text-red-400' : alert.level === 'medium' ? 'text-amber-400' : 'text-blue-400'}">${alert.icon}</span>
-                                    <div class="flex-1">
-                                        <div class="text-white font-medium">${alert.title}</div>
-                                        <div class="text-slate-400 text-sm">${alert.description}</div>
-                                    </div>
-                                </div>
-                            `).join('')}
-                        </div>
-                        <div class="mt-4 pt-4 border-t border-slate-500/20">
-                            <div class="text-sm text-slate-300 mb-3">活跃度异常班级</div>
-                            <div class="space-y-2">
-                                ${data.anomalyDetection.lowActivityClasses.map(c => `
-                                    <div class="flex items-center justify-between p-2 rounded-lg bg-slate-500/20">
-                                        <span class="text-white">${c.name}</span>
-                                        <span class="text-sm text-red-400">活跃度 ${c.activityRate}%</span>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
+                        <div id="ai-ability-chart" style="height: 280px;"></div>
                     `)}
-                    <!-- 预测分析 -->
+                    <!-- 绘本类型分布 -->
                     ${this.card(`
                         <div class="flex items-center gap-2 mb-4">
-                            <span class="text-cyan-400 text-xl">📊</span>
-                            <h3 class="text-lg font-semibold text-white">预测分析</h3>
+                            <span class="text-purple-400 text-xl">📚</span>
+                            <h3 class="text-lg font-semibold text-white">绘本类型分布</h3>
                         </div>
-                        <div class="mb-4">
-                            <div class="text-sm text-slate-300 mb-2">未来一周活动预测</div>
-                            <div class="grid grid-cols-7 gap-2">
-                                ${data.prediction.nextWeekForecast.map(d => `
-                                    <div class="text-center p-2 rounded-lg bg-slate-500/20">
-                                        <div class="text-slate-400 text-xs mb-1">${d.day}</div>
-                                        <div class="text-white font-bold">${d.predicted}</div>
-                                        <div class="text-xs ${d.change > 0 ? 'text-emerald-400' : 'text-red-400'}">${d.change > 0 ? '+' : ''}${d.change}%</div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                        <div class="pt-4 border-t border-slate-500/20">
-                            <div class="text-sm text-slate-300 mb-3">最佳活动时段推荐</div>
-                            <div class="space-y-2">
-                                ${data.prediction.bestPeriods.map(p => `
-                                    <div class="flex items-center justify-between p-2 rounded-lg bg-slate-500/20">
-                                        <span class="text-white">${p.time}</span>
-                                        <div class="flex items-center gap-2">
-                                            <span class="text-sm text-slate-400">参与率</span>
-                                            <span class="text-sm font-medium text-emerald-400">${p.participationRate}%</span>
-                                        </div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
+                        <div id="ai-type-chart" style="height: 280px;"></div>
                     `)}
                 </div>
 
-                <!-- AI深度建议 -->
+                <!-- 班级活动对比 -->
                 ${this.card(`
                     <div class="flex items-center gap-2 mb-4">
-                        <span class="text-blue-400 text-xl">🤖</span>
-                        <h3 class="text-lg font-semibold text-white">AI深度分析与建议</h3>
+                        <span class="text-amber-400 text-xl">📊</span>
+                        <h3 class="text-lg font-semibold text-white">班级活动对比</h3>
                     </div>
-                    <div class="space-y-4">
-                        ${data.deepSuggestions.map((s, i) => `
-                            <div class="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-slate-500/30">
+                                    <th class="text-left py-3 px-4 text-slate-400 font-medium">班级</th>
+                                    <th class="text-center py-3 px-4 text-slate-400 font-medium">活动次数</th>
+                                    <th class="text-center py-3 px-4 text-slate-400 font-medium">人均时长</th>
+                                    <th class="text-center py-3 px-4 text-slate-400 font-medium">参与率</th>
+                                    <th class="text-center py-3 px-4 text-slate-400 font-medium">状态</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${analysisData.classComparison.map(c => `
+                                    <tr class="border-b border-slate-500/20 hover:bg-slate-500/10">
+                                        <td class="py-3 px-4 text-white font-medium">${c.className}</td>
+                                        <td class="py-3 px-4 text-center text-slate-300">${c.activityCount}</td>
+                                        <td class="py-3 px-4 text-center text-slate-300">${c.avgDuration}分钟</td>
+                                        <td class="py-3 px-4 text-center">
+                                            <span class="${c.participationRate >= 80 ? 'text-emerald-400' : c.participationRate >= 50 ? 'text-amber-400' : 'text-red-400'}">${c.participationRate}%</span>
+                                        </td>
+                                        <td class="py-3 px-4 text-center">
+                                            ${c.activityCount === 0 ? '<span class="px-2 py-1 rounded-full text-xs bg-red-500/20 text-red-400">需关注</span>' :
+                                              c.participationRate >= 80 ? '<span class="px-2 py-1 rounded-full text-xs bg-emerald-500/20 text-emerald-400">良好</span>' :
+                                              '<span class="px-2 py-1 rounded-full text-xs bg-amber-500/20 text-amber-400">一般</span>'}
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `)}
+
+                <!-- AI分析结果 -->
+                <div id="ai-analysis-result">
+                    ${this.renderAiLoading()}
+                </div>
+            </div>
+        `;
+    },
+
+    // AI加载中状态
+    renderAiLoading() {
+        return `
+            ${this.card(`
+                <div class="flex items-center gap-2 mb-4">
+                    <span class="text-blue-400 text-xl">🤖</span>
+                    <h3 class="text-lg font-semibold text-white">AI智能分析</h3>
+                </div>
+                <div class="flex items-center justify-center py-8">
+                    <div class="animate-spin w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full mr-3"></div>
+                    <span class="text-slate-400">AI正在分析数据...</span>
+                </div>
+            `)}
+        `;
+    },
+
+    // 渲染AI分析结果
+    renderAiAnalysisResult(result) {
+        return `
+            ${this.card(`
+                <div class="flex items-center gap-2 mb-4">
+                    <span class="text-blue-400 text-xl">🤖</span>
+                    <h3 class="text-lg font-semibold text-white">AI智能分析</h3>
+                </div>
+
+                <!-- 整体评价 -->
+                <div class="mb-6 p-4 rounded-xl bg-slate-700/30 border border-slate-500/20">
+                    <div class="text-sm text-slate-400 mb-2">📊 整体评价</div>
+                    <p class="text-slate-200">${result.overallAssessment}</p>
+                </div>
+
+                <!-- 发现的问题 -->
+                <div class="mb-6">
+                    <div class="text-sm text-slate-400 mb-3">⚠️ 发现的问题</div>
+                    <div class="space-y-3">
+                        ${result.problems.map((p, i) => `
+                            <div class="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
                                 <div class="flex items-center gap-2 mb-2">
-                                    <span class="w-7 h-7 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-sm font-medium">${i + 1}</span>
-                                    <span class="text-white font-medium">${s.title}</span>
-                                    <span class="px-2 py-0.5 rounded-full text-xs ${s.priority === 'high' ? 'bg-red-500/20 text-red-400' : s.priority === 'medium' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}">${s.priority === 'high' ? '高优先' : s.priority === 'medium' ? '中优先' : '建议'}</span>
+                                    <span class="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-sm">${i + 1}</span>
+                                    <span class="text-white font-medium">${p.title}</span>
                                 </div>
-                                <p class="text-slate-300 text-sm mb-3">${s.description}</p>
-                                <div class="space-y-1">
-                                    ${s.actionItems.map(item => `
-                                        <div class="flex items-start gap-2 text-sm">
-                                            <span class="text-blue-400 mt-0.5">▸</span>
-                                            <span class="text-slate-400">${item}</span>
-                                        </div>
-                                    `).join('')}
-                                </div>
+                                <p class="text-slate-300 text-sm">${p.description}</p>
+                                ${p.dataEvidence ? `<p class="text-slate-500 text-xs mt-2">数据依据：${p.dataEvidence}</p>` : ''}
                             </div>
                         `).join('')}
                     </div>
-                `)}
-            </div>
+                </div>
+
+                <!-- 改进建议 -->
+                <div>
+                    <div class="text-sm text-slate-400 mb-3">💡 改进建议</div>
+                    <div class="space-y-3">
+                        ${result.suggestions.map((s, i) => `
+                            <div class="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-sm">${i + 1}</span>
+                                    <span class="text-white font-medium">${s.content}</span>
+                                </div>
+                                ${s.steps && s.steps.length > 0 ? `
+                                    <div class="mt-2 space-y-1">
+                                        ${s.steps.map(step => `
+                                            <div class="flex items-start gap-2 text-sm">
+                                                <span class="text-blue-400 mt-0.5">▸</span>
+                                                <span class="text-slate-400">${step}</span>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `)}
         `;
     },
 
@@ -2260,9 +2314,29 @@ const App = {
 
     // 学生AI分析内容
     renderStudentAiAnalysis(students) {
-        const studentData = MockData.aiAnalysis.student[this.aiSelectedStudent] || MockData.aiAnalysis.student[1];
+        // 使用真实数据
+        const student = students.find(s => s.id === this.aiSelectedStudent) || students[0];
         const cls = this.selectedClass || MockData.classes[0];
-        const growth = studentData.growthPath;
+        const readingRecords = MockData.readingRecords || [];
+        const books = MockData.books || [];
+
+        // 获取该学生的阅读记录
+        const studentRecords = readingRecords.filter(r => r.studentId === this.aiSelectedStudent);
+
+        // 计算能力覆盖
+        const abilityCoverage = DataService.calculateAbilityDistribution(studentRecords, books, [this.aiSelectedStudent]);
+
+        // 计算偏好类型
+        const preferenceType = DataService.calculateTypeDistribution(studentRecords, books, [this.aiSelectedStudent]);
+
+        // 最近阅读
+        const recentBooks = studentRecords
+            .sort((a, b) => new Date(b.date) - new Date(a.date))
+            .slice(0, 5)
+            .map(r => {
+                const book = books.find(b => b.id === r.bookId);
+                return { ...r, bookName: book ? book.name : '未知', bookType: book ? book.type : '未知' };
+            });
 
         return `
             <div class="space-y-6">
@@ -2284,119 +2358,173 @@ const App = {
                         </div>
                         <div class="flex-1">
                             <div class="flex items-center gap-3 mb-2">
-                                <h3 class="text-xl font-bold text-white">${studentData.name}</h3>
-                                <span class="text-slate-500 text-sm">${studentData.code}</span>
+                                <h3 class="text-xl font-bold text-white">${student.name}</h3>
+                                <span class="text-slate-500 text-sm">${student.code || ''}</span>
                             </div>
                             <div class="text-slate-400 text-sm">${cls.name}</div>
+                            <div class="mt-2 flex flex-wrap gap-2">
+                                <span class="text-slate-400 text-sm">阅读${studentRecords.length}本绘本</span>
+                                <span class="text-slate-500">|</span>
+                                <span class="text-slate-400 text-sm">总时长${Math.round(studentRecords.reduce((s, r) => s + r.duration, 0) / 60 * 10) / 10}小时</span>
+                            </div>
                         </div>
                     </div>
                 `)}
 
-                <!-- 成长轨迹 + 阅读记录 -->
+                <!-- 能力分布 + 阅读记录 -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     ${this.card(`
-                        ${this.chartTitle('成长轨迹：能力发展时间轴')}
-                        <div id="ai-growth-chart" style="height: 300px;"></div>
+                        <div class="flex items-center gap-2 mb-4">
+                            <span class="text-cyan-400 text-xl">🎯</span>
+                            <h3 class="text-lg font-semibold text-white">能力维度发展</h3>
+                        </div>
+                        <div id="ai-student-ability-chart" style="height: 280px;"></div>
                     `)}
                     ${this.card(`
-                        ${this.chartTitle('阅读记录')}
+                        <div class="flex items-center gap-2 mb-4">
+                            <span class="text-amber-400 text-xl">📚</span>
+                            <h3 class="text-lg font-semibold text-white">最近阅读记录</h3>
+                        </div>
                         <div class="space-y-3">
-                            ${studentData.recentBooks.map(b => `
+                            ${recentBooks.length > 0 ? recentBooks.map(b => `
                                 <div class="flex items-center gap-3 p-3 rounded-xl bg-slate-500/20 border border-slate-500/20">
                                     <div class="w-10 h-14 bg-gradient-to-br from-amber-500/20 to-orange-500/20 rounded-lg flex items-center justify-center text-lg border border-amber-500/20">
                                         📖
                                     </div>
                                     <div class="flex-1">
-                                        <div class="text-white font-medium">${b.name}</div>
+                                        <div class="text-white font-medium">${b.bookName}</div>
                                         <div class="flex items-center gap-2 text-xs text-slate-400">
-                                            <span class="px-2 py-0.5 rounded-full bg-slate-500/30">${b.type}</span>
-                                            <span>${b.readTime}</span>
-                                            <span class="text-emerald-400">${b.engagement}% 投入度</span>
+                                            <span class="px-2 py-0.5 rounded-full bg-slate-500/30">${b.bookType}</span>
+                                            <span>${b.date}</span>
+                                            <span class="text-emerald-400">${b.engagement || 80}% 投入度</span>
                                         </div>
                                     </div>
-                                    <div class="text-slate-400 text-sm">${b.duration}</div>
+                                    <div class="text-slate-400 text-sm">${b.duration}分钟</div>
                                 </div>
-                            `).join('')}
+                            `).join('') : '<div class="text-slate-400 text-center py-4">暂无阅读记录</div>'}
                         </div>
                     `)}
                 </div>
 
-                <!-- 个性化培养方案 -->
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    ${this.card(`
-                        <div class="flex items-center gap-2 mb-4">
-                            <span class="text-purple-400 text-xl">📋</span>
-                            <h3 class="text-lg font-semibold text-white">个性化培养计划</h3>
-                        </div>
-                        <div class="space-y-4">
-                            <div>
-                                <div class="flex items-center gap-2 mb-2">
-                                    <span class="px-2 py-1 rounded-full text-xs bg-emerald-500/20 text-emerald-400">短期目标</span>
-                                    <span class="text-slate-400 text-sm">1-2周</span>
-                                </div>
-                                <ul class="space-y-2 pl-4">
-                                    ${studentData.personalizedPlan.shortTerm.map(item => `
-                                        <li class="flex items-start gap-2 text-slate-300 text-sm">
-                                            <span class="text-emerald-400 mt-0.5">▸</span>
-                                            <span>${item}</span>
-                                        </li>
-                                    `).join('')}
-                                </ul>
-                            </div>
-                            <div class="h-px bg-slate-500/20"></div>
-                            <div>
-                                <div class="flex items-center gap-2 mb-2">
-                                    <span class="px-2 py-1 rounded-full text-xs bg-blue-500/20 text-blue-400">中期目标</span>
-                                    <span class="text-slate-400 text-sm">1个月</span>
-                                </div>
-                                <ul class="space-y-2 pl-4">
-                                    ${studentData.personalizedPlan.mediumTerm.map(item => `
-                                        <li class="flex items-start gap-2 text-slate-300 text-sm">
-                                            <span class="text-blue-400 mt-0.5">▸</span>
-                                            <span>${item}</span>
-                                        </li>
-                                    `).join('')}
-                                </ul>
-                            </div>
-                            <div class="h-px bg-slate-500/20"></div>
-                            <div>
-                                <div class="flex items-center gap-2 mb-2">
-                                    <span class="px-2 py-1 rounded-full text-xs bg-purple-500/20 text-purple-400">长期方向</span>
-                                    <span class="text-slate-400 text-sm">1学期</span>
-                                </div>
-                                <ul class="space-y-2 pl-4">
-                                    ${studentData.personalizedPlan.longTerm.map(item => `
-                                        <li class="flex items-start gap-2 text-slate-300 text-sm">
-                                            <span class="text-purple-400 mt-0.5">▸</span>
-                                            <span>${item}</span>
-                                        </li>
-                                    `).join('')}
-                                </ul>
-                            </div>
-                        </div>
-                    `)}
-                    <!-- 家园共育建议 -->
-                    ${this.card(`
-                        <div class="flex items-center gap-2 mb-4">
-                            <span class="text-cyan-400 text-xl">🏠</span>
-                            <h3 class="text-lg font-semibold text-white">家园共育建议</h3>
-                        </div>
-                        <p class="text-slate-400 text-sm mb-4">给家长的配合建议</p>
-                        <div class="space-y-3">
-                            ${studentData.homeCollaboration.map((h, i) => `
-                                <div class="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
-                                    <div class="flex items-center gap-2 mb-1">
-                                        <span class="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-sm font-medium">${i + 1}</span>
-                                        <span class="text-white font-medium">${h.title}</span>
-                                    </div>
-                                    <p class="text-slate-300 text-sm">${h.description}</p>
-                                </div>
-                            `).join('')}
-                        </div>
-                    `)}
+                <!-- AI分析结果 -->
+                <div id="ai-student-analysis-result">
+                    ${this.renderStudentAiLoading()}
                 </div>
             </div>
         `;
+    },
+
+    // 学生AI加载中状态
+    renderStudentAiLoading() {
+        return `
+            ${this.card(`
+                <div class="flex items-center gap-2 mb-4">
+                    <span class="text-blue-400 text-xl">🤖</span>
+                    <h3 class="text-lg font-semibold text-white">AI智能分析</h3>
+                </div>
+                <div class="flex items-center justify-center py-8">
+                    <div class="animate-spin w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full mr-3"></div>
+                    <span class="text-slate-400">AI正在生成个性化分析...</span>
+                </div>
+            `)}
+        `;
+    },
+
+    // 渲染学生AI分析结果
+    renderStudentAiAnalysisResult(result) {
+        return `
+            ${this.card(`
+                <div class="flex items-center gap-2 mb-4">
+                    <span class="text-blue-400 text-xl">🤖</span>
+                    <h3 class="text-lg font-semibold text-white">AI智能分析</h3>
+                </div>
+
+                <!-- 学生画像 -->
+                <div class="mb-6 p-4 rounded-xl bg-slate-700/30 border border-slate-500/20">
+                    <div class="text-sm text-slate-400 mb-2">👤 学生画像</div>
+                    <p class="text-slate-200">${result.portrait}</p>
+                </div>
+
+                <!-- 优势与不足 -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                    <div class="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                        <div class="text-sm text-slate-400 mb-3">✅ 优势能力</div>
+                        <div class="space-y-2">
+                            ${result.strengths.map(s => `
+                                <div class="flex items-center gap-2">
+                                    <span class="text-emerald-400">•</span>
+                                    <span class="text-slate-200 text-sm">${s}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <div class="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                        <div class="text-sm text-slate-400 mb-3">📈 待提升能力</div>
+                        <div class="space-y-2">
+                            ${result.weaknesses.map(w => `
+                                <div class="flex items-center gap-2">
+                                    <span class="text-amber-400">•</span>
+                                    <span class="text-slate-200 text-sm">${w}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 短期培养建议 -->
+                <div class="mb-6">
+                    <div class="text-sm text-slate-400 mb-3">📚 短期培养建议</div>
+                    <div class="space-y-3">
+                        ${result.suggestions.map((s, i) => `
+                            <div class="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-sm">${i + 1}</span>
+                                    <span class="text-white font-medium text-sm">${s.content}</span>
+                                </div>
+                                ${s.recommendedType ? `<span class="text-slate-500 text-xs ml-8">推荐类型：${s.recommendedType}</span>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- 家园共育建议 -->
+                <div>
+                    <div class="text-sm text-slate-400 mb-3">🏠 家园共育建议</div>
+                    <div class="space-y-2">
+                        ${result.homeCollaboration.map(h => `
+                            <div class="flex items-start gap-2 p-3 rounded-lg bg-slate-500/20">
+                                <span class="text-cyan-400 mt-0.5">•</span>
+                                <span class="text-slate-300 text-sm">${h}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `)}
+        `;
+    },
+
+    // 加载学生AI分析
+    async loadStudentAiAnalysis() {
+        const students = MockData.students.filter(s => s.classId === (this.selectedClass?.id || 1));
+        const student = students.find(s => s.id === this.aiSelectedStudent) || students[0];
+        const readingRecords = MockData.readingRecords || [];
+        const books = MockData.books || [];
+
+        // 准备分析数据
+        const analysisData = DataService.prepareStudentAnalysisData(student, readingRecords, books, {
+            activityLevel: 100,
+            durationLevel: 100,
+            rank: 1
+        });
+
+        // 调用AI服务（使用降级方案）
+        const result = await AiService.analyzeStudent(analysisData);
+
+        // 渲染结果
+        const container = document.getElementById('ai-student-analysis-result');
+        if (container) {
+            container.innerHTML = this.renderStudentAiAnalysisResult(result);
+        }
     },
 
     // 初始化AI分析页面图表
@@ -2404,56 +2532,95 @@ const App = {
         if (this.currentRole === 'principal') {
             if (this.aiAnalysisTab === 'school') {
                 this.initSchoolAiCharts();
+                // 异步调用AI分析
+                this.loadSchoolAiAnalysis();
             } else {
                 this.initClassAiCharts();
             }
         } else if (this.currentRole === 'teacher') {
             if (this.aiAnalysisTab === 'student') {
                 this.initStudentAiCharts();
+                // 异步调用AI分析
+                this.loadStudentAiAnalysis();
             } else {
                 this.initTeacherClassAiCharts();
             }
         }
     },
 
+    // 加载园所AI分析
+    async loadSchoolAiAnalysis() {
+        const schoolData = MockData.schoolData.overview;
+        const classes = MockData.classes;
+        const students = MockData.students;
+        const readingRecords = MockData.readingRecords || [];
+        const books = MockData.books || [];
+
+        // 准备分析数据
+        const analysisData = DataService.prepareSchoolAnalysisData(schoolData, classes, students, readingRecords, books);
+
+        // 调用AI服务（使用降级方案）
+        const result = await AiService.analyzeSchool(analysisData);
+
+        // 渲染结果
+        const container = document.getElementById('ai-analysis-result');
+        if (container) {
+            container.innerHTML = this.renderAiAnalysisResult(result);
+        }
+    },
+
     // 初始化园所分析图表
     initSchoolAiCharts() {
-        const data = MockData.aiAnalysis.school;
-        const trend = data.trendInsight;
+        const readingRecords = MockData.readingRecords || [];
+        const books = MockData.books || [];
 
-        // 趋势洞察 - 周月对比
-        const trendEl = document.getElementById('ai-trend-chart');
-        if (trendEl) {
-            const chart = echarts.init(trendEl);
+        // 计算能力分布
+        const abilityDistribution = DataService.calculateAbilityDistribution(readingRecords, books);
+
+        // 计算类型分布
+        const typeDistribution = DataService.calculateTypeDistribution(readingRecords, books);
+
+        // 能力维度分布图表
+        const abilityEl = document.getElementById('ai-ability-chart');
+        if (abilityEl && abilityDistribution.length > 0) {
+            const chart = echarts.init(abilityEl);
             chart.setOption({
-                tooltip: { trigger: 'axis' },
-                legend: { data: ['本周', '上周', '上月'], textStyle: { color: '#94a3b8' }, bottom: 0 },
-                grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
-                xAxis: { type: 'category', data: trend.weekComparison.labels, axisLine: { lineStyle: { color: '#475569' } }, axisLabel: { color: '#94a3b8' } },
-                yAxis: { type: 'value', axisLine: { lineStyle: { color: '#475569' } }, axisLabel: { color: '#94a3b8' }, splitLine: { lineStyle: { color: '#334155' } } },
-                series: [
-                    { type: 'bar', name: '本周', data: trend.weekComparison.thisWeek, itemStyle: { color: '#3b82f6', borderRadius: [4, 4, 0, 0] }, barWidth: '25%' },
-                    { type: 'bar', name: '上周', data: trend.weekComparison.lastWeek, itemStyle: { color: '#64748b', borderRadius: [4, 4, 0, 0] }, barWidth: '25%' },
-                    { type: 'line', name: '上月', data: trend.weekComparison.lastMonth, smooth: true, lineStyle: { color: '#22d3ee', width: 2 }, itemStyle: { color: '#22d3ee' } }
-                ]
+                tooltip: { trigger: 'item', formatter: '{b}: {c}分钟 ({d}%)' },
+                legend: { bottom: 0, textStyle: { color: '#94a3b8', fontSize: 11 } },
+                color: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'],
+                series: [{
+                    type: 'pie',
+                    radius: ['35%', '60%'],
+                    center: ['50%', '45%'],
+                    itemStyle: { borderRadius: 4, borderColor: 'rgba(120,160,220,0.35)', borderWidth: 2 },
+                    label: { show: true, formatter: '{b}\n{d}%', fontSize: 10, color: '#94a3b8' },
+                    data: abilityDistribution.map(a => ({ name: a.name, value: a.duration }))
+                }]
             });
             Charts.instances.push(chart);
         }
 
-        // 月度趋势
-        const monthlyEl = document.getElementById('ai-monthly-chart');
-        if (monthlyEl) {
-            const chart = echarts.init(monthlyEl);
+        // 绘本类型分布图表
+        const typeEl = document.getElementById('ai-type-chart');
+        if (typeEl && typeDistribution.length > 0) {
+            const chart = echarts.init(typeEl);
             chart.setOption({
-                tooltip: { trigger: 'axis' },
-                legend: { data: ['实际', '预测'], textStyle: { color: '#94a3b8' }, bottom: 0 },
-                grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
-                xAxis: { type: 'category', data: trend.monthlyTrend.labels, axisLine: { lineStyle: { color: '#475569' } }, axisLabel: { color: '#94a3b8' } },
-                yAxis: { type: 'value', axisLine: { lineStyle: { color: '#475569' } }, axisLabel: { color: '#94a3b8' }, splitLine: { lineStyle: { color: '#334155' } } },
-                series: [
-                    { type: 'line', name: '实际', data: trend.monthlyTrend.actual, smooth: true, areaStyle: { color: 'rgba(59,130,246,0.2)' }, lineStyle: { color: '#3b82f6', width: 2 }, itemStyle: { color: '#3b82f6' } },
-                    { type: 'line', name: '预测', data: trend.monthlyTrend.predicted, smooth: true, lineStyle: { color: '#22d3ee', width: 2, type: 'dashed' }, itemStyle: { color: '#22d3ee' } }
-                ]
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+                xAxis: { type: 'value', axisLine: { lineStyle: { color: '#475569' } }, axisLabel: { color: '#94a3b8' }, splitLine: { lineStyle: { color: '#334155' } } },
+                yAxis: { type: 'category', data: typeDistribution.map(t => t.type).reverse(), axisLine: { lineStyle: { color: '#475569' } }, axisLabel: { color: '#94a3b8' } },
+                series: [{
+                    type: 'bar',
+                    data: typeDistribution.map(t => t.duration).reverse(),
+                    itemStyle: {
+                        borderRadius: [0, 4, 4, 0],
+                        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                            { offset: 0, color: '#8b5cf6' },
+                            { offset: 1, color: '#a78bfa' }
+                        ])
+                    },
+                    label: { show: true, position: 'right', color: '#94a3b8', fontSize: 11, formatter: '{c}分钟' }
+                }]
             });
             Charts.instances.push(chart);
         }
@@ -2557,28 +2724,28 @@ const App = {
 
     // 初始化学生分析图表
     initStudentAiCharts() {
-        const studentData = MockData.aiAnalysis.student[this.aiSelectedStudent] || MockData.aiAnalysis.student[1];
-        const growth = studentData.growthPath;
+        const readingRecords = MockData.readingRecords || [];
+        const books = MockData.books || [];
 
-        // 成长轨迹 - 能力发展时间轴
-        const growthEl = document.getElementById('ai-growth-chart');
-        if (growthEl) {
-            const chart = echarts.init(growthEl);
+        // 计算学生能力分布
+        const abilityDistribution = DataService.calculateAbilityDistribution(readingRecords, books, [this.aiSelectedStudent]);
+
+        // 能力维度发展图表
+        const abilityEl = document.getElementById('ai-student-ability-chart');
+        if (abilityEl && abilityDistribution.length > 0) {
+            const chart = echarts.init(abilityEl);
             chart.setOption({
-                tooltip: { trigger: 'axis' },
-                legend: { data: growth.labels, textStyle: { color: '#94a3b8' }, bottom: 0 },
-                grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
-                xAxis: { type: 'category', data: growth.weeks, axisLine: { lineStyle: { color: '#475569' } }, axisLabel: { color: '#94a3b8' } },
-                yAxis: { type: 'value', axisLine: { lineStyle: { color: '#475569' } }, axisLabel: { color: '#94a3b8' }, splitLine: { lineStyle: { color: '#334155' } }, min: 40, max: 100 },
-                series: growth.series.map((s, i) => ({
-                    type: 'line',
-                    name: s.name,
-                    data: s.values,
-                    smooth: true,
-                    lineStyle: { width: 2 },
-                    itemStyle: {},
-                    areaStyle: { opacity: 0.1 }
-                }))
+                tooltip: { trigger: 'item', formatter: '{b}: {c}分钟 ({d}%)' },
+                legend: { bottom: 0, textStyle: { color: '#94a3b8', fontSize: 11 } },
+                color: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'],
+                series: [{
+                    type: 'pie',
+                    radius: ['35%', '60%'],
+                    center: ['50%', '45%'],
+                    itemStyle: { borderRadius: 4, borderColor: 'rgba(120,160,220,0.35)', borderWidth: 2 },
+                    label: { show: true, formatter: '{b}\n{d}%', fontSize: 10, color: '#94a3b8' },
+                    data: abilityDistribution.map(a => ({ name: a.name, value: a.duration }))
+                }]
             });
             Charts.instances.push(chart);
         }

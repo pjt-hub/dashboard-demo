@@ -171,6 +171,67 @@ const MockData = {
         { rank: 10, name: '古利和古拉', type: '日常生活', reads: 3, duration: '0.9h', isbn: '978-7-5448-0123-4' }
     ],
 
+    // ========== 绘本库数据（包含能力标签）==========
+    books: [
+        { id: 1, name: '永远永远爱你', type: '情商品格', abilityTags: ['情感认知', '社交能力'], ageRange: '4-6岁' },
+        { id: 2, name: '团圆', type: '国学文化', abilityTags: ['文化素养', '情感认知'], ageRange: '4-6岁' },
+        { id: 3, name: '我爸爸', type: '人际交往', abilityTags: ['社交能力', '语言表达'], ageRange: '3-5岁' },
+        { id: 4, name: '猜猜我有多爱你', type: '情商品格', abilityTags: ['情感认知', '语言表达'], ageRange: '3-5岁' },
+        { id: 5, name: '哇哦，鳄鱼也想要惊喜', type: '日常生活', abilityTags: ['想象创造', '语言表达'], ageRange: '4-6岁' },
+        { id: 6, name: '母鸡萝丝去散步', type: '日常生活', abilityTags: ['逻辑思维', '想象创造'], ageRange: '3-5岁' },
+        { id: 7, name: '花婆婆', type: '日常生活', abilityTags: ['情感认知', '文化素养'], ageRange: '5-7岁' },
+        { id: 8, name: '爱跳舞的小龙', type: '人际交往', abilityTags: ['社交能力', '想象创造'], ageRange: '4-6岁' },
+        { id: 9, name: '胆小鬼威利', type: '情商品格', abilityTags: ['情感认知', '社交能力'], ageRange: '4-6岁' },
+        { id: 10, name: '古利和古拉', type: '日常生活', abilityTags: ['社交能力', '逻辑思维'], ageRange: '3-5岁' },
+        { id: 11, name: '好饿的毛毛虫', type: '科普百科', abilityTags: ['逻辑思维', '语言表达'], ageRange: '3-5岁' },
+        { id: 12, name: '爷爷一定有办法', type: '日常生活', abilityTags: ['逻辑思维', '情感认知'], ageRange: '4-6岁' },
+        { id: 13, name: '逃家小兔', type: '情商品格', abilityTags: ['情感认知', '语言表达'], ageRange: '3-5岁' },
+        { id: 14, name: '活了100万次的猫', type: '情商品格', abilityTags: ['情感认知', '想象创造'], ageRange: '5-7岁' },
+        { id: 15, name: '小蝌蚪找妈妈', type: '国学文化', abilityTags: ['文化素养', '语言表达'], ageRange: '3-5岁' },
+        { id: 16, name: '三只小猪', type: '国学文化', abilityTags: ['逻辑思维', '语言表达'], ageRange: '3-5岁' },
+        { id: 17, name: '鳄鱼怕怕牙医怕怕', type: '日常生活', abilityTags: ['情感认知', '社交能力'], ageRange: '3-5岁' },
+        { id: 18, name: '爱心树', type: '情商品格', abilityTags: ['情感认知', '文化素养'], ageRange: '5-7岁' },
+        { id: 19, name: '神奇校车', type: '科普百科', abilityTags: ['逻辑思维', '想象创造'], ageRange: '5-7岁' },
+        { id: 20, name: '不一样的卡梅拉', type: '人际交往', abilityTags: ['社交能力', '想象创造'], ageRange: '4-6岁' }
+    ],
+
+    // ========== 阅读记录数据 ==========
+    readingRecords: [
+        // 大一班学生阅读记录
+        { studentId: 1, bookId: 1, duration: 25, date: '2026-03-10', engagement: 95 },
+        { studentId: 1, bookId: 3, duration: 20, date: '2026-03-09', engagement: 92 },
+        { studentId: 1, bookId: 2, duration: 18, date: '2026-03-08', engagement: 78 },
+        { studentId: 1, bookId: 4, duration: 22, date: '2026-03-07', engagement: 88 },
+        { studentId: 1, bookId: 11, duration: 15, date: '2026-03-06', engagement: 75 },
+        { studentId: 2, bookId: 4, duration: 22, date: '2026-03-10', engagement: 90 },
+        { studentId: 2, bookId: 7, duration: 25, date: '2026-03-09', engagement: 88 },
+        { studentId: 2, bookId: 13, duration: 18, date: '2026-03-08', engagement: 85 },
+        { studentId: 3, bookId: 1, duration: 18, date: '2026-03-10', engagement: 82 },
+        { studentId: 3, bookId: 6, duration: 15, date: '2026-03-09', engagement: 78 },
+        { studentId: 3, bookId: 10, duration: 20, date: '2026-03-08', engagement: 80 },
+        { studentId: 4, bookId: 3, duration: 16, date: '2026-03-10', engagement: 75 },
+        { studentId: 4, bookId: 8, duration: 18, date: '2026-03-09', engagement: 72 },
+        { studentId: 5, bookId: 5, duration: 20, date: '2026-03-10', engagement: 70 },
+        { studentId: 5, bookId: 9, duration: 15, date: '2026-03-09', engagement: 68 },
+        // 大二班学生阅读记录
+        { studentId: 6, bookId: 2, duration: 20, date: '2026-03-10', engagement: 88 },
+        { studentId: 6, bookId: 14, duration: 22, date: '2026-03-09', engagement: 85 },
+        { studentId: 7, bookId: 4, duration: 18, date: '2026-03-10', engagement: 80 },
+        { studentId: 7, bookId: 15, duration: 16, date: '2026-03-09', engagement: 78 },
+        { studentId: 8, bookId: 11, duration: 15, date: '2026-03-10', engagement: 72 },
+        { studentId: 8, bookId: 16, duration: 18, date: '2026-03-09', engagement: 75 },
+        // 中一班学生阅读记录
+        { studentId: 9, bookId: 6, duration: 18, date: '2026-03-10', engagement: 85 },
+        { studentId: 9, bookId: 17, duration: 15, date: '2026-03-09', engagement: 82 },
+        { studentId: 10, bookId: 10, duration: 20, date: '2026-03-10', engagement: 78 },
+        { studentId: 10, bookId: 18, duration: 18, date: '2026-03-09', engagement: 80 },
+        // 小一班学生阅读记录
+        { studentId: 11, bookId: 13, duration: 15, date: '2026-03-10', engagement: 75 },
+        { studentId: 11, bookId: 19, duration: 12, date: '2026-03-09', engagement: 70 },
+        { studentId: 12, bookId: 15, duration: 18, date: '2026-03-10', engagement: 72 },
+        { studentId: 12, bookId: 20, duration: 15, date: '2026-03-09', engagement: 68 }
+    ],
+
     // ========== 园所数据 - 对标远程平台7个标签页 ==========
     schoolData: {
         // 数据概述
