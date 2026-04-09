@@ -518,21 +518,6 @@ const MockData = {
                     ]
                 },
 
-                // 学生分层
-                studentSegments: {
-                    high: { count: 12, percent: 34, description: '持续高参与，建议提供拓展阅读' },
-                    medium: { count: 18, percent: 51, description: '参与良好，建议保持当前节奏' },
-                    low: { count: 5, percent: 14, description: '需要鼓励，建议一对一关注' },
-                    studentList: [
-                        { name: '张小明', segment: 'high', activityCount: 18, engagement: 95, trend: 'up' },
-                        { name: '李小红', segment: 'high', activityCount: 16, engagement: 90, trend: 'up' },
-                        { name: '王小刚', segment: 'medium', activityCount: 15, engagement: 85, trend: 'stable' },
-                        { name: '赵小丽', segment: 'medium', activityCount: 14, engagement: 82, trend: 'up' },
-                        { name: '陈小华', segment: 'low', activityCount: 8, engagement: 60, trend: 'down' },
-                        { name: '黄小龙', segment: 'low', activityCount: 7, engagement: 55, trend: 'up' }
-                    ]
-                },
-
                 // 给教师的建议
                 teacherSuggestions: [
                     { title: '关注低活跃学生', description: '班内有5名学生活跃度较低，建议安排一对一阅读时间。' },
@@ -570,17 +555,6 @@ const MockData = {
                         { name: '逻辑思维', values: [70, 72, 74, 76] }
                     ]
                 },
-                studentSegments: {
-                    high: { count: 10, percent: 31, description: '持续高参与' },
-                    medium: { count: 17, percent: 53, description: '参与良好' },
-                    low: { count: 5, percent: 16, description: '需要鼓励' },
-                    studentList: [
-                        { name: '赵小丽', segment: 'high', activityCount: 14, engagement: 88, trend: 'up' },
-                        { name: '陈小华', segment: 'high', activityCount: 13, engagement: 85, trend: 'stable' },
-                        { name: '林小燕', segment: 'medium', activityCount: 10, engagement: 78, trend: 'up' },
-                        { name: '其他...', segment: 'low', activityCount: 5, engagement: 58, trend: 'stable' }
-                    ]
-                },
                 teacherSuggestions: [
                     { title: '增加创意阅读活动', description: '创意类活动偏少，建议增加绘画、故事创编等活动。' },
                     { title: '设计周末亲子任务', description: '周末活动较少，可设计简单的亲子阅读任务。' }
@@ -614,16 +588,6 @@ const MockData = {
                         { name: '情感认知', values: [74, 76, 77, 78] },
                         { name: '想象创造', values: [78, 80, 82, 84] },
                         { name: '逻辑思维', values: [68, 70, 71, 73] }
-                    ]
-                },
-                studentSegments: {
-                    high: { count: 8, percent: 29, description: '持续高参与' },
-                    medium: { count: 15, percent: 54, description: '参与良好' },
-                    low: { count: 5, percent: 18, description: '需要鼓励' },
-                    studentList: [
-                        { name: '刘小芳', segment: 'high', activityCount: 12, engagement: 86, trend: 'up' },
-                        { name: '孙小伟', segment: 'medium', activityCount: 11, engagement: 80, trend: 'stable' },
-                        { name: '徐小鹏', segment: 'low', activityCount: 5, engagement: 55, trend: 'down' }
                     ]
                 },
                 teacherSuggestions: [
