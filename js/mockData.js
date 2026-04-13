@@ -48,43 +48,187 @@ const MockData = {
 
     // 班级数据
     classes: [
-        { id: 1, name: '大一班', kindergartenId: 1, studentCount: 35, teacherCount: 3, teacherName: '张晓梅', activityCount: 42, activityDuration: '18.5h', deviceUseCount: 86, participantCount: 32 },
-        { id: 2, name: '大二班', kindergartenId: 1, studentCount: 32, teacherCount: 3, teacherName: '李文华', activityCount: 38, activityDuration: '16.2h', deviceUseCount: 78, participantCount: 30 },
-        { id: 3, name: '中一班', kindergartenId: 1, studentCount: 28, teacherCount: 2, teacherName: '王秀英', activityCount: 31, activityDuration: '13.8h', deviceUseCount: 65, participantCount: 26 },
-        { id: 4, name: '中二班', kindergartenId: 1, studentCount: 30, teacherCount: 2, teacherName: '赵丽娟', activityCount: 28, activityDuration: '12.1h', deviceUseCount: 58, participantCount: 27 },
-        { id: 5, name: '小一班', kindergartenId: 1, studentCount: 25, teacherCount: 2, teacherName: '陈美玲', activityCount: 22, activityDuration: '9.6h', deviceUseCount: 45, participantCount: 22 },
-        { id: 6, name: '小二班', kindergartenId: 1, studentCount: 24, teacherCount: 2, teacherName: '周雪梅', activityCount: 19, activityDuration: '8.3h', deviceUseCount: 40, participantCount: 20 },
-        { id: 7, name: '大三班', kindergartenId: 1, studentCount: 33, teacherCount: 3, teacherName: '刘芳', activityCount: 15, activityDuration: '6.5h', deviceUseCount: 52, participantCount: 18 },
-        { id: 8, name: '中三班', kindergartenId: 1, studentCount: 26, teacherCount: 2, teacherName: '孙婷', activityCount: 10, activityDuration: '4.2h', deviceUseCount: 38, participantCount: 15 },
-        { id: 9, name: '小三班', kindergartenId: 1, studentCount: 22, teacherCount: 2, teacherName: '吴敏', activityCount: 7, activityDuration: '3.1h', deviceUseCount: 32, participantCount: 12 },
-        { id: 10, name: '大四班', kindergartenId: 1, studentCount: 30, teacherCount: 3, teacherName: '郑慧', activityCount: 0, activityDuration: '0h', deviceUseCount: 28, participantCount: 0 },
-        { id: 11, name: '中四班', kindergartenId: 1, studentCount: 27, teacherCount: 2, teacherName: '黄丽', activityCount: 0, activityDuration: '0h', deviceUseCount: 22, participantCount: 0 },
-        { id: 12, name: '小四班', kindergartenId: 1, studentCount: 20, teacherCount: 2, teacherName: '林静', activityCount: 0, activityDuration: '0h', deviceUseCount: 18, participantCount: 0 },
-        { id: 13, name: '大五班', kindergartenId: 1, studentCount: 31, teacherCount: 3, teacherName: '徐萍', activityCount: 0, activityDuration: '0h', deviceUseCount: 25, participantCount: 0 },
-        { id: 14, name: '中五班', kindergartenId: 1, studentCount: 25, teacherCount: 2, teacherName: '马丽', activityCount: 0, activityDuration: '0h', deviceUseCount: 20, participantCount: 0 },
-        { id: 15, name: '小五班', kindergartenId: 1, studentCount: 21, teacherCount: 2, teacherName: '何芳', activityCount: 0, activityDuration: '0h', deviceUseCount: 15, participantCount: 0 },
-        { id: 16, name: '大六班', kindergartenId: 1, studentCount: 29, teacherCount: 3, teacherName: '罗敏', activityCount: 0, activityDuration: '0h', deviceUseCount: 30, participantCount: 0 },
-        { id: 17, name: '中六班', kindergartenId: 1, studentCount: 24, teacherCount: 2, teacherName: '谢芳', activityCount: 0, activityDuration: '0h', deviceUseCount: 18, participantCount: 0 },
-        { id: 18, name: '小小班', kindergartenId: 1, studentCount: 17, teacherCount: 2, teacherName: '杨静', activityCount: 0, activityDuration: '0h', deviceUseCount: 12, participantCount: 0 }
+        { id: 1, name: '大一班', kindergartenId: 1, studentCount: 35, teacherCount: 3, teacherName: '张晓梅', activityCount: 42, activityDuration: '18.5h', deviceUseCount: 86, participantCount: 32, 
+          teachers: [{name: '张晓梅', activityCount: 20, activityDuration: '8.5h'}, {name: '王芳', activityCount: 12, activityDuration: '5.2h'}, {name: '李丽', activityCount: 10, activityDuration: '4.8h'}],
+          bookTypeStats: {'情商品格': 15, '国学文化': 8, '人际交往': 12, '日常生活': 7},
+          abilityStats: {'语言表达': 85, '社交能力': 78, '想象创造': 82, '逻辑思维': 75, '情感认知': 88} },
+        { id: 2, name: '大二班', kindergartenId: 1, studentCount: 32, teacherCount: 3, teacherName: '李文华', activityCount: 38, activityDuration: '16.2h', deviceUseCount: 78, participantCount: 30,
+          teachers: [{name: '李文华', activityCount: 18, activityDuration: '7.8h'}, {name: '赵敏', activityCount: 11, activityDuration: '4.6h'}, {name: '孙丽', activityCount: 9, activityDuration: '3.8h'}],
+          bookTypeStats: {'科普百科': 10, '情商品格': 12, '语言学习': 8, '日常生活': 8},
+          abilityStats: {'语言表达': 80, '社交能力': 82, '想象创造': 78, '逻辑思维': 85, '情感认知': 79} },
+        { id: 3, name: '中一班', kindergartenId: 1, studentCount: 28, teacherCount: 2, teacherName: '王秀英', activityCount: 31, activityDuration: '13.8h', deviceUseCount: 65, participantCount: 26,
+          teachers: [{name: '王秀英', activityCount: 18, activityDuration: '8.2h'}, {name: '周芳', activityCount: 13, activityDuration: '5.6h'}],
+          bookTypeStats: {'情商品格': 10, '日常生活': 12, '人际交往': 9},
+          abilityStats: {'语言表达': 75, '社交能力': 80, '想象创造': 72, '逻辑思维': 70, '情感认知': 78} },
+        { id: 4, name: '中二班', kindergartenId: 1, studentCount: 30, teacherCount: 2, teacherName: '赵丽娟', activityCount: 28, activityDuration: '12.1h', deviceUseCount: 58, participantCount: 27,
+          teachers: [{name: '赵丽娟', activityCount: 16, activityDuration: '7.1h'}, {name: '吴芳', activityCount: 12, activityDuration: '5.0h'}],
+          bookTypeStats: {'国学文化': 8, '情商品格': 10, '日常生活': 10},
+          abilityStats: {'语言表达': 72, '社交能力': 75, '想象创造': 70, '逻辑思维': 73, '情感认知': 76} },
+        { id: 5, name: '小一班', kindergartenId: 1, studentCount: 25, teacherCount: 2, teacherName: '陈美玲', activityCount: 22, activityDuration: '9.6h', deviceUseCount: 45, participantCount: 22,
+          teachers: [{name: '陈美玲', activityCount: 14, activityDuration: '6.2h'}, {name: '郑芳', activityCount: 8, activityDuration: '3.4h'}],
+          bookTypeStats: {'日常生活': 12, '情商品格': 10},
+          abilityStats: {'语言表达': 65, '社交能力': 70, '想象创造': 68, '逻辑思维': 62, '情感认知': 72} },
+        { id: 6, name: '小二班', kindergartenId: 1, studentCount: 24, teacherCount: 2, teacherName: '周雪梅', activityCount: 19, activityDuration: '8.3h', deviceUseCount: 40, participantCount: 20,
+          teachers: [{name: '周雪梅', activityCount: 12, activityDuration: '5.3h'}, {name: '王芳', activityCount: 7, activityDuration: '3.0h'}],
+          bookTypeStats: {'情商品格': 8, '日常生活': 11},
+          abilityStats: {'语言表达': 62, '社交能力': 68, '想象创造': 65, '逻辑思维': 60, '情感认知': 70} },
+        { id: 7, name: '大三班', kindergartenId: 1, studentCount: 33, teacherCount: 3, teacherName: '刘芳', activityCount: 15, activityDuration: '6.5h', deviceUseCount: 52, participantCount: 18,
+          teachers: [{name: '刘芳', activityCount: 8, activityDuration: '3.5h'}, {name: '陈丽', activityCount: 4, activityDuration: '1.8h'}, {name: '杨芳', activityCount: 3, activityDuration: '1.2h'}],
+          bookTypeStats: {},
+          abilityStats: {} },
+        { id: 8, name: '中三班', kindergartenId: 1, studentCount: 26, teacherCount: 2, teacherName: '孙婷', activityCount: 10, activityDuration: '4.2h', deviceUseCount: 38, participantCount: 15,
+          teachers: [{name: '孙婷', activityCount: 6, activityDuration: '2.5h'}, {name: '黄芳', activityCount: 4, activityDuration: '1.7h'}],
+          bookTypeStats: {},
+          abilityStats: {} },
+        { id: 9, name: '小三班', kindergartenId: 1, studentCount: 22, teacherCount: 2, teacherName: '吴敏', activityCount: 7, activityDuration: '3.1h', deviceUseCount: 32, participantCount: 12,
+          teachers: [{name: '吴敏', activityCount: 5, activityDuration: '2.2h'}, {name: '林芳', activityCount: 2, activityDuration: '0.9h'}],
+          bookTypeStats: {},
+          abilityStats: {} },
+        { id: 10, name: '大四班', kindergartenId: 1, studentCount: 30, teacherCount: 3, teacherName: '郑慧', activityCount: 0, activityDuration: '0h', deviceUseCount: 28, participantCount: 0,
+          teachers: [{name: '郑慧', activityCount: 0, activityDuration: '0h'}, {name: '何丽', activityCount: 0, activityDuration: '0h'}, {name: '罗芳', activityCount: 0, activityDuration: '0h'}],
+          bookTypeStats: {},
+          abilityStats: {} },
+        { id: 11, name: '中四班', kindergartenId: 1, studentCount: 27, teacherCount: 2, teacherName: '黄丽', activityCount: 0, activityDuration: '0h', deviceUseCount: 22, participantCount: 0,
+          teachers: [{name: '黄丽', activityCount: 0, activityDuration: '0h'}, {name: '谢芳', activityCount: 0, activityDuration: '0h'}],
+          bookTypeStats: {},
+          abilityStats: {} },
+        { id: 12, name: '小四班', kindergartenId: 1, studentCount: 20, teacherCount: 2, teacherName: '林静', activityCount: 0, activityDuration: '0h', deviceUseCount: 18, participantCount: 0,
+          teachers: [{name: '林静', activityCount: 0, activityDuration: '0h'}, {name: '徐芳', activityCount: 0, activityDuration: '0h'}],
+          bookTypeStats: {},
+          abilityStats: {} },
+        { id: 13, name: '大五班', kindergartenId: 1, studentCount: 31, teacherCount: 3, teacherName: '徐萍', activityCount: 0, activityDuration: '0h', deviceUseCount: 25, participantCount: 0,
+          teachers: [{name: '徐萍', activityCount: 0, activityDuration: '0h'}, {name: '马芳', activityCount: 0, activityDuration: '0h'}, {name: '何丽', activityCount: 0, activityDuration: '0h'}],
+          bookTypeStats: {},
+          abilityStats: {} },
+        { id: 14, name: '中五班', kindergartenId: 1, studentCount: 25, teacherCount: 2, teacherName: '马丽', activityCount: 0, activityDuration: '0h', deviceUseCount: 20, participantCount: 0,
+          teachers: [{name: '马丽', activityCount: 0, activityDuration: '0h'}, {name: '罗芳', activityCount: 0, activityDuration: '0h'}],
+          bookTypeStats: {},
+          abilityStats: {} },
+        { id: 15, name: '小五班', kindergartenId: 1, studentCount: 21, teacherCount: 2, teacherName: '何芳', activityCount: 0, activityDuration: '0h', deviceUseCount: 15, participantCount: 0,
+          teachers: [{name: '何芳', activityCount: 0, activityDuration: '0h'}, {name: '谢丽', activityCount: 0, activityDuration: '0h'}],
+          bookTypeStats: {},
+          abilityStats: {} },
+        { id: 16, name: '大六班', kindergartenId: 1, studentCount: 29, teacherCount: 3, teacherName: '罗敏', activityCount: 0, activityDuration: '0h', deviceUseCount: 30, participantCount: 0,
+          teachers: [{name: '罗敏', activityCount: 0, activityDuration: '0h'}, {name: '杨芳', activityCount: 0, activityDuration: '0h'}, {name: '韩丽', activityCount: 0, activityDuration: '0h'}],
+          bookTypeStats: {},
+          abilityStats: {} },
+        { id: 17, name: '中六班', kindergartenId: 1, studentCount: 24, teacherCount: 2, teacherName: '谢芳', activityCount: 0, activityDuration: '0h', deviceUseCount: 18, participantCount: 0,
+          teachers: [{name: '谢芳', activityCount: 0, activityDuration: '0h'}, {name: '唐丽', activityCount: 0, activityDuration: '0h'}],
+          bookTypeStats: {},
+          abilityStats: {} },
+        { id: 18, name: '小小班', kindergartenId: 1, studentCount: 17, teacherCount: 2, teacherName: '杨静', activityCount: 0, activityDuration: '0h', deviceUseCount: 12, participantCount: 0,
+          teachers: [{name: '杨静', activityCount: 0, activityDuration: '0h'}, {name: '韩芳', activityCount: 0, activityDuration: '0h'}],
+          bookTypeStats: {},
+          abilityStats: {} }
     ],
 
     // 学生数据
     students: [
-        { id: 1, name: '张小明', code: 'S20240001', classId: 1, className: '大一班', activityCount: 18, activityDuration: '5.2h', bookCount: 12 },
-        { id: 2, name: '李小红', code: 'S20240002', classId: 1, className: '大一班', activityCount: 16, activityDuration: '4.8h', bookCount: 11 },
-        { id: 3, name: '王小刚', code: 'S20240003', classId: 1, className: '大一班', activityCount: 15, activityDuration: '4.5h', bookCount: 10 },
-        { id: 4, name: '赵小丽', code: 'S20240004', classId: 2, className: '大二班', activityCount: 14, activityDuration: '4.1h', bookCount: 9 },
-        { id: 5, name: '陈小华', code: 'S20240005', classId: 2, className: '大二班', activityCount: 13, activityDuration: '3.9h', bookCount: 8 },
-        { id: 6, name: '刘小芳', code: 'S20240006', classId: 3, className: '中一班', activityCount: 12, activityDuration: '3.6h', bookCount: 8 },
-        { id: 7, name: '孙小伟', code: 'S20240007', classId: 3, className: '中一班', activityCount: 11, activityDuration: '3.3h', bookCount: 7 },
-        { id: 8, name: '周小琳', code: 'S20240008', classId: 4, className: '中二班', activityCount: 10, activityDuration: '3.0h', bookCount: 7 },
-        { id: 9, name: '吴小杰', code: 'S20240009', classId: 5, className: '小一班', activityCount: 9, activityDuration: '2.7h', bookCount: 6 },
-        { id: 10, name: '郑小雪', code: 'S20240010', classId: 5, className: '小一班', activityCount: 8, activityDuration: '2.4h', bookCount: 5 },
-        { id: 11, name: '黄小龙', code: 'S20240011', classId: 1, className: '大一班', activityCount: 7, activityDuration: '2.1h', bookCount: 5 },
-        { id: 12, name: '林小燕', code: 'S20240012', classId: 2, className: '大二班', activityCount: 6, activityDuration: '1.8h', bookCount: 4 },
-        { id: 13, name: '徐小鹏', code: 'S20240013', classId: 3, className: '中一班', activityCount: 5, activityDuration: '1.5h', bookCount: 4 },
-        { id: 14, name: '马小丽', code: 'S20240014', classId: 4, className: '中二班', activityCount: 4, activityDuration: '1.2h', bookCount: 3 },
-        { id: 15, name: '何小文', code: 'S20240015', classId: 6, className: '小二班', activityCount: 3, activityDuration: '0.9h', bookCount: 3 }
+        { id: 1, name: '张小明', code: 'S20240001', classId: 1, className: '大一班', activityCount: 18, activityDuration: '5.2h', bookCount: 12, 
+          readDurationMinutes: 312, readTimes: 33, completedBooks: 9,
+          bookTypeStats: {'日常生活': 10, '人际交往': 8, '情商品格': 7},
+          abilityStats: {'习惯养成': 85, '情绪管理': 78, '想象力': 82, '科学认知': 75, '品格养成': 88, '社交力': 80},
+          favoriteBooks: ['大卫上学去', '幼儿园的一天', '约瑟夫有件旧外套'],
+          interestBooks: ['好饿的毛毛虫', '猜猜我有多爱你', '我爸爸'],
+          recommendBooks: ['神奇校车', '不一样的卡梅拉', '爱心树'] },
+        { id: 2, name: '李小红', code: 'S20240002', classId: 1, className: '大一班', activityCount: 16, activityDuration: '4.8h', bookCount: 11,
+          readDurationMinutes: 288, readTimes: 28, completedBooks: 8,
+          bookTypeStats: {'情商品格': 8, '国学文化': 6, '人际交往': 5},
+          abilityStats: {'习惯养成': 80, '情绪管理': 82, '想象力': 78, '科学认知': 70, '品格养成': 85, '社交力': 83},
+          favoriteBooks: ['团圆', '我爸爸', '我妈妈'],
+          interestBooks: ['逃家小兔', '猜猜我有多爱你', '彩虹色的花'],
+          recommendBooks: ['花婆婆', '爱心树', '石头汤'] },
+        { id: 3, name: '王小刚', code: 'S20240003', classId: 1, className: '大一班', activityCount: 15, activityDuration: '4.5h', bookCount: 10,
+          readDurationMinutes: 270, readTimes: 25, completedBooks: 7,
+          bookTypeStats: {'科普百科': 6, '情商品格': 5, '语言学习': 4},
+          abilityStats: {'习惯养成': 75, '情绪管理': 70, '想象力': 85, '科学认知': 88, '品格养成': 78, '社交力': 75},
+          favoriteBooks: ['神奇校车', '十万个为什么', '昆虫记'],
+          interestBooks: ['好饿的毛毛虫', '小蝌蚪找妈妈', '三只小猪'],
+          recommendBooks: ['海底两万里', '不一样的卡梅拉', '神奇校车'] },
+        { id: 4, name: '赵小丽', code: 'S20240004', classId: 2, className: '大二班', activityCount: 14, activityDuration: '4.1h', bookCount: 9,
+          readDurationMinutes: 246, readTimes: 24, completedBooks: 7,
+          bookTypeStats: {'情商品格': 7, '日常生活': 5, '人际交往': 4},
+          abilityStats: {'习惯养成': 78, '情绪管理': 80, '想象力': 75, '科学认知': 72, '品格养成': 82, '社交力': 79},
+          favoriteBooks: ['永远永远爱你', '猜猜我有多爱你', '逃家小兔'],
+          interestBooks: ['我爸爸', '我妈妈', '大卫不可以'],
+          recommendBooks: ['爱心树', '花婆婆', '团圆'] },
+        { id: 5, name: '陈小华', code: 'S20240005', classId: 2, className: '大二班', activityCount: 13, activityDuration: '3.9h', bookCount: 8,
+          readDurationMinutes: 234, readTimes: 22, completedBooks: 6,
+          bookTypeStats: {'国学文化': 5, '情商品格': 5, '日常生活': 4},
+          abilityStats: {'习惯养成': 72, '情绪管理': 75, '想象力': 70, '科学认知': 68, '品格养成': 80, '社交力': 76},
+          favoriteBooks: ['弟子规', '三字经', '唐诗三百首'],
+          interestBooks: ['成语故事', '论语故事', '孔融让梨'],
+          recommendBooks: ['铁杵磨针', '愚公移山', '精卫填海'] },
+        { id: 6, name: '刘小芳', code: 'S20240006', classId: 3, className: '中一班', activityCount: 12, activityDuration: '3.6h', bookCount: 8,
+          readDurationMinutes: 216, readTimes: 20, completedBooks: 6,
+          bookTypeStats: {'日常生活': 6, '情商品格': 5, '人际交往': 4},
+          abilityStats: {'习惯养成': 70, '情绪管理': 72, '想象力': 68, '科学认知': 65, '品格养成': 75, '社交力': 73},
+          favoriteBooks: ['母鸡萝丝去散步', '花婆婆', '爱跳舞的小龙'],
+          interestBooks: ['胆小鬼威利', '古利和古拉', '好饿的毛毛虫'],
+          recommendBooks: ['爷爷一定有办法', '逃家小兔', '彩虹色的花'] },
+        { id: 7, name: '孙小伟', code: 'S20240007', classId: 3, className: '中一班', activityCount: 11, activityDuration: '3.3h', bookCount: 7,
+          readDurationMinutes: 198, readTimes: 18, completedBooks: 5,
+          bookTypeStats: {'情商品格': 5, '科普百科': 4, '语言学习': 3},
+          abilityStats: {'习惯养成': 68, '情绪管理': 70, '想象力': 72, '科学认知': 75, '品格养成': 70, '社交力': 68},
+          favoriteBooks: ['神奇校车', '好饿的毛毛虫', '大卫不可以'],
+          interestBooks: ['昆虫记', '十万个为什么', '小蝌蚪找妈妈'],
+          recommendBooks: ['海底两万里', '不一样的卡梅拉', '神奇校车'] },
+        { id: 8, name: '周小琳', code: 'S20240008', classId: 4, className: '中二班', activityCount: 10, activityDuration: '3.0h', bookCount: 7,
+          readDurationMinutes: 180, readTimes: 16, completedBooks: 5,
+          bookTypeStats: {'国学文化': 4, '情商品格': 4, '日常生活': 4},
+          abilityStats: {'习惯养成': 65, '情绪管理': 68, '想象力': 65, '科学认知': 62, '品格养成': 70, '社交力': 67},
+          favoriteBooks: ['小蝌蚪找妈妈', '三只小猪', '丑小鸭'],
+          interestBooks: ['龟兔赛跑', '狐狸和葡萄', '白雪公主'],
+          recommendBooks: ['灰姑娘', '小王子', '夏洛的网'] },
+        { id: 9, name: '吴小杰', code: 'S20240009', classId: 5, className: '小一班', activityCount: 9, activityDuration: '2.7h', bookCount: 6,
+          readDurationMinutes: 162, readTimes: 15, completedBooks: 4,
+          bookTypeStats: {'日常生活': 5, '情商品格': 4},
+          abilityStats: {'习惯养成': 60, '情绪管理': 62, '想象力': 58, '科学认知': 55, '品格养成': 65, '社交力': 61},
+          favoriteBooks: ['鳄鱼怕怕牙医怕怕', '爱心树', '失落的一角'],
+          interestBooks: ['你看起来好像很好吃', '我是霸王龙', '遇到你真好'],
+          recommendBooks: ['小猪佩奇', '汪汪队', '超级飞侠'] },
+        { id: 10, name: '郑小雪', code: 'S20240010', classId: 5, className: '小一班', activityCount: 8, activityDuration: '2.4h', bookCount: 5,
+          readDurationMinutes: 144, readTimes: 13, completedBooks: 4,
+          bookTypeStats: {'情商品格': 4, '日常生活': 4},
+          abilityStats: {'习惯养成': 58, '情绪管理': 60, '想象力': 55, '科学认知': 52, '品格养成': 62, '社交力': 59},
+          favoriteBooks: ['小猪佩奇', '汪汪队', '超级飞侠'],
+          interestBooks: ['海底小纵队', '小马宝莉', '不一样的卡梅拉'],
+          recommendBooks: ['神奇校车', '十万个为什么', '昆虫记'] },
+        { id: 11, name: '黄小龙', code: 'S20240011', classId: 1, className: '大一班', activityCount: 7, activityDuration: '2.1h', bookCount: 5,
+          readDurationMinutes: 126, readTimes: 12, completedBooks: 3,
+          bookTypeStats: {'人际交往': 4, '情商品格': 3},
+          abilityStats: {'习惯养成': 55, '情绪管理': 58, '想象力': 60, '科学认知': 62, '品格养成': 58, '社交力': 65},
+          favoriteBooks: ['不一样的卡梅拉', '神奇校车', '海底小纵队'],
+          interestBooks: ['汪汪队', '超级飞侠', '小马宝莉'],
+          recommendBooks: ['十万个为什么', '昆虫记', '海底两万里'] },
+        { id: 12, name: '林小燕', code: 'S20240012', classId: 2, className: '大二班', activityCount: 6, activityDuration: '1.8h', bookCount: 4,
+          readDurationMinutes: 108, readTimes: 10, completedBooks: 3,
+          bookTypeStats: {'情商品格': 3, '日常生活': 3},
+          abilityStats: {'习惯养成': 52, '情绪管理': 55, '想象力': 50, '科学认知': 48, '品格养成': 58, '社交力': 54},
+          favoriteBooks: ['小熊维尼', '米老鼠', '唐老鸭'],
+          interestBooks: ['白雪公主', '睡美人', '木偶奇遇记'],
+          recommendBooks: ['爱丽丝梦游仙境', '彼得潘', '长袜子皮皮'] },
+        { id: 13, name: '徐小鹏', code: 'S20240013', classId: 3, className: '中一班', activityCount: 5, activityDuration: '1.5h', bookCount: 4,
+          readDurationMinutes: 90, readTimes: 8, completedBooks: 2,
+          bookTypeStats: {'科普百科': 3, '情商品格': 2},
+          abilityStats: {'习惯养成': 50, '情绪管理': 52, '想象力': 55, '科学认知': 58, '品格养成': 52, '社交力': 50},
+          favoriteBooks: ['十万个为什么', '昆虫记', '神奇校车'],
+          interestBooks: ['海底两万里', '不一样的卡梅拉', '爱心树'],
+          recommendBooks: ['草房子', '青铜葵花', '曹冲称象'] },
+        { id: 14, name: '马小丽', code: 'S20240014', classId: 4, className: '中二班', activityCount: 4, activityDuration: '1.2h', bookCount: 3,
+          readDurationMinutes: 72, readTimes: 7, completedBooks: 2,
+          bookTypeStats: {'国学文化': 3, '情商品格': 2},
+          abilityStats: {'习惯养成': 48, '情绪管理': 50, '想象力': 45, '科学认知': 42, '品格养成': 52, '社交力': 49},
+          favoriteBooks: ['司马光砸缸', '孔融让梨', '铁杵磨针'],
+          interestBooks: ['愚公移山', '精卫填海', '女娲补天'],
+          recommendBooks: ['嫦娥奔月', '后羿射日', '大禹治水'] },
+        { id: 15, name: '何小文', code: 'S20240015', classId: 6, className: '小二班', activityCount: 3, activityDuration: '0.9h', bookCount: 3,
+          readDurationMinutes: 54, readTimes: 5, completedBooks: 2,
+          bookTypeStats: {'情商品格': 2, '日常生活': 2},
+          abilityStats: {'习惯养成': 45, '情绪管理': 48, '想象力': 42, '科学认知': 40, '品格养成': 50, '社交力': 46},
+          favoriteBooks: ['盘古开天', '哪吒闹海', '嫦娥奔月'],
+          interestBooks: ['后羿射日', '大禹治水', '精卫填海'],
+          recommendBooks: ['女娲补天', '愚公移山', '铁杵磨针'] }
     ],
 
     // ========== 大数据总览 - 对标远程平台 ==========
@@ -263,19 +407,51 @@ const MockData = {
             const activities = [];
             const classNames = ['大一班', '大二班', '中一班', '中二班', '小一班', '小二班', '大三班', '中三班', '小三班'];
             const teacherNames = ['张晓梅', '李文华', '王秀英', '赵丽娟', '陈美玲', '周雪梅', '刘芳', '孙婷', '吴敏'];
+            const studentNames = ['张小明', '李小红', '王小刚', '赵小芳', '陈小华', '周小杰', '刘小燕', '孙小婷', '吴小敏', '郑小强'];
+            const deviceIds = ['DEV001', 'DEV002', 'DEV003', 'DEV004', 'DEV005'];
             for (let i = 0; i < 212; i++) {
                 const classIdx = i % classNames.length;
                 const day = Math.floor(i / 8) + 1;
                 const month = day > 28 ? '01' : '02';
                 const d = day > 28 ? day - 28 : day;
+                const hour = 8 + (i % 8);
+                const startTime = `2026-${month}-${String(d).padStart(2, '0')} ${String(hour).padStart(2, '0')}:00:00`;
+                const endTime = `2026-${month}-${String(d).padStart(2, '0')} ${String(hour + 2).padStart(2, '0')}:00:00`;
+                
+                // 生成参与学生列表（带详细信息）
+                const studentCount = 15 + (i % 20);
+                const participatingStudents = [];
+                const actualCount = Math.min(studentCount, 3 + (i % 5)); // 实际参与人数
+                for (let j = 0; j < actualCount; j++) {
+                    participatingStudents.push({
+                        name: studentNames[j % studentNames.length],
+                        code: `S2024${String(j + 1).padStart(3, '0')}`,
+                        deviceId: deviceIds[j % deviceIds.length]
+                    });
+                }
+                
+                // 生成阅读绘本信息
+                const readBooks = [];
+                const bookCount = i % 4; // 0-3本
+                const bookTypes = ['日常生活', '人际交往', '情商品格', '国学文化'];
+                for (let k = 0; k < bookCount; k++) {
+                    readBooks.push({
+                        name: `绘本${k + 1}`,
+                        type: bookTypes[k % bookTypes.length]
+                    });
+                }
+                
                 activities.push({
                     id: i + 1,
-                    startTime: `2026-${month}-${String(d).padStart(2, '0')} ${8 + (i % 8)}:00:00`,
-                    endTime: `2026-${month}-${String(d).padStart(2, '0')} ${8 + (i % 8)}:30:00`,
+                    startTime: startTime,
+                    endTime: endTime,
                     teacher: teacherNames[classIdx],
                     className: classNames[classIdx],
-                    studentCount: 15 + (i % 20),
-                    students: ['张小明', '李小红', '王小刚'].slice(0, 2 + (i % 3))
+                    studentCount: studentCount,
+                    participatingStudents: participatingStudents,
+                    readBooks: readBooks,
+                    pushStatus: i % 3 === 0 ? '已推送' : '未推送给家长', // 推送状态
+                    hasReadingData: bookCount > 0
                 });
             }
             return activities;
@@ -301,14 +477,40 @@ const MockData = {
                 '孔融让梨', '铁杵磨针', '愚公移山', '精卫填海', '女娲补天',
                 '嫦娥奔月', '后羿射日', '大禹治水', '盘古开天', '哪吒闹海'
             ];
-            return bookNames.map((name, i) => ({
-                id: i + 1,
-                name: name,
-                isbn: `978-7-5448-${String(1000 + i).padStart(4, '0')}-${i % 10}`,
-                type: types[i % types.length],
-                readCount: Math.max(0, 19 - Math.floor(i * 0.3)),
-                readDuration: `${(Math.max(0.1, 5.7 - i * 0.08)).toFixed(2)}h`
-            }));
+            const studentNames = ['张小明', '李小红', '王小刚', '赵小芳', '陈小华', '周小杰', '刘小燕', '孙小婷', '吴小敏', '郑小强', '黄小乐', '林小静'];
+            const classNames = ['大班3班', '大班2班', '中班1班', '小班2班', '大班1班', '中班2班'];
+            
+            return bookNames.map((name, i) => {
+                // 生成该绘本的幼儿阅读记录
+                const readingStudents = [];
+                const recordCount = Math.max(0, 5 - Math.floor(i * 0.15)); // 0-5条记录
+                for (let r = 0; r < recordCount; r++) {
+                    const startHour = 9 + (r * 2) % 8;
+                    const startMin = (r * 13) % 60;
+                    const endMin = startMin + 5 + (r * 3) % 25;
+                    const duration = ((endMin - startMin) / 60).toFixed(2);
+                    
+                    readingStudents.push({
+                        name: studentNames[(i + r) % studentNames.length],
+                        code: `S2024${String((i + r) % 100 + 1).padStart(3, '0')}`,
+                        className: classNames[(i + r) % classNames.length],
+                        startTime: `2024-08-${20 + (r % 10)} ${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}:00`,
+                        endTime: `2024-08-${20 + (r % 10)} ${String(startHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}:00`,
+                        duration: `${duration}h`,
+                        isCompleted: r % 3 === 0 ? '已读完' : '未读完'
+                    });
+                }
+                
+                return {
+                    id: i + 1,
+                    name: name,
+                    isbn: `978-7-5448-${String(1000 + i).padStart(4, '0')}-${i % 10}`,
+                    type: types[i % types.length],
+                    readCount: Math.max(0, 19 - Math.floor(i * 0.3)),
+                    readDuration: `${(Math.max(0.1, 5.7 - i * 0.08)).toFixed(2)}h`,
+                    readingStudents: readingStudents
+                };
+            });
         })(),
 
         // 教师列表（42人）
@@ -327,21 +529,44 @@ const MockData = {
         })()
     },
 
-    // ========== 设备管理数据 ==========
+    // ========== 设备数据（园所数据页签） ==========
     devices: [
-        { id: 1, sn: 'DEV-2024-001', code: 'A001', status: '在线', useCount: 86, useDuration: '38.5h', lastUseTime: '2026-03-10 15:30:00', bindSchool: '阳光幼儿园', bindClass: '大一班' },
-        { id: 2, sn: 'DEV-2024-002', code: 'A002', status: '在线', useCount: 78, useDuration: '35.2h', lastUseTime: '2026-03-10 14:45:00', bindSchool: '阳光幼儿园', bindClass: '大二班' },
-        { id: 3, sn: 'DEV-2024-003', code: 'A003', status: '在线', useCount: 65, useDuration: '29.8h', lastUseTime: '2026-03-10 16:00:00', bindSchool: '阳光幼儿园', bindClass: '中一班' },
-        { id: 4, sn: 'DEV-2024-004', code: 'A004', status: '离线', useCount: 58, useDuration: '26.1h', lastUseTime: '2026-03-09 17:30:00', bindSchool: '阳光幼儿园', bindClass: '中二班' },
-        { id: 5, sn: 'DEV-2024-005', code: 'A005', status: '在线', useCount: 45, useDuration: '20.3h', lastUseTime: '2026-03-10 13:20:00', bindSchool: '阳光幼儿园', bindClass: '小一班' },
-        { id: 6, sn: 'DEV-2024-006', code: 'A006', status: '在线', useCount: 40, useDuration: '18.0h', lastUseTime: '2026-03-10 11:50:00', bindSchool: '阳光幼儿园', bindClass: '小二班' },
-        { id: 7, sn: 'DEV-2024-007', code: 'A007', status: '离线', useCount: 52, useDuration: '23.4h', lastUseTime: '2026-03-08 16:40:00', bindSchool: '阳光幼儿园', bindClass: '大三班' },
-        { id: 8, sn: 'DEV-2024-008', code: 'A008', status: '在线', useCount: 38, useDuration: '17.1h', lastUseTime: '2026-03-10 10:30:00', bindSchool: '阳光幼儿园', bindClass: '中三班' },
-        { id: 9, sn: 'DEV-2024-009', code: 'A009', status: '在线', useCount: 32, useDuration: '14.4h', lastUseTime: '2026-03-10 09:15:00', bindSchool: '阳光幼儿园', bindClass: '小三班' },
-        { id: 10, sn: 'DEV-2024-010', code: 'A010', status: '离线', useCount: 28, useDuration: '12.6h', lastUseTime: '2026-03-07 15:00:00', bindSchool: '阳光幼儿园', bindClass: '大四班' },
-        { id: 11, sn: 'DEV-2024-011', code: 'A011', status: '在线', useCount: 22, useDuration: '9.9h', lastUseTime: '2026-03-10 08:45:00', bindSchool: '阳光幼儿园', bindClass: '中四班' },
-        { id: 12, sn: 'DEV-2024-012', code: 'A012', status: '在线', useCount: 18, useDuration: '8.1h', lastUseTime: '2026-03-10 14:10:00', bindSchool: '阳光幼儿园', bindClass: '小四班' },
-        { id: 13, sn: 'DEV-2024-013', code: 'A013', status: '离线', useCount: 72, useDuration: '39.2h', lastUseTime: '2026-03-06 12:30:00', bindSchool: '阳光幼儿园', bindClass: '大五班' }
+        { id: 1, sn: 'PR02241CC1500885', code: '13', useCount: 2, useDuration: '0.10h', lastUseTime: '2026-04-10 15:50:53' },
+        { id: 2, sn: 'PR02241CC1500064', code: '1', useCount: 6, useDuration: '0.23h', lastUseTime: '2026-04-10 15:49:26' },
+        { id: 3, sn: 'PR02241CC1500698', code: '2', useCount: 5, useDuration: '0.29h', lastUseTime: '2026-04-10 15:45:29' },
+        { id: 4, sn: 'PR02241CC1400072', code: '11', useCount: 1, useDuration: '0.00h', lastUseTime: '2026-04-10 15:24:26' },
+        { id: 5, sn: 'PR02241CC1500856', code: '28', useCount: 0, useDuration: '0.00h', lastUseTime: '' },
+        { id: 6, sn: 'PR02241CC1500252', code: '20', useCount: 0, useDuration: '0.00h', lastUseTime: '' },
+        { id: 7, sn: 'PR02241CC1400002', code: '21', useCount: 0, useDuration: '0.00h', lastUseTime: '' },
+        { id: 8, sn: 'PR02241CC1500513', code: '22', useCount: 0, useDuration: '0.00h', lastUseTime: '' },
+        { id: 9, sn: 'PR02241CC1500564', code: '23', useCount: 0, useDuration: '0.00h', lastUseTime: '' },
+        { id: 10, sn: 'PR02241CC1500636', code: '24', useCount: 0, useDuration: '0.00h', lastUseTime: '' },
+        { id: 11, sn: 'PR02241CC1500701', code: '3', useCount: 3, useDuration: '0.15h', lastUseTime: '2026-04-10 14:30:00' },
+        { id: 12, sn: 'PR02241CC1500745', code: '4', useCount: 4, useDuration: '0.18h', lastUseTime: '2026-04-10 13:20:00' },
+        { id: 13, sn: 'PR02241CC1500789', code: '5', useCount: 7, useDuration: '0.32h', lastUseTime: '2026-04-10 12:10:00' },
+        { id: 14, sn: 'PR02241CC1500812', code: '6', useCount: 1, useDuration: '0.05h', lastUseTime: '2026-04-09 16:40:00' },
+        { id: 15, sn: 'PR02241CC1500901', code: '7', useCount: 0, useDuration: '0.00h', lastUseTime: '' },
+        { id: 16, sn: 'PR02241CC1400123', code: '8', useCount: 2, useDuration: '0.12h', lastUseTime: '2026-04-09 11:30:00' },
+        { id: 17, sn: 'PR02241CC1500345', code: '9', useCount: 0, useDuration: '0.00h', lastUseTime: '' },
+        { id: 18, sn: 'PR02241CC1500456', code: '10', useCount: 5, useDuration: '0.21h', lastUseTime: '2026-04-10 10:15:00' },
+        { id: 19, sn: 'PR02241CC1400234', code: '12', useCount: 3, useDuration: '0.14h', lastUseTime: '2026-04-08 17:00:00' },
+        { id: 20, sn: 'PR02241CC1500567', code: '14', useCount: 0, useDuration: '0.00h', lastUseTime: '' },
+        { id: 21, sn: 'PR02241CC1500678', code: '15', useCount: 8, useDuration: '0.35h', lastUseTime: '2026-04-10 16:00:00' },
+        { id: 22, sn: 'PR02241CC1400345', code: '16', useCount: 0, useDuration: '0.00h', lastUseTime: '' },
+        { id: 23, sn: 'PR02241CC1500789', code: '17', useCount: 2, useDuration: '0.08h', lastUseTime: '2026-04-09 09:30:00' },
+        { id: 24, sn: 'PR02241CC1500890', code: '18', useCount: 6, useDuration: '0.27h', lastUseTime: '2026-04-10 14:00:00' },
+        { id: 25, sn: 'PR02241CC1500912', code: '19', useCount: 0, useDuration: '0.00h', lastUseTime: '' },
+        { id: 26, sn: 'PR02241CC1400456', code: '25', useCount: 4, useDuration: '0.19h', lastUseTime: '2026-04-09 15:20:00' },
+        { id: 27, sn: 'PR02241CC1500123', code: '26', useCount: 0, useDuration: '0.00h', lastUseTime: '' },
+        { id: 28, sn: 'PR02241CC1500234', code: '27', useCount: 1, useDuration: '0.03h', lastUseTime: '2026-04-07 10:00:00' },
+        { id: 29, sn: 'PR02241CC1500345', code: '29', useCount: 3, useDuration: '0.16h', lastUseTime: '2026-04-10 11:45:00' },
+        { id: 30, sn: 'PR02241CC1400567', code: '30', useCount: 0, useDuration: '0.00h', lastUseTime: '' },
+        { id: 31, sn: 'PR02241CC1500456', code: '31', useCount: 5, useDuration: '0.22h', lastUseTime: '2026-04-10 13:00:00' },
+        { id: 32, sn: 'PR02241CC1500567', code: '32', useCount: 0, useDuration: '0.00h', lastUseTime: '' },
+        { id: 33, sn: 'PR02241CC1400678', code: '33', useCount: 2, useDuration: '0.11h', lastUseTime: '2026-04-08 14:30:00' },
+        { id: 34, sn: 'PR02241CC1500678', code: '34', useCount: 9, useDuration: '0.41h', lastUseTime: '2026-04-10 16:20:00' },
+        { id: 35, sn: 'PR02241CC1500789', code: '35', useCount: 0, useDuration: '0.00h', lastUseTime: '' },
+        { id: 36, sn: 'PR02241CC1400789', code: '36', useCount: 1, useDuration: '0.04h', lastUseTime: '2026-04-06 09:00:00' }
     ],
 
     // ========== 用户管理数据 ==========

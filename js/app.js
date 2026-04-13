@@ -2,6 +2,7 @@
 const App = {
     currentPage: 'dataOverview',
     schoolDataTab: 'overview',
+    schoolSearchKeyword: '', // 学校搜索关键词
     currentRole: 'admin', // admin-教育局管理员, principal-园长, teacher-教师
     selectedSchool: null,  // 选中的园所（园长视角）
     selectedClass: null,   // 选中的班级（教师视角）
@@ -613,6 +614,7 @@ const App = {
             case 'dataOverview': container.innerHTML = this.renderDataOverviewPage(); break;
             case 'schoolData': container.innerHTML = this.renderSchoolDataPage(); break;
             case 'aiAnalysis': container.innerHTML = this.renderAiAnalysisPage(); break;
+            case 'activityDetail': container.innerHTML = this._activityDetailContent || '<div class="p-6 text-center text-slate-500">加载中...</div>'; break;
             default: container.innerHTML = this.renderDataOverviewPage();
         }
         requestAnimationFrame(() => {
@@ -630,6 +632,7 @@ const App = {
                 break;
             case 'schoolData': this.initSchoolDataPage(); break;
             case 'aiAnalysis': this.initAiAnalysisPage(); break;
+            case 'activityDetail': break; // 详情页无需初始化
         }
     },
 
@@ -795,7 +798,6 @@ const App = {
                 </div>
             `;
         };
-
         return `
             <div class="space-y-5">
                 <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
@@ -803,6 +805,7 @@ const App = {
                     <div class="text-xs text-slate-300 px-3 py-1.5 rounded-full border border-slate-400/20 bg-slate-700/30 w-fit">区域内各园所班均数据</div>
                 </div>
                 <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.45fr)] gap-5">
+                    <!-- 左侧：区域概览 -->
                     <div class="rounded-[26px] border border-slate-600/20 bg-gradient-to-br from-slate-800/70 via-slate-800/60 to-slate-800/50 p-5 shadow-xl">
                         <div class="text-xs uppercase tracking-[0.24em] text-sky-200/70">区域概览</div>
                         <div class="mt-2 text-2xl font-semibold text-white leading-tight">区域园所班均使用概览</div>
@@ -845,6 +848,7 @@ const App = {
                             </div>
                         </div>
                     </div>
+                    <!-- 右侧：园所排名 -->
                     <div class="grid grid-cols-1 2xl:grid-cols-2 gap-4">
                         ${metricConfigs.map(renderMetricRanking).join('')}
                     </div>
@@ -936,7 +940,7 @@ const App = {
 
             <!-- 图表第一行 -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                ${this.card(this.chartTitle('幼儿阅读绘本-类型占比', 'bg-blue-500') + '<div id="book-type-chart" class="h-72"></div>')}
+                ${this.card(this.chartTitle('幼儿阅读绘本类型-次数占比', 'bg-blue-500') + '<div id="book-type-chart" class="h-72"></div>')}
                 ${this.card(this.chartTitle('幼儿阅读绘本-能力分布', 'bg-emerald-500') + '<div id="ability-distribution-chart" class="h-72"></div>')}
             </div>
 
@@ -947,6 +951,15 @@ const App = {
             </div>
 
             ${this.currentRole === 'admin' ? this.card(this.renderAdminClassUsageComparison(overviewData.classUsageComparison), 'overflow-hidden') : ''}
+
+            <!-- 园所活动次数排序（管理员可见） -->
+            ${this.currentRole === 'admin' ? this.card(`
+                <div class="flex items-center justify-between gap-3 mb-4">
+                    ${this.chartTitle('园所活动次数排序', 'bg-cyan-500')}
+                    <div class="text-xs text-slate-400 px-3 py-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/10">全区园所活动热力对比</div>
+                </div>
+                <div id="kindergarten-ranking-wrap"></div>
+            `, 'overflow-hidden') : ''}
 
             <!-- 绘本排行表格（管理员不可见） -->
             ${this.currentRole !== 'admin' ? this.card(this.chartTitle('阅读次数排名前十绘本', 'bg-indigo-500') + '<div id="book-ranking-table-wrap"></div>') : ''}
@@ -984,23 +997,8 @@ const App = {
     renderKindergartenActivityRanking() {
         if (this.currentRole !== 'admin') return;
 
-        const pageContainer = document.getElementById('page-container');
-        if (!pageContainer) return;
-
-        let wrap = document.getElementById('kindergarten-ranking-wrap');
-        if (!wrap) {
-            const section = document.createElement('section');
-            section.className = 'bg-slate-600/50 backdrop-blur-sm rounded-2xl p-5 border border-slate-500/35 hover:border-blue-400/30 transition-all duration-300 overflow-hidden';
-            section.innerHTML = `
-                <div class="flex items-center justify-between gap-3 mb-4">
-                    ${this.chartTitle('园所活动次数排序', 'bg-cyan-500')}
-                    <div class="text-xs text-slate-400 px-3 py-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/10">全区园所活动热力对比</div>
-                </div>
-                <div id="kindergarten-ranking-wrap"></div>
-            `;
-            pageContainer.appendChild(section);
-            wrap = section.querySelector('#kindergarten-ranking-wrap');
-        }
+        const wrap = document.getElementById('kindergarten-ranking-wrap');
+        if (!wrap) return;
 
         const ranking = this.getKindergartenActivityRanking();
         const maxCount = ranking[0]?.activityCount || 1;
@@ -1042,7 +1040,8 @@ const App = {
             { id: 'books', label: '绘本', icon: '📖' },
             { id: 'classes', label: '班级', icon: '🏫' },
             { id: 'teachers', label: '教师', icon: '👩‍🏫' },
-            { id: 'students', label: '幼儿', icon: '👶' }
+            { id: 'students', label: '幼儿', icon: '👶' },
+            { id: 'devices', label: '设备', icon: '💻' }
         ];
 
         // 教育局管理员：未选学校时只显示全区数据概览和学校筛选，选了学校后显示完整标签
@@ -1162,15 +1161,21 @@ const App = {
 
     initSchoolDataPage() {
         this.enhanceSchoolDataLayout();
-        // 教育局管理员：默认显示全区数据概览
-        let defaultTab;
-        if (this.currentRole === 'admin') {
-            defaultTab = this.selectedSchool ? 'overview' : 'overview';
+        // 教育局管理员：未选学校时，保持当前tab（clearSelectedSchool会设置为schools）
+        // 首次进入时默认显示全区数据概览
+        if (this.currentRole === 'admin' && !this.selectedSchool) {
+            // 如果已经设置了tab，保持不变；否则默认overview
+            if (!this.schoolDataTab || this.schoolDataTab === 'overview') {
+                this.schoolDataTab = 'overview';
+            }
         } else {
-            defaultTab = this.schoolDataTab || 'overview';
+            this.schoolDataTab = this.schoolDataTab || 'overview';
         }
-        this.schoolDataTab = defaultTab;
-        this.renderSchoolTabContent(defaultTab);
+        this.renderSchoolTabContent(this.schoolDataTab);
+        // 同步更新tab高亮状态
+        document.querySelectorAll('.school-tab').forEach(tab => {
+            tab.className = this.getSchoolTabClass(tab.dataset.tab === this.schoolDataTab);
+        });
     },
 
     renderSchoolTabContent(tabId) {
@@ -1178,7 +1183,7 @@ const App = {
         if (!container) return;
         Charts.dispose();
         switch (tabId) {
-            case 'schools': container.innerHTML = this.renderSchoolsView(); break;
+            case 'schools': container.innerHTML = this.renderSchoolsView(this.schoolSearchKeyword); break;
             case 'overview':
                 container.innerHTML = this.renderSchoolOverview();
                 requestAnimationFrame(() => {
@@ -1195,12 +1200,77 @@ const App = {
     },
 
     // 学校视图（教育局管理员专属）
-    renderSchoolsView() {
-        const schools = MockData.kindergartens;
-        const usageData = MockData.kindergartenClassUsageComparison;
-
+    renderSchoolsView(searchKeyword = '') {
         return `
         <div class="space-y-6">
+            <!-- 搜索栏（固定不重新渲染） -->
+            <div class="bg-slate-700/40 rounded-xl p-4 border border-slate-500/30">
+                <div class="flex items-center gap-4">
+                    <div class="flex-1 relative">
+                        <input
+                            type="text"
+                            id="school-search-input"
+                            placeholder="搜索学校名称或区域..."
+                            value="${searchKeyword}"
+                            class="w-full bg-slate-800/60 border border-slate-500/30 rounded-lg px-4 py-2.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-400/50 focus:bg-slate-800/80 transition-all"
+                            oninput="App.handleSchoolSearch(this.value)"
+                        />
+                        <div class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        </div>
+                    </div>
+                    <div id="school-search-stats" class="text-sm text-slate-400">
+                        ${this.renderSchoolSearchStats(searchKeyword)}
+                    </div>
+                    <div id="school-clear-btn">
+                        ${searchKeyword ? `<button onclick="App.clearSchoolSearch()" class="px-3 py-2 rounded-lg bg-slate-600/50 border border-slate-500/30 text-slate-300 text-sm hover:bg-slate-500/50 transition-all">清除</button>` : ''}
+                    </div>
+                </div>
+            </div>
+
+            <!-- 搜索结果容器 -->
+            <div id="school-search-results">
+                ${this.renderSchoolsResults(searchKeyword)}
+            </div>
+        </div>`;
+    },
+
+    // 渲染搜索统计信息
+    renderSchoolSearchStats(searchKeyword = '') {
+        const allSchools = MockData.kindergartens;
+        const keyword = (searchKeyword || '').toLowerCase().trim();
+        const schools = keyword
+            ? allSchools.filter(s => s.name.toLowerCase().includes(keyword) || s.district.toLowerCase().includes(keyword))
+            : allSchools;
+        const totalCount = allSchools.length;
+        const filteredCount = schools.length;
+
+        return keyword
+            ? `找到 <span class="text-cyan-400 font-semibold">${filteredCount}</span> / ${totalCount} 所学校`
+            : `共 <span class="text-cyan-400 font-semibold">${totalCount}</span> 所学校`;
+    },
+
+    // 渲染搜索结果列表
+    renderSchoolsResults(searchKeyword = '') {
+        const allSchools = MockData.kindergartens;
+        const usageData = MockData.kindergartenClassUsageComparison;
+
+        // 模糊搜索过滤
+        const keyword = (searchKeyword || '').toLowerCase().trim();
+        const schools = keyword
+            ? allSchools.filter(s => s.name.toLowerCase().includes(keyword) || s.district.toLowerCase().includes(keyword))
+            : allSchools;
+
+        // 搜索结果为空提示
+        if (schools.length === 0) {
+            return `
+                <div class="bg-slate-700/30 rounded-xl p-8 text-center border border-slate-500/20">
+                    <div class="text-slate-400 mb-2">未找到匹配的学校</div>
+                    <div class="text-sm text-slate-500">请尝试其他关键词搜索</div>
+                </div>`;
+        }
+
+        return `
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 ${schools.map(school => {
                     const usage = usageData.find(u => u.kindergartenId === school.id) || {};
@@ -1271,8 +1341,7 @@ const App = {
                     </div>
                     `;
                 }).join('')}
-            </div>
-        </div>`;
+            </div>`;
     },
 
     // 查看学校详情
@@ -1288,8 +1357,63 @@ const App = {
     // 返回学校筛选（教育局管理员）
     clearSelectedSchool() {
         this.selectedSchool = null;
+        this.schoolSearchKeyword = '';
         this.schoolDataTab = 'schools';
         this.loadPage('schoolData');
+    },
+
+    // 学校搜索处理（只更新结果，不重新渲染输入框）
+    handleSchoolSearch(keyword) {
+        this.schoolSearchKeyword = keyword;
+
+        // 只更新搜索结果容器
+        const resultsContainer = document.getElementById('school-search-results');
+        if (resultsContainer) {
+            resultsContainer.innerHTML = this.renderSchoolsResults(keyword);
+        }
+
+        // 只更新统计信息
+        const statsContainer = document.getElementById('school-search-stats');
+        if (statsContainer) {
+            statsContainer.innerHTML = this.renderSchoolSearchStats(keyword);
+        }
+
+        // 更新清除按钮显示
+        const clearBtnContainer = document.getElementById('school-clear-btn');
+        if (clearBtnContainer) {
+            clearBtnContainer.innerHTML = keyword
+                ? `<button onclick="App.clearSchoolSearch()" class="px-3 py-2 rounded-lg bg-slate-600/50 border border-slate-500/30 text-slate-300 text-sm hover:bg-slate-500/50 transition-all">清除</button>`
+                : '';
+        }
+    },
+
+    // 清除学校搜索
+    clearSchoolSearch() {
+        this.schoolSearchKeyword = '';
+
+        // 清空输入框
+        const input = document.getElementById('school-search-input');
+        if (input) {
+            input.value = '';
+        }
+
+        // 只更新搜索结果容器
+        const resultsContainer = document.getElementById('school-search-results');
+        if (resultsContainer) {
+            resultsContainer.innerHTML = this.renderSchoolsResults('');
+        }
+
+        // 只更新统计信息
+        const statsContainer = document.getElementById('school-search-stats');
+        if (statsContainer) {
+            statsContainer.innerHTML = this.renderSchoolSearchStats('');
+        }
+
+        // 隐藏清除按钮
+        const clearBtnContainer = document.getElementById('school-clear-btn');
+        if (clearBtnContainer) {
+            clearBtnContainer.innerHTML = '';
+        }
     },
 
     // 园所数据 - 数据概述
@@ -1303,11 +1427,12 @@ const App = {
             ${this.renderDateFilterBar('schoolOverview')}
             <div>
                 ${this.chartTitle(scopeLabel + '绘本活动概览', 'bg-blue-500')}
-                <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
                     ${this.miniStat('绘本活动总次数', d.activityTotal, 'blue')}
                     ${this.miniStat('绘本活动总时长', d.activityDuration + 'h', 'emerald')}
-                    ${this.miniStat('绘本阅读总数', d.bookTotal, 'purple')}
+                    ${this.miniStat('绘本总数', d.bookTotal, 'purple')}
                     ${this.miniStat('绘本阅读次数', d.bookReadCount, 'amber')}
+                    ${this.miniStat('绘本阅读时长', d.bookReadDuration + 'h', 'cyan')}
                 </div>
             </div>
             <div>
@@ -1339,16 +1464,6 @@ const App = {
                     </div>
                 </div>
             </div>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div class="bg-slate-700/40 rounded-xl p-4 border border-slate-500/30">
-                    <h4 class="text-sm font-medium text-slate-300 mb-2">绘本分类阅读次数占比</h4>
-                    <div id="school-category-pie" class="h-64"></div>
-                </div>
-                <div class="bg-slate-700/40 rounded-xl p-4 border border-slate-500/30">
-                    <h4 class="text-sm font-medium text-slate-300 mb-2">各分类阅读时长分布</h4>
-                    <div id="school-category-bar" class="h-64"></div>
-                </div>
-            </div>
             ${this.currentRole !== 'admin' ? this.card(`
                 <div class="flex items-center justify-between gap-3 mb-4">
                     ${this.chartTitle('绘本推荐栏', 'bg-rose-500')}
@@ -1375,9 +1490,7 @@ const App = {
     },
 
     initSchoolOverviewCharts() {
-        const d = this.getSchoolOverviewDataForCurrentRange();
-        Charts.safeInit(() => Charts.initSchoolCategoryPie(d.categoryData));
-        Charts.safeInit(() => Charts.initSchoolCategoryBar(d.categoryData));
+        // 图表初始化已移除
     },
 
     // 园所数据 - 绘本活动
@@ -1527,7 +1640,7 @@ const App = {
         const totalPages = Math.ceil(total / p.pageSize);
         const pageData = data.slice((p.page-1)*p.pageSize, p.page*p.pageSize);
         const classOptions = '<option value="">全部</option>' + [...new Set(MockData.students.map(s => s.className))].map(c => `<option value="${c}" ${f.className===c?'selected':''}>${c}</option>`).join('');
-        const headers = [{label:'序号'},{label:'幼儿姓名'},{label:'幼儿编号'},{label:'所属班级'},{label:'参与活动次数',align:'text-center'},{label:'参与活动时长',align:'text-center'},{label:'绘本阅读总数',align:'text-center'},{label:'操作',align:'text-center'}];
+        const headers = [{label:'序号'},{label:'幼儿姓名'},{label:'幼儿编号'},{label:'所属班级'},{label:'参与活动次数',align:'text-center'},{label:'参与活动时长',align:'text-center'},{label:'绘本总数',align:'text-center'},{label:'操作',align:'text-center'}];
         const rows = pageData.map((s,i) => `
             <tr class="hover:bg-blue-500/5 transition-colors">
                 <td class="px-4 py-3 text-slate-500">${(p.page-1)*p.pageSize+i+1}</td>
@@ -1560,19 +1673,19 @@ const App = {
         const total = data.length;
         const totalPages = Math.ceil(total / p.pageSize);
         const pageData = data.slice((p.page-1)*p.pageSize, p.page*p.pageSize);
-        const headers = [{label:'序号'},{label:'设备SN号'},{label:'设备编号'},{label:'使用次数',align:'text-center'},{label:'使用时长',align:'text-center'},{label:'最近使用时间',align:'text-center'}];
+        const headers = [{label:'序号'},{label:'设备SN号'},{label:'设备编号'},{label:'设备使用次数'},{label:'设备使用时长'},{label:'最近使用时间'}];
         const rows = pageData.map((d,i) => `
             <tr class="hover:bg-blue-500/5 transition-colors">
                 <td class="px-4 py-3 text-slate-500">${(p.page-1)*p.pageSize+i+1}</td>
                 <td class="px-4 py-3 font-medium text-slate-200">${d.sn}</td>
                 <td class="px-4 py-3 text-slate-400">${d.code}</td>
-                <td class="px-4 py-3 text-center text-blue-400 font-semibold">${d.useCount}</td>
+                <td class="px-4 py-3 text-center text-blue-400 font-semibold">${d.useCount}次</td>
                 <td class="px-4 py-3 text-center text-slate-300">${d.useDuration}</td>
-                <td class="px-4 py-3 text-center text-slate-500">${d.lastUseTime}</td>
+                <td class="px-4 py-3 text-center text-slate-500">${d.lastUseTime || '-'}</td>
             </tr>`).join('');
         return `<div>
             ${this.filterBar(`
-                ${this.filterInput('设备SN号', `placeholder="请输入设备SN号" value="${f.sn}" oninput="App.filters.devices.sn=this.value"`)}
+                ${this.filterInput('设备SN号', `placeholder="请输入" value="${f.sn}" oninput="App.filters.devices.sn=this.value"`)}
                 ${this.btnPrimary('查询', "App.pagination.devices.page=1;App.renderSchoolTabContent('devices')")}
                 ${this.btnSecondary('重置', "App.filters.devices={sn:''};App.pagination.devices.page=1;App.renderSchoolTabContent('devices')")}
             `)}
@@ -1730,38 +1843,995 @@ const App = {
         return `<div class="bg-slate-800/60 rounded-lg p-3 border border-slate-700/30"><span class="text-slate-500 text-sm">${label}：</span><span class="text-slate-200 font-medium">${value}</span></div>`;
     },
 
-    viewActivityDetail(id) {
+    viewActivityDetail(id, mode = 'modal') {
         const a = MockData.schoolData.activities.find(x => x.id === id);
         if (!a) return;
-        this.openModal(`<div class="p-6">${this.modalHeader('绘本活动详情')}<div class="grid grid-cols-2 gap-3">${this.modalInfoItem('活动开始时间', a.startTime)}${this.modalInfoItem('活动结束时间', a.endTime)}${this.modalInfoItem('教师', a.teacher)}${this.modalInfoItem('参与班级', a.className)}<div class="col-span-2">${this.modalInfoItem('参与幼儿（'+a.studentCount+'人）', a.students.join('、'))}</div></div></div>`);
+        
+        // 计算活动时长（小时）
+        const start = new Date(a.startTime);
+        const end = new Date(a.endTime);
+        const durationHours = ((end - start) / (1000 * 60 * 60)).toFixed(2);
+        
+        // 计算幼儿参与占比
+        const participatingCount = a.participatingStudents?.length || 0;
+        const participationRate = a.studentCount > 0 ? Math.round((participatingCount / a.studentCount) * 100) : 0;
+        
+        // 生成参与幼儿表格
+        const studentHeaders = [{label:'序号', align:'text-center', width:'w-16'}, {label:'姓名'}, {label:'幼儿编号'}, {label:'设备编号'}];
+        const studentRows = a.participatingStudents?.length > 0 
+            ? a.participatingStudents.map((s, idx) => `
+                <tr class="border-b border-slate-700/50 hover:bg-slate-700/30">
+                    <td class="px-4 py-3 text-center text-slate-300">${idx + 1}</td>
+                    <td class="px-4 py-3 text-slate-200">${s.name}</td>
+                    <td class="px-4 py-3 text-slate-400 text-sm">${s.code}</td>
+                    <td class="px-4 py-3 text-slate-400 text-sm">${s.deviceId}</td>
+                </tr>
+            `).join('')
+            : `<tr><td colspan="4" class="px-4 py-8 text-center text-slate-500">暂无数据</td></tr>`;
+        
+        // 生成绘本类型统计
+        const bookTypeStats = {};
+        a.readBooks?.forEach(b => {
+            bookTypeStats[b.type] = (bookTypeStats[b.type] || 0) + 1;
+        });
+        const bookTypeHtml = Object.entries(bookTypeStats).length > 0
+            ? Object.entries(bookTypeStats).map(([type, count]) => `
+                <div class="flex items-center justify-between py-1.5 px-2 rounded bg-blue-500/10 border border-blue-500/20">
+                    <span class="text-slate-300 text-sm">${type}</span>
+                    <span class="text-blue-400 text-sm font-medium">${count}本</span>
+                </div>
+            `).join('')
+            : '<span class="text-slate-500 text-sm">抱歉，没有统计到阅读数据，无法分析类型占比</span>';
+        
+        // 标题栏按钮
+        const headerActions = mode === 'modal' 
+            ? `<button onclick="App.viewActivityDetail(${a.id}, 'subpage')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2" title="在当前页面打开">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
+                打开
+            </button>`
+            : `<button onclick="App.closeActivitySubpage()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                关闭
+            </button>`;
+        
+        const content = `
+            <div class="p-6 max-w-6xl mx-auto">
+                <!-- 标题栏 -->
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xl font-bold text-white">绘本活动详情</h2>
+                    <div class="flex items-center">${headerActions}</div>
+                </div>
+                
+                <!-- 活动信息概览 + 参与幼儿 -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <!-- 左侧：活动信息概览 -->
+                    <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
+                        <div class="px-4 py-3 bg-slate-700/30 border-b border-slate-700/50">
+                            <h3 class="text-sm font-semibold text-slate-200">活动信息概览</h3>
+                        </div>
+                        <div class="p-4 space-y-3">
+                            <div class="flex justify-between items-center py-2 border-b border-slate-700/30">
+                                <span class="text-slate-400 text-sm">教师：</span>
+                                <span class="text-slate-200">${a.teacher}</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-slate-700/30">
+                                <span class="text-slate-400 text-sm">活动时长：</span>
+                                <span class="text-slate-200">${durationHours}h</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-slate-700/30">
+                                <span class="text-slate-400 text-sm">开始-结束时间：</span>
+                                <span class="text-slate-200 text-sm">${a.startTime} - ${a.endTime.slice(11, 19)}</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-slate-700/30">
+                                <span class="text-slate-400 text-sm">参与班级：</span>
+                                <span class="text-slate-200">${a.className}</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-slate-700/30">
+                                <span class="text-slate-400 text-sm">幼儿参与占比：</span>
+                                <span class="text-slate-200">${participatingCount}/${a.studentCount} ${participationRate}%</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-slate-700/30">
+                                <span class="text-slate-400 text-sm">共计阅读绘本数量：</span>
+                                <span class="text-slate-200">${a.readBooks?.length || 0}本</span>
+                            </div>
+                            <div class="py-2">
+                                <span class="text-slate-400 text-sm block mb-2">阅读绘本类型占比：</span>
+                                <div class="grid grid-cols-2 gap-2">${bookTypeHtml}</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 右侧：参与幼儿 -->
+                    <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
+                        <div class="px-4 py-3 bg-slate-700/30 border-b border-slate-700/50 flex justify-between items-center">
+                            <h3 class="text-sm font-semibold text-slate-200">参与幼儿</h3>
+                            <span class="text-xs text-slate-400">${participatingCount}人</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead class="bg-slate-700/20">
+                                    <tr>
+                                        ${studentHeaders.map(h => `<th class="px-4 py-3 text-left text-xs font-medium text-slate-400 ${h.align || ''} ${h.width || ''}">${h.label}</th>`).join('')}
+                                    </tr>
+                                </thead>
+                                <tbody>${studentRows}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 推送信息 -->
+                <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden mb-6">
+                    <div class="px-4 py-3 bg-slate-700/30 border-b border-slate-700/50">
+                        <h3 class="text-sm font-semibold text-slate-200">推送信息</h3>
+                    </div>
+                    <div class="p-4">
+                        <div class="flex items-center gap-2">
+                            <span class="text-slate-400 text-sm">推送状态：</span>
+                            <span class="${a.pushStatus === '已推送' ? 'text-emerald-400' : 'text-amber-400'}">${a.pushStatus}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 幼儿阅读数据 -->
+                <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
+                    <div class="px-4 py-3 bg-slate-700/30 border-b border-slate-700/50">
+                        <h3 class="text-sm font-semibold text-slate-200">幼儿阅读数据</h3>
+                    </div>
+                    <div class="p-8 text-center">
+                        ${a.hasReadingData 
+                            ? '<p class="text-slate-400">阅读数据已记录</p>'
+                            : '<p class="text-slate-500">数据为空：因教师在活动过程中没有选择幼儿，所以无法生成幼儿阅读记录。</p>'
+                        }
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        if (mode === 'subpage') {
+            // 子页面模式：先关闭弹窗，然后在当前标签页内容区域内渲染
+            this.closeModal();
+            this.openActivitySubpage(content);
+        } else {
+            // 弹窗模式：使用原有弹窗
+            this.openModal(content);
+        }
+    },
+    
+    // 打开活动详情子页面（在当前标签页内容区域内）
+    openActivitySubpage(html) {
+        // 找到当前标签页内容容器
+        const tabContent = document.getElementById('school-tab-content');
+        if (!tabContent) return;
+
+        // 保存当前 tab 状态
+        this._previousSchoolDataTab = this.schoolDataTab;
+
+        // 保存原始内容
+        this._originalTabContent = tabContent.innerHTML;
+
+        // 创建子页面容器
+        const subpageContainer = document.createElement('div');
+        subpageContainer.id = 'activity-subpage-container';
+        subpageContainer.className = 'animate-fadeIn';
+        subpageContainer.innerHTML = html;
+        
+        // 清空并插入子页面
+        tabContent.innerHTML = '';
+        tabContent.appendChild(subpageContainer);
+        
+        // 隐藏筛选栏（如果存在）
+        const filterBar = tabContent.previousElementSibling;
+        if (filterBar && filterBar.classList.contains('filter-bar')) {
+            filterBar.style.display = 'none';
+            this._hiddenFilterBar = filterBar;
+        }
+    },
+    
+    // 关闭活动详情子页面
+    closeActivitySubpage() {
+        const tabContent = document.getElementById('school-tab-content');
+        if (!tabContent) return;
+
+        // 恢复筛选栏
+        if (this._hiddenFilterBar) {
+            this._hiddenFilterBar.style.display = '';
+            this._hiddenFilterBar = null;
+        }
+
+        // 恢复到之前保存的 tab 状态
+        const previousTab = this._previousSchoolDataTab || 'activities';
+        this.schoolDataTab = previousTab;
+        this.renderSchoolTabContent(previousTab);
+
+        // 同步更新 tab 高亮状态
+        document.querySelectorAll('.school-tab').forEach(tab => {
+            tab.className = this.getSchoolTabClass(tab.dataset.tab === previousTab);
+        });
+
+        // 清理保存的内容
+        this._originalTabContent = null;
+        this._previousSchoolDataTab = null;
     },
 
-    viewBookDetail(id) {
+    viewBookDetail(id, mode = 'modal') {
         const b = MockData.schoolData.books.find(x => x.id === id);
         if (!b) return;
-        this.openModal(`<div class="p-6">${this.modalHeader('绘本详情')}<div class="flex gap-6"><div class="w-28 h-36 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-xl flex items-center justify-center text-4xl border border-blue-500/20">📖</div><div class="flex-1 space-y-3"><div class="text-lg font-bold text-white">${b.name}</div><div class="text-sm text-slate-400">ISBN：${b.isbn}</div><div>${this.badge(b.type)}</div><div class="text-sm"><span class="text-slate-500">阅读次数：</span><span class="text-blue-400 font-bold text-lg">${b.readCount}</span><span class="text-slate-500 ml-1">次</span></div><div class="text-sm text-slate-400">阅读时长：${b.readDuration}</div></div></div></div>`);
+        
+        // 生成幼儿阅读数据表格
+        const studentHeaders = [
+            {label: '序号', align: 'text-center', width: 'w-16'},
+            {label: '幼儿姓名'},
+            {label: '幼儿编号'},
+            {label: '所属班级'},
+            {label: '阅读开始时间'},
+            {label: '阅读结束时间'},
+            {label: '阅读时长'},
+            {label: '是否读完', align: 'text-center'}
+        ];
+        
+        const studentRows = b.readingStudents?.length > 0
+            ? b.readingStudents.map((s, idx) => `
+                <tr class="border-b border-slate-700/50 hover:bg-slate-700/30">
+                    <td class="px-4 py-3 text-center text-slate-300">${idx + 1}</td>
+                    <td class="px-4 py-3 text-slate-200">${s.name}</td>
+                    <td class="px-4 py-3 text-slate-400 text-sm">${s.code}</td>
+                    <td class="px-4 py-3 text-slate-300">${s.className}</td>
+                    <td class="px-4 py-3 text-slate-400 text-sm">${s.startTime}</td>
+                    <td class="px-4 py-3 text-slate-400 text-sm">${s.endTime}</td>
+                    <td class="px-4 py-3 text-slate-300">${s.duration}</td>
+                    <td class="px-4 py-3 text-center">
+                        <span class="${s.isCompleted === '已读完' ? 'text-emerald-400' : 'text-amber-400'}">${s.isCompleted}</span>
+                    </td>
+                </tr>
+            `).join('')
+            : `<tr><td colspan="8" class="px-4 py-8 text-center text-slate-500">暂无阅读数据</td></tr>`;
+        
+        // 标题栏按钮
+        const headerActions = mode === 'modal'
+            ? `<button onclick="App.viewBookDetail(${b.id}, 'subpage')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2" title="在当前页面打开">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
+                打开
+            </button>`
+            : `<button onclick="App.closeBookSubpage()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                关闭
+            </button>`;
+        
+        const content = `
+            <div class="p-6 max-w-6xl mx-auto">
+                <!-- 标题栏 -->
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xl font-bold text-white">绘本详情</h2>
+                    <div class="flex items-center">${headerActions}</div>
+                </div>
+                
+                <!-- 绘本信息 -->
+                <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden mb-6">
+                    <div class="px-4 py-3 bg-slate-700/30 border-b border-slate-700/50">
+                        <h3 class="text-sm font-semibold text-slate-200">绘本信息</h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-slate-700/20">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-slate-400">绘本名称</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-slate-400">ISBN号</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-slate-400">绘本类型</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-slate-400">阅读次数</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-slate-400">阅读时长</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="border-b border-slate-700/50">
+                                    <td class="px-4 py-3 text-slate-200">${b.name}</td>
+                                    <td class="px-4 py-3 text-slate-400 text-sm">${b.isbn}</td>
+                                    <td class="px-4 py-3 text-slate-300">${b.type}</td>
+                                    <td class="px-4 py-3 text-blue-400">${b.readCount}次</td>
+                                    <td class="px-4 py-3 text-slate-300">${b.readDuration}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- 幼儿阅读数据 -->
+                <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
+                    <div class="px-4 py-3 bg-slate-700/30 border-b border-slate-700/50">
+                        <h3 class="text-sm font-semibold text-slate-200">幼儿阅读数据</h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-slate-700/20">
+                                <tr>
+                                    ${studentHeaders.map(h => `<th class="px-4 py-3 text-left text-xs font-medium text-slate-400 ${h.align || ''} ${h.width || ''}">${h.label}</th>`).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>${studentRows}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        if (mode === 'subpage') {
+            // 子页面模式：先关闭弹窗，然后在当前标签页内容区域内渲染
+            this.closeModal();
+            this.openBookSubpage(content);
+        } else {
+            // 弹窗模式：使用原有弹窗
+            this.openModal(content);
+        }
+    },
+    
+    // 打开绘本详情子页面（在当前标签页内容区域内）
+    openBookSubpage(html) {
+        // 找到当前标签页内容容器
+        const tabContent = document.getElementById('school-tab-content');
+        if (!tabContent) return;
+        
+        // 保存原始内容
+        this._originalBookTabContent = tabContent.innerHTML;
+        
+        // 创建子页面容器
+        const subpageContainer = document.createElement('div');
+        subpageContainer.id = 'book-subpage-container';
+        subpageContainer.className = 'animate-fadeIn';
+        subpageContainer.innerHTML = html;
+        
+        // 清空并插入子页面
+        tabContent.innerHTML = '';
+        tabContent.appendChild(subpageContainer);
+        
+        // 隐藏筛选栏（如果存在）
+        const filterBar = tabContent.previousElementSibling;
+        if (filterBar && filterBar.classList.contains('filter-bar')) {
+            filterBar.style.display = 'none';
+            this._hiddenBookFilterBar = filterBar;
+        }
+    },
+    
+    // 关闭绘本详情子页面
+    closeBookSubpage() {
+        const tabContent = document.getElementById('school-tab-content');
+        if (!tabContent) return;
+        
+        // 恢复筛选栏
+        if (this._hiddenBookFilterBar) {
+            this._hiddenBookFilterBar.style.display = '';
+            this._hiddenBookFilterBar = null;
+        }
+        
+        // 恢复到绘本列表界面
+        this.schoolDataTab = 'books';
+        this.renderSchoolTabContent('books');
+        
+        // 清理保存的内容
+        this._originalBookTabContent = null;
     },
 
-    viewClassDetail(id) {
+    viewClassDetail(id, mode = 'modal') {
         const cls = MockData.classes.find(c => c.id === id);
         if (!cls) return;
+        
+        // 获取班级学生数据
         const students = MockData.students.filter(s => s.classId === id);
-        const headers = [{label:'姓名'},{label:'编号'},{label:'活动次数',align:'text-center'},{label:'阅读总数',align:'text-center'}];
-        const rows = students.map(s => `<tr class="hover:bg-blue-500/5"><td class="px-3 py-2 text-slate-200">${s.name}</td><td class="px-3 py-2 text-slate-500 text-xs">${s.code}</td><td class="px-3 py-2 text-center text-blue-400">${s.activityCount}</td><td class="px-3 py-2 text-center text-slate-300">${s.bookCount}</td></tr>`).join('');
-        this.openModal(`<div class="p-6">${this.modalHeader(cls.name + ' - 班级详情')}<div class="grid grid-cols-4 gap-3 mb-5">${this.miniStat('幼儿数', cls.studentCount, 'blue')}${this.miniStat('活动次数', cls.activityCount, 'emerald')}${this.miniStat('活动时长', cls.activityDuration, 'purple')}${this.miniStat('设备使用', cls.deviceUseCount, 'amber')}</div><h4 class="text-sm font-semibold text-slate-300 mb-3">班级幼儿列表</h4>${this.tableWrap(headers, rows)}${students.length===0?'<div class="text-center text-slate-500 py-6">暂无幼儿数据</div>':''}</div>`);
+        
+        // 生成绘本类型占比HTML
+        const bookTypeStats = cls.bookTypeStats || {};
+        const bookTypeHtml = Object.entries(bookTypeStats).length > 0
+            ? Object.entries(bookTypeStats).map(([type, count]) => `
+                <div class="flex items-center justify-between py-1.5 px-2 rounded bg-blue-500/10 border border-blue-500/20">
+                    <span class="text-slate-300 text-sm">${type}</span>
+                    <span class="text-blue-400 text-sm font-medium">${count}本</span>
+                </div>
+            `).join('')
+            : '<span class="text-slate-500 text-sm">抱歉，没有统计到阅读数据，无法分析类型占比</span>';
+        
+        // 生成班级能力分布HTML
+        const abilityStats = cls.abilityStats || {};
+        const abilityHtml = Object.entries(abilityStats).length > 0
+            ? Object.entries(abilityStats).map(([ability, score]) => `
+                <div class="flex items-center justify-between py-1">
+                    <span class="text-slate-400 text-sm">${ability}</span>
+                    <div class="flex items-center gap-2">
+                        <div class="w-24 h-2 bg-slate-700 rounded-full overflow-hidden">
+                            <div class="h-full bg-gradient-to-r from-blue-500 to-cyan-500" style="width: ${score}%"></div>
+                        </div>
+                        <span class="text-blue-400 text-sm w-8">${score}</span>
+                    </div>
+                </div>
+            `).join('')
+            : '<span class="text-slate-500 text-sm">抱歉，没有统计到阅读数据，无法分析能力分布</span>';
+        
+        // 生成幼儿列表表格
+        const studentHeaders = [
+            {label: '序号', align: 'text-center', width: 'w-16'},
+            {label: '幼儿姓名'},
+            {label: '幼儿编号'},
+            {label: '阅读次数', align: 'text-center'},
+            {label: '阅读时长', align: 'text-center'},
+            {label: '阅读绘本', align: 'text-center'},
+            {label: '完整读完', align: 'text-center'},
+            {label: '操作', align: 'text-center'}
+        ];
+        
+        const studentRows = students.length > 0
+            ? students.map((s, idx) => `
+                <tr class="border-b border-slate-700/50 hover:bg-slate-700/30">
+                    <td class="px-4 py-3 text-center text-slate-300">${idx + 1}</td>
+                    <td class="px-4 py-3 text-slate-200">${s.name}</td>
+                    <td class="px-4 py-3 text-slate-400 text-sm">${s.code}</td>
+                    <td class="px-4 py-3 text-center text-blue-400">${s.activityCount}次</td>
+                    <td class="px-4 py-3 text-center text-slate-300">${s.activityDuration}</td>
+                    <td class="px-4 py-3 text-center text-slate-300">${s.bookCount}本</td>
+                    <td class="px-4 py-3 text-center text-slate-300">${Math.floor(s.bookCount * 0.7)}本</td>
+                    <td class="px-4 py-3 text-center">
+                        <button onclick="App.viewStudentReport(${s.id})" class="text-blue-400 hover:text-blue-300 text-sm">幼儿阅读报告</button>
+                    </td>
+                </tr>
+            `).join('')
+            : `<tr><td colspan="8" class="px-4 py-8 text-center text-slate-500">暂无幼儿数据</td></tr>`;
+        
+        // 生成教师列表表格
+        const teacherHeaders = [
+            {label: '序号', align: 'text-center', width: 'w-16'},
+            {label: '教师姓名'},
+            {label: '绘本活动次数', align: 'text-center'},
+            {label: '绘本活动时长', align: 'text-center'},
+            {label: '操作', align: 'text-center'}
+        ];
+        
+        const teachers = cls.teachers || [];
+        const teacherRows = teachers.length > 0
+            ? teachers.map((t, idx) => `
+                <tr class="border-b border-slate-700/50 hover:bg-slate-700/30">
+                    <td class="px-4 py-3 text-center text-slate-300">${idx + 1}</td>
+                    <td class="px-4 py-3 text-slate-200">${t.name}</td>
+                    <td class="px-4 py-3 text-center text-blue-400">${t.activityCount}次</td>
+                    <td class="px-4 py-3 text-center text-slate-300">${t.activityDuration}</td>
+                    <td class="px-4 py-3 text-center">
+                        <button onclick="App.viewTeacherActivities('${t.name}')" class="text-blue-400 hover:text-blue-300 text-sm">查看活动</button>
+                    </td>
+                </tr>
+            `).join('')
+            : `<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">暂无教师数据</td></tr>`;
+        
+        // 标题栏按钮
+        const headerActions = mode === 'modal'
+            ? `<button onclick="App.viewClassDetail(${cls.id}, 'subpage')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2" title="在当前页面打开">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
+                打开
+            </button>`
+            : `<button onclick="App.closeClassSubpage()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                关闭
+            </button>`;
+        
+        const content = `
+            <div class="p-6 max-w-6xl mx-auto">
+                <!-- 标题栏 -->
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xl font-bold text-white">班级详情</h2>
+                    <div class="flex items-center">${headerActions}</div>
+                </div>
+                
+                <!-- 班级数据 -->
+                <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden mb-6">
+                    <div class="px-4 py-3 bg-slate-700/30 border-b border-slate-700/50">
+                        <h3 class="text-sm font-semibold text-slate-200">班级数据</h3>
+                    </div>
+                    <div class="p-4">
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            <!-- 左侧：基本信息 -->
+                            <div class="space-y-3">
+                                <div class="flex justify-between items-center py-2 border-b border-slate-700/30">
+                                    <span class="text-slate-400 text-sm">班级：</span>
+                                    <span class="text-slate-200">${cls.name}</span>
+                                </div>
+                                <div class="flex justify-between items-center py-2 border-b border-slate-700/30">
+                                    <span class="text-slate-400 text-sm">教师数量：</span>
+                                    <span class="text-slate-200">${cls.teacherCount}人</span>
+                                </div>
+                                <div class="flex justify-between items-center py-2 border-b border-slate-700/30">
+                                    <span class="text-slate-400 text-sm">幼儿数量：</span>
+                                    <span class="text-slate-200">${cls.studentCount}人</span>
+                                </div>
+                                <div class="flex justify-between items-center py-2 border-b border-slate-700/30">
+                                    <span class="text-slate-400 text-sm">绘本活动总次数：</span>
+                                    <span class="text-slate-200">${cls.activityCount}次</span>
+                                </div>
+                                <div class="flex justify-between items-center py-2 border-b border-slate-700/30">
+                                    <span class="text-slate-400 text-sm">绘本活动总时长：</span>
+                                    <span class="text-slate-200">${cls.activityDuration}</span>
+                                </div>
+                                <div class="flex justify-between items-center py-2">
+                                    <span class="text-slate-400 text-sm">孩子参与总人次：</span>
+                                    <span class="text-slate-200">${cls.participantCount}次</span>
+                                </div>
+                            </div>
+                            
+                            <!-- 中间：阅读绘本类型占比 -->
+                            <div>
+                                <h4 class="text-sm font-semibold text-slate-300 mb-3">阅读绘本类型占比：</h4>
+                                <div class="grid grid-cols-2 gap-2">${bookTypeHtml}</div>
+                            </div>
+                            
+                            <!-- 右侧：班级能力分布 -->
+                            <div>
+                                <h4 class="text-sm font-semibold text-slate-300 mb-3">班级能力分布：</h4>
+                                <div class="space-y-1">${abilityHtml}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 幼儿列表 -->
+                <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden mb-6">
+                    <div class="px-4 py-3 bg-slate-700/30 border-b border-slate-700/50 flex justify-between items-center">
+                        <h3 class="text-sm font-semibold text-slate-200">幼儿列表</h3>
+                        <span class="text-xs text-slate-400">${students.length}人</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-slate-700/20">
+                                <tr>
+                                    ${studentHeaders.map(h => `<th class="px-4 py-3 text-left text-xs font-medium text-slate-400 ${h.align || ''} ${h.width || ''}">${h.label}</th>`).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>${studentRows}</tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- 教师列表 -->
+                <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
+                    <div class="px-4 py-3 bg-slate-700/30 border-b border-slate-700/50 flex justify-between items-center">
+                        <h3 class="text-sm font-semibold text-slate-200">教师列表</h3>
+                        <span class="text-xs text-slate-400">${teachers.length}人</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-slate-700/20">
+                                <tr>
+                                    ${teacherHeaders.map(h => `<th class="px-4 py-3 text-left text-xs font-medium text-slate-400 ${h.align || ''} ${h.width || ''}">${h.label}</th>`).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>${teacherRows}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        if (mode === 'subpage') {
+            // 子页面模式：先关闭弹窗，然后在当前标签页内容区域内渲染
+            this.closeModal();
+            this.openClassSubpage(content);
+        } else {
+            // 弹窗模式：使用原有弹窗
+            this.openModal(content);
+        }
+    },
+    
+    // 打开班级详情子页面（在当前标签页内容区域内）
+    openClassSubpage(html) {
+        // 找到当前标签页内容容器
+        const tabContent = document.getElementById('school-tab-content');
+        if (!tabContent) return;
+
+        // 保存当前 tab 状态
+        this._previousSchoolDataTab = this.schoolDataTab;
+
+        // 保存原始内容
+        this._originalClassTabContent = tabContent.innerHTML;
+
+        // 创建子页面容器
+        const subpageContainer = document.createElement('div');
+        subpageContainer.id = 'class-subpage-container';
+        subpageContainer.className = 'animate-fadeIn';
+        subpageContainer.innerHTML = html;
+        
+        // 清空并插入子页面
+        tabContent.innerHTML = '';
+        tabContent.appendChild(subpageContainer);
+        
+        // 隐藏筛选栏（如果存在）
+        const filterBar = tabContent.previousElementSibling;
+        if (filterBar && filterBar.classList.contains('filter-bar')) {
+            filterBar.style.display = 'none';
+            this._hiddenClassFilterBar = filterBar;
+        }
+    },
+    
+    // 关闭班级详情子页面
+    closeClassSubpage() {
+        const tabContent = document.getElementById('school-tab-content');
+        if (!tabContent) return;
+
+        // 恢复筛选栏
+        if (this._hiddenClassFilterBar) {
+            this._hiddenClassFilterBar.style.display = '';
+            this._hiddenClassFilterBar = null;
+        }
+
+        // 恢复到之前保存的 tab 状态
+        const previousTab = this._previousSchoolDataTab || 'classes';
+        this.schoolDataTab = previousTab;
+        this.renderSchoolTabContent(previousTab);
+
+        // 同步更新 tab 高亮状态
+        document.querySelectorAll('.school-tab').forEach(tab => {
+            tab.className = this.getSchoolTabClass(tab.dataset.tab === previousTab);
+        });
+
+        // 清理保存的内容
+        this._originalClassTabContent = null;
+        this._previousSchoolDataTab = null;
     },
 
-    viewTeacherActivities(name) {
-        const activities = MockData.schoolData.activities.filter(a => a.teacher === name).slice(0, 10);
-        const headers = [{label:'开始时间'},{label:'结束时间'},{label:'班级'},{label:'参与人数',align:'text-center'}];
-        const rows = activities.map(a => `<tr class="hover:bg-blue-500/5"><td class="px-3 py-2 text-slate-300 text-xs">${a.startTime}</td><td class="px-3 py-2 text-slate-300 text-xs">${a.endTime}</td><td class="px-3 py-2 text-slate-200">${a.className}</td><td class="px-3 py-2 text-center text-blue-400">${a.studentCount}</td></tr>`).join('');
-        this.openModal(`<div class="p-6">${this.modalHeader(name + ' - 绘本活动记录')}${this.tableWrap(headers, rows)}${activities.length===0?'<div class="text-center text-slate-500 py-8">暂无活动记录</div>':''}</div>`);
+    viewTeacherActivities(name, mode = 'modal') {
+        const activities = MockData.schoolData.activities.filter(a => a.teacher === name);
+        
+        // 生成活动记录表格
+        const activityHeaders = [
+            {label: '序号', align: 'text-center', width: 'w-16'},
+            {label: '活动开始时间'},
+            {label: '活动结束时间'},
+            {label: '参与班级'},
+            {label: '参与幼儿', align: 'text-center'},
+            {label: '操作', align: 'text-center'}
+        ];
+        
+        const activityRows = activities.length > 0
+            ? activities.map((a, idx) => `
+                <tr class="border-b border-slate-700/50 hover:bg-slate-700/30">
+                    <td class="px-4 py-3 text-center text-slate-300">${idx + 1}</td>
+                    <td class="px-4 py-3 text-slate-300 text-sm">${a.startTime}</td>
+                    <td class="px-4 py-3 text-slate-300 text-sm">${a.endTime}</td>
+                    <td class="px-4 py-3 text-slate-200">${a.className}</td>
+                    <td class="px-4 py-3 text-center text-blue-400">${a.participatingStudents?.length || 0}人</td>
+                    <td class="px-4 py-3 text-center">
+                        <button onclick="App.viewActivityDetail(${a.id})" class="text-blue-400 hover:text-blue-300 text-sm">查看</button>
+                    </td>
+                </tr>
+            `).join('')
+            : `<tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">暂无活动记录</td></tr>`;
+        
+        // 标题栏按钮
+        const headerActions = mode === 'modal'
+            ? `<button onclick="App.viewTeacherActivities('${name}', 'subpage')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2" title="在当前页面打开">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
+                打开
+            </button>`
+            : `<button onclick="App.closeTeacherSubpage()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                关闭
+            </button>`;
+        
+        const content = `
+            <div class="p-6 max-w-6xl mx-auto">
+                <!-- 标题栏 -->
+                <div class="flex items-center justify-between mb-6">
+                    <div>
+                        <h2 class="text-xl font-bold text-white">教师详情</h2>
+                        <p class="text-slate-400 text-sm mt-1">教师：${name}</p>
+                    </div>
+                    <div class="flex items-center">${headerActions}</div>
+                </div>
+                
+                <!-- 绘本活动记录 -->
+                <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
+                    <div class="px-4 py-3 bg-slate-700/30 border-b border-slate-700/50">
+                        <h3 class="text-sm font-semibold text-slate-200">绘本活动记录</h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-slate-700/20">
+                                <tr>
+                                    ${activityHeaders.map(h => `<th class="px-4 py-3 text-left text-xs font-medium text-slate-400 ${h.align || ''} ${h.width || ''}">${h.label}</th>`).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>${activityRows}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        if (mode === 'subpage') {
+            // 子页面模式：先关闭弹窗，然后在当前标签页内容区域内渲染
+            this.closeModal();
+            this.openTeacherSubpage(content);
+        } else {
+            // 弹窗模式：使用原有弹窗
+            this.openModal(content);
+        }
+    },
+    
+    // 打开教师详情子页面（在当前标签页内容区域内）
+    openTeacherSubpage(html) {
+        // 找到当前标签页内容容器
+        const tabContent = document.getElementById('school-tab-content');
+        if (!tabContent) return;
+
+        // 保存当前 tab 状态
+        this._previousSchoolDataTab = this.schoolDataTab;
+
+        // 保存原始内容
+        this._originalTeacherTabContent = tabContent.innerHTML;
+
+        // 创建子页面容器
+        const subpageContainer = document.createElement('div');
+        subpageContainer.id = 'teacher-subpage-container';
+        subpageContainer.className = 'animate-fadeIn';
+        subpageContainer.innerHTML = html;
+        
+        // 清空并插入子页面
+        tabContent.innerHTML = '';
+        tabContent.appendChild(subpageContainer);
+        
+        // 隐藏筛选栏（如果存在）
+        const filterBar = tabContent.previousElementSibling;
+        if (filterBar && filterBar.classList.contains('filter-bar')) {
+            filterBar.style.display = 'none';
+            this._hiddenTeacherFilterBar = filterBar;
+        }
+    },
+    
+    // 关闭教师详情子页面
+    closeTeacherSubpage() {
+        const tabContent = document.getElementById('school-tab-content');
+        if (!tabContent) return;
+
+        // 恢复筛选栏
+        if (this._hiddenTeacherFilterBar) {
+            this._hiddenTeacherFilterBar.style.display = '';
+            this._hiddenTeacherFilterBar = null;
+        }
+
+        // 恢复到之前保存的 tab 状态
+        const previousTab = this._previousSchoolDataTab || 'teachers';
+        this.schoolDataTab = previousTab;
+        this.renderSchoolTabContent(previousTab);
+
+        // 同步更新 tab 高亮状态
+        document.querySelectorAll('.school-tab').forEach(tab => {
+            tab.className = this.getSchoolTabClass(tab.dataset.tab === previousTab);
+        });
+
+        // 清理保存的内容
+        this._originalTeacherTabContent = null;
+        this._previousSchoolDataTab = null;
     },
 
-    viewStudentReport(id) {
+    viewStudentReport(id, mode = 'modal') {
         const s = MockData.students.find(x => x.id === id);
         if (!s) return;
-        this.openModal(`<div class="p-6">${this.modalHeader(s.name + ' - 阅读报告')}<div class="grid grid-cols-2 gap-3 mb-5">${this.miniStat('参与活动次数', s.activityCount, 'blue')}${this.miniStat('参与活动时长', s.activityDuration, 'emerald')}${this.miniStat('绘本阅读总数', s.bookCount, 'purple')}${this.miniStat('所属班级', s.className, 'amber')}</div><div class="bg-slate-800/60 rounded-xl p-4 border border-slate-700/30"><h4 class="text-sm font-semibold text-slate-300 mb-3">阅读能力评估</h4><div class="grid grid-cols-3 gap-3"><div class="text-center"><div class="text-lg font-bold text-blue-400">优秀</div><div class="text-xs text-slate-500">语言表达</div></div><div class="text-center"><div class="text-lg font-bold text-emerald-400">良好</div><div class="text-xs text-slate-500">社交能力</div></div><div class="text-center"><div class="text-lg font-bold text-purple-400">优秀</div><div class="text-xs text-slate-500">想象创造</div></div></div></div></div>`);
+        
+        // 生成阅读类型饼图数据HTML
+        const bookTypeStats = s.bookTypeStats || {};
+        const bookTypeHtml = Object.entries(bookTypeStats).length > 0
+            ? Object.entries(bookTypeStats).map(([type, count]) => `
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="w-3 h-3 rounded-full bg-blue-500"></span>
+                    <span class="text-slate-300 text-sm">${type}: ${count}本</span>
+                </div>
+            `).join('')
+            : '<span class="text-slate-500 text-sm">暂无阅读类型数据</span>';
+        
+        // 生成能力分布HTML（气泡形式）
+        const abilityStats = s.abilityStats || {};
+        const abilityColors = {
+            '习惯养成': 'bg-orange-500',
+            '情绪管理': 'bg-cyan-500',
+            '想象力': 'bg-green-500',
+            '科学认知': 'bg-amber-700',
+            '品格养成': 'bg-yellow-500',
+            '社交力': 'bg-indigo-500'
+        };
+        const abilityHtml = Object.entries(abilityStats).length > 0
+            ? Object.entries(abilityStats).map(([ability, score]) => `
+                <div class="inline-flex items-center justify-center ${abilityColors[ability] || 'bg-blue-500'} text-white rounded-full m-1" 
+                     style="width: ${60 + score * 0.4}px; height: ${60 + score * 0.4}px;">
+                    <div class="text-center">
+                        <div class="text-xs font-bold">${ability}</div>
+                        <div class="text-xs">${score}</div>
+                    </div>
+                </div>
+            `).join('')
+            : '<span class="text-slate-500 text-sm">暂无能力分布数据</span>';
+        
+        // 生成爱读榜HTML
+        const favoriteBooksHtml = s.favoriteBooks?.length > 0
+            ? s.favoriteBooks.map((book, idx) => `
+                <div class="flex items-center justify-between py-2 border-b border-slate-700/30">
+                    <span class="text-slate-300">《${book}》</span>
+                    <span class="text-blue-400 text-sm">${3 - idx}次</span>
+                </div>
+            `).join('')
+            : '<span class="text-slate-500 text-sm">暂无数据</span>';
+        
+        // 生成兴趣书单HTML
+        const interestBooksHtml = s.interestBooks?.length > 0
+            ? s.interestBooks.map(book => `<span class="inline-block px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full text-sm mr-2 mb-2">《${book}》</span>`).join('')
+            : '<span class="text-slate-500 text-sm">基于${s.name}的阅读数据分析，发现她/他很喜欢以下类型的书单</span>';
+        
+        // 生成建议书单HTML
+        const recommendBooksHtml = s.recommendBooks?.length > 0
+            ? s.recommendBooks.map(book => `<span class="inline-block px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-full text-sm mr-2 mb-2">《${book}》</span>`).join('')
+            : '<span class="text-slate-500 text-sm">基于${s.name}在3-6岁年龄段中，接下来应更多关注以下类型书籍</span>';
+        
+        // 标题栏按钮
+        const headerActions = mode === 'modal'
+            ? `<button onclick="App.viewStudentReport(${s.id}, 'subpage')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2" title="在当前页面打开">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
+                打开
+            </button>`
+            : `<button onclick="App.closeStudentSubpage()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                关闭
+            </button>`;
+        
+        const content = `
+            <div class="p-6 max-w-6xl mx-auto">
+                <!-- 标题栏 -->
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xl font-bold text-white">查看阅读报告</h2>
+                    <div class="flex items-center">${headerActions}</div>
+                </div>
+                
+                <!-- 幼儿基本信息 -->
+                <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 mb-6">
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <span class="text-slate-400 text-sm">幼儿：</span>
+                            <span class="text-slate-200">${s.name}</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-400 text-sm">幼儿编号：</span>
+                            <span class="text-slate-200">${s.code}</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-400 text-sm">所属班级：</span>
+                            <span class="text-slate-200">${s.className}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 阅读统计 -->
+                <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 mb-6">
+                    <h3 class="text-sm font-semibold text-slate-200 mb-4">阅读统计</h3>
+                    <div class="grid grid-cols-4 gap-4">
+                        <div class="text-center">
+                            <div class="text-2xl font-bold text-blue-400">${s.readDurationMinutes || 0}</div>
+                            <div class="text-xs text-slate-400">分钟</div>
+                            <div class="text-xs text-slate-500">阅读时长</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-2xl font-bold text-blue-400">${s.readTimes || 0}</div>
+                            <div class="text-xs text-slate-400">次</div>
+                            <div class="text-xs text-slate-500">阅读次数</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-2xl font-bold text-blue-400">${s.bookCount || 0}</div>
+                            <div class="text-xs text-slate-400">本</div>
+                            <div class="text-xs text-slate-500">阅读绘本</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-2xl font-bold text-blue-400">${s.completedBooks || 0}</div>
+                            <div class="text-xs text-slate-400">本</div>
+                            <div class="text-xs text-slate-500">完整读完</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 阅读类型和能力分布 -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <!-- 阅读类型 -->
+                    <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
+                        <h3 class="text-sm font-semibold text-slate-200 mb-4">阅读类型</h3>
+                        <div class="text-xs text-amber-400 mb-4">${s.name}最喜爱的绘本类型是"${Object.keys(bookTypeStats)[0] || '日常生活'}"</div>
+                        <div class="flex items-center gap-8">
+                            <div class="w-32 h-32 rounded-full bg-gradient-to-br from-blue-500/30 to-cyan-500/30 flex items-center justify-center border border-blue-500/20">
+                                <div class="text-center">
+                                    <div class="text-lg font-bold text-blue-400">${Object.keys(bookTypeStats).length}</div>
+                                    <div class="text-xs text-slate-400">种类型</div>
+                                </div>
+                            </div>
+                            <div>${bookTypeHtml}</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 能力分布 -->
+                    <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
+                        <h3 class="text-sm font-semibold text-slate-200 mb-4">能力分布</h3>
+                        <div class="flex flex-wrap justify-center items-center min-h-[150px]">
+                            ${abilityHtml}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 爱读榜 -->
+                <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 mb-6">
+                    <h3 class="text-sm font-semibold text-slate-200 mb-4">爱读榜</h3>
+                    <div class="grid grid-cols-3 gap-4">
+                        ${favoriteBooksHtml}
+                    </div>
+                </div>
+                
+                <!-- 兴趣书单 -->
+                <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 mb-6">
+                    <h3 class="text-sm font-semibold text-slate-200 mb-2">兴趣书单</h3>
+                    <p class="text-xs text-slate-400 mb-4">基于 <span class="text-amber-400">${s.name}</span> 的阅读数据分析，发现她/他很喜欢以下类型的书单</p>
+                    <div>${interestBooksHtml}</div>
+                    <p class="text-xs text-slate-500 mt-4 text-center">兴趣书单每周一更新数据！</p>
+                </div>
+                
+                <!-- 建议书单 -->
+                <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
+                    <h3 class="text-sm font-semibold text-slate-200 mb-2">建议书单</h3>
+                    <p class="text-xs text-slate-400 mb-4">基于 <span class="text-amber-400">${s.name}</span> 在3-6岁年龄段中，接下来应更多关注以下类型书籍</p>
+                    <div>${recommendBooksHtml}</div>
+                    <p class="text-xs text-slate-500 mt-4 text-center">建议书单每周一更新数据！</p>
+                </div>
+            </div>
+        `;
+        
+        if (mode === 'subpage') {
+            // 子页面模式：先关闭弹窗，然后在当前标签页内容区域内渲染
+            this.closeModal();
+            this.openStudentSubpage(content);
+        } else {
+            // 弹窗模式：使用原有弹窗
+            this.openModal(content);
+        }
+    },
+    
+    // 打开学生详情子页面（在当前标签页内容区域内）
+    openStudentSubpage(html) {
+        // 找到当前标签页内容容器
+        const tabContent = document.getElementById('school-tab-content');
+        if (!tabContent) return;
+        
+        // 保存原始内容
+        this._originalStudentTabContent = tabContent.innerHTML;
+        
+        // 创建子页面容器
+        const subpageContainer = document.createElement('div');
+        subpageContainer.id = 'student-subpage-container';
+        subpageContainer.className = 'animate-fadeIn';
+        subpageContainer.innerHTML = html;
+        
+        // 清空并插入子页面
+        tabContent.innerHTML = '';
+        tabContent.appendChild(subpageContainer);
+        
+        // 隐藏筛选栏（如果存在）
+        const filterBar = tabContent.previousElementSibling;
+        if (filterBar && filterBar.classList.contains('filter-bar')) {
+            filterBar.style.display = 'none';
+            this._hiddenStudentFilterBar = filterBar;
+        }
+    },
+    
+    // 关闭学生详情子页面
+    closeStudentSubpage() {
+        const tabContent = document.getElementById('school-tab-content');
+        if (!tabContent) return;
+        
+        // 恢复筛选栏
+        if (this._hiddenStudentFilterBar) {
+            this._hiddenStudentFilterBar.style.display = '';
+            this._hiddenStudentFilterBar = null;
+        }
+        
+        // 恢复到幼儿列表界面
+        this.schoolDataTab = 'students';
+        this.renderSchoolTabContent('students');
+        
+        // 清理保存的内容
+        this._originalStudentTabContent = null;
     },
 
     // ============================================================
