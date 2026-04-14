@@ -9,6 +9,7 @@ const App = {
     aiAnalysisTab: 'school', // AI分析标签页: school(园长-园所), class(园长-班级), teacherClass(教师-班级), student(教师-学生)
     aiSelectedClass: 1, // AI分析选中的班级ID（园长）
     aiSelectedStudent: 1, // AI分析选中的学生ID（教师）
+    kindergartenRankingOrder: 'desc', // 园所活动次数排序：desc-降序, asc-升序
 
     pagination: {
         activities: { page: 1, pageSize: 10 },
@@ -393,7 +394,7 @@ const App = {
         if (switcher) switcher.classList.add('hidden');
 
         // 重新加载当前页面或跳转到合适的页面
-        if (role === 'admin') {
+        if (role === 'admin' || role === 'principal') {
             this.loadPage('dataOverview');
         } else {
             this.loadPage('schoolData');
@@ -959,7 +960,10 @@ const App = {
             ${this.currentRole === 'admin' ? this.card(`
                 <div class="flex items-center justify-between gap-3 mb-4">
                     ${this.chartTitle('园所活动次数排序', 'bg-cyan-500')}
-                    <div class="text-xs text-slate-400 px-3 py-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/10">全区园所活动热力对比</div>
+                    <button onclick="App.toggleKindergartenRankingOrder()" class="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 transition-all">
+                        <svg class="w-3.5 h-3.5 transition-transform ${this.kindergartenRankingOrder === 'desc' ? '' : 'rotate-180'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path></svg>
+                        <span>${this.kindergartenRankingOrder === 'desc' ? '降序' : '升序'}</span>
+                    </button>
                 </div>
                 <div id="kindergarten-ranking-wrap"></div>
             `, 'overflow-hidden') : ''}
@@ -1004,13 +1008,19 @@ const App = {
         if (!wrap) return;
 
         const ranking = this.getKindergartenActivityRanking();
+        // 根据排序方式调整数据顺序
+        const sortedRanking = this.kindergartenRankingOrder === 'desc'
+            ? ranking
+            : [...ranking].reverse();
         const maxCount = ranking[0]?.activityCount || 1;
         wrap.innerHTML = `
             <div class="space-y-3">
-                ${ranking.map((item, index) => `
+                ${sortedRanking.map((item, index) => {
+                    const actualIndex = this.kindergartenRankingOrder === 'desc' ? index : ranking.length - 1 - index;
+                    return `
                     <div class="grid grid-cols-[56px_minmax(0,1.6fr)_minmax(0,1fr)_120px] items-center gap-3 px-4 py-3 rounded-xl border border-slate-500/20 bg-slate-800/35 hover:border-cyan-400/30 hover:bg-slate-700/35 transition-all">
                         <div class="flex items-center justify-center">
-                            <span class="w-8 h-8 rounded-full text-xs font-bold flex items-center justify-center ${index < 3 ? 'bg-amber-500/20 text-amber-300 border border-amber-400/20' : 'bg-slate-700/70 text-slate-300 border border-slate-500/20'}">${index + 1}</span>
+                            <span class="w-8 h-8 rounded-full text-xs font-bold flex items-center justify-center ${actualIndex < 3 ? 'bg-amber-500/20 text-amber-300 border border-amber-400/20' : 'bg-slate-700/70 text-slate-300 border border-slate-500/20'}">${actualIndex + 1}</span>
                         </div>
                         <div class="min-w-0">
                             <div class="text-sm font-semibold text-white truncate">${item.name}</div>
@@ -1027,9 +1037,24 @@ const App = {
                             <div class="text-xs text-slate-500">活动次数</div>
                         </div>
                     </div>
-                `).join('')}
+                    `;
+                }).join('')}
             </div>
         `;
+    },
+
+    // 切换园所排序方式
+    toggleKindergartenRankingOrder() {
+        this.kindergartenRankingOrder = this.kindergartenRankingOrder === 'desc' ? 'asc' : 'desc';
+        this.renderKindergartenActivityRanking();
+        // 更新按钮状态
+        const btn = document.querySelector('button[onclick="App.toggleKindergartenRankingOrder()"]');
+        if (btn) {
+            const svg = btn.querySelector('svg');
+            const span = btn.querySelector('span');
+            if (svg) svg.classList.toggle('rotate-180', this.kindergartenRankingOrder === 'asc');
+            if (span) span.textContent = this.kindergartenRankingOrder === 'desc' ? '降序' : '升序';
+        }
     },
 
     // ============================================================

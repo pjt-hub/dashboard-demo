@@ -224,7 +224,7 @@ const Charts = {
                     return `${d.name}<br/>活动次数: ${d.value}次<br/>教师: ${classItem?.teacher || '-'}`;
                 }
             },
-            grid: { left: 70, right: 50, top: 10, bottom: 10 },
+            grid: { left: 70, right: 100, top: 10, bottom: 30 },
             xAxis: { type: 'value', axisLabel: { color: '#8896a6', fontSize: 11 }, splitLine: { lineStyle: { color: 'rgba(85,100,120,0.3)' } } },
             yAxis: { type: 'category', data: data.map(d => d.name), axisLabel: { color: '#a0aec0', fontSize: 11 }, axisLine: { show: false }, axisTick: { show: false } },
             series: [{
