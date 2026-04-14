@@ -41,12 +41,17 @@ const Charts = {
             abilityDistribution: MockData.abilityDistribution,
             weeklyActivity: MockData.weeklyActivity,
             teacherRanking: MockData.teacherRanking,
+            classRanking: MockData.classRanking,
             classUsageComparison: null
         };
         this.safeInit(() => this.initBookTypePie(data.bookTypes));
         this.safeInit(() => this.initAbilityRadar(data.abilityDistribution));
         this.safeInit(() => this.initWeeklyActivityBar(data.weeklyActivity));
         this.safeInit(() => this.initTeacherRankingBar(data.teacherRanking));
+        // 班级排名图表（园长端可见）
+        if (App.currentRole === 'principal') {
+            this.safeInit(() => this.initClassRankingBar(data.classRanking));
+        }
         this.safeInit(() => this.initClassUsageCompareRadar(data.classUsageComparison));
     },
 
@@ -192,6 +197,44 @@ const Charts = {
                             ? new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#8b5cf6' }, { offset: 1, color: '#a78bfa' }])
                             : new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#6366f1' }, { offset: 1, color: '#818cf8' }]),
                         shadowBlur: 6, shadowColor: 'rgba(99,102,241,0.15)'
+                    }
+                })),
+                label: { show: true, position: 'right', color: '#a0aec0', fontSize: 11, formatter: '{c}次' }
+            }]
+        });
+        window.addEventListener('resize', () => chart.resize());
+    },
+
+    // 班级排名 - 横向柱状图（园长端）
+    initClassRankingBar(customData = null) {
+        const chart = this.createChart('class-ranking-chart');
+        if (!chart) return;
+        const data = (customData || MockData.classRanking).slice().reverse();
+        chart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: {
+                ...this.darkTheme.tooltip,
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function(params) {
+                    const d = params[0];
+                    const classData = customData ? customData.find(c => c.name === d.name) : MockData.classRanking.find(c => c.name === d.name);
+                    return `${d.name}<br/>活动次数: ${d.value}次<br/>教师: ${classData?.teacher || '-'}`;
+                }
+            },
+            grid: { left: 70, right: 50, top: 10, bottom: 10 },
+            xAxis: { type: 'value', axisLabel: { color: '#8896a6', fontSize: 11 }, splitLine: { lineStyle: { color: 'rgba(85,100,120,0.3)' } } },
+            yAxis: { type: 'category', data: data.map(d => d.name), axisLabel: { color: '#a0aec0', fontSize: 11 }, axisLine: { show: false }, axisTick: { show: false } },
+            series: [{
+                type: 'bar', barWidth: '50%',
+                data: data.map((d, i) => ({
+                    value: d.count,
+                    itemStyle: {
+                        borderRadius: [0, 4, 4, 0],
+                        color: i >= data.length - 3
+                            ? new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#10b981' }, { offset: 1, color: '#34d399' }])
+                            : new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#059669' }, { offset: 1, color: '#10b981' }]),
+                        shadowBlur: 6, shadowColor: 'rgba(16,185,129,0.15)'
                     }
                 })),
                 label: { show: true, position: 'right', color: '#a0aec0', fontSize: 11, formatter: '{c}次' }

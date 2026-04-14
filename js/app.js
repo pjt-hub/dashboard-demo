@@ -950,6 +950,9 @@ const App = {
                 ${this.card(this.chartTitle('绘本活动次数排名前十教师', 'bg-purple-500') + '<div id="teacher-ranking-chart" class="h-72"></div>')}
             </div>
 
+            <!-- 班级排名（园长端可见） -->
+            ${this.currentRole === 'principal' ? this.card(this.chartTitle('绘本活动次数排名前十班级', 'bg-emerald-500') + '<div id="class-ranking-chart" class="h-72"></div>') : ''}
+
             ${this.currentRole === 'admin' ? this.card(this.renderAdminClassUsageComparison(overviewData.classUsageComparison), 'overflow-hidden') : ''}
 
             <!-- 园所活动次数排序（管理员可见） -->
