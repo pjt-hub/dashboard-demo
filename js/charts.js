@@ -209,7 +209,8 @@ const Charts = {
     initClassRankingBar(customData = null) {
         const chart = this.createChart('class-ranking-chart');
         if (!chart) return;
-        const data = (customData || MockData.classRanking).slice().reverse();
+        const originalData = customData || MockData.classRanking;
+        const data = originalData.slice().reverse();
         chart.setOption({
             backgroundColor: 'transparent',
             tooltip: {
@@ -217,9 +218,10 @@ const Charts = {
                 trigger: 'axis',
                 axisPointer: { type: 'shadow' },
                 formatter: function(params) {
+                    if (!params || !params[0]) return '';
                     const d = params[0];
-                    const classData = customData ? customData.find(c => c.name === d.name) : MockData.classRanking.find(c => c.name === d.name);
-                    return `${d.name}<br/>活动次数: ${d.value}次<br/>教师: ${classData?.teacher || '-'}`;
+                    const classItem = originalData.find(c => c.name === d.name);
+                    return `${d.name}<br/>活动次数: ${d.value}次<br/>教师: ${classItem?.teacher || '-'}`;
                 }
             },
             grid: { left: 70, right: 50, top: 10, bottom: 10 },
