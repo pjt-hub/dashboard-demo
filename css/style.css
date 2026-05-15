@@ -491,7 +491,32 @@ button:disabled {
 }
 
 /* ============================================================
-   暖白主题（warm-white）覆盖层
+   手机端 AI 报告 markdown 容器（mobile.html 不挂 theme-warm）
+   ============================================================ */
+.mobile-ai-md,
+.mobile-ai-md * { color: #1A1B25 !important; }
+.mobile-ai-md p,
+.mobile-ai-md li,
+.mobile-ai-md ul,
+.mobile-ai-md ol,
+.mobile-ai-md div { color: #1A1B25 !important; }
+.mobile-ai-md .text-slate-200,
+.mobile-ai-md .text-slate-300,
+.mobile-ai-md .text-slate-400,
+.mobile-ai-md .text-slate-500 { color: #1A1B25 !important; -webkit-text-fill-color: #1A1B25 !important; }
+.mobile-ai-md h1,
+.mobile-ai-md h2,
+.mobile-ai-md h2.text-amber-300,
+.mobile-ai-md .text-amber-300 { color: #4338CA !important; -webkit-text-fill-color: #4338CA !important; font-weight: 700 !important; font-size: 1.05rem; margin: 14px 0 8px; }
+.mobile-ai-md h3,
+.mobile-ai-md h4,
+.mobile-ai-md h4.text-cyan-300,
+.mobile-ai-md .text-cyan-300 { color: #1E3A8A !important; -webkit-text-fill-color: #1E3A8A !important; font-weight: 600 !important; font-size: 0.95rem; margin: 12px 0 6px; }
+.mobile-ai-md strong,
+.mobile-ai-md strong.text-amber-200 { color: #6D28D9 !important; -webkit-text-fill-color: #6D28D9 !important; font-weight: 700 !important; }
+.mobile-ai-md ul.list-disc { padding-left: 22px; margin: 8px 0; }
+.mobile-ai-md ul.list-disc li { margin: 4px 0; }
+.mobile-ai-md ul.list-disc li::marker { color: #6D28D9 !important; }
    通过 <body class="theme-warm"> 启用，覆盖常用 slate / 暗色工具类。
    颜色基调：奶油白底 + 暖琥珀强调 + 深咖文字
    ============================================================ */
@@ -724,7 +749,7 @@ body.theme-warm #modal-content .text-slate-500 { color: #4A4D5E !important; -web
 body.theme-warm #modal-content ul.list-disc { color: #14151F !important; }
 body.theme-warm #modal-content ul.list-disc::marker,
 body.theme-warm #modal-content ul.list-disc li::marker { color: #6D28D9 !important; }
-/* AI 报告 markdown 容器内最强兜底 */
+/* AI 报告 markdown 容器内最强兜底（不依赖 #modal-content） */
 body.theme-warm #ai-analysis-stream,
 body.theme-warm #ai-analysis-stream * {
     color: #1A1B25 !important;
@@ -734,6 +759,12 @@ body.theme-warm #ai-analysis-stream h2 { color: #4338CA !important; -webkit-text
 body.theme-warm #ai-analysis-stream h3,
 body.theme-warm #ai-analysis-stream h4 { color: #1E3A8A !important; -webkit-text-fill-color: #1E3A8A !important; font-weight: 600 !important; }
 body.theme-warm #ai-analysis-stream strong { color: #6D28D9 !important; -webkit-text-fill-color: #6D28D9 !important; font-weight: 700 !important; }
+
+/* 全局兜底：任何位置的 text-slate-200/300/400/500 在亮主题下一律拉深 */
+body.theme-warm .text-slate-200,
+body.theme-warm .text-slate-300 { color: #14151F !important; -webkit-text-fill-color: #14151F !important; }
+body.theme-warm .text-slate-400 { color: #2D2F3D !important; -webkit-text-fill-color: #2D2F3D !important; }
+body.theme-warm .text-slate-500 { color: #4A4D5E !important; -webkit-text-fill-color: #4A4D5E !important; }
 
 /* —— 范围/样本/生成时间这种灰标签（text-slate-500）也加深 —— */
 body.theme-warm .text-slate-500 { color: #4A4D5E !important; }
