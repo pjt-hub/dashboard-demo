@@ -607,13 +607,19 @@ body.theme-warm #sidebar .text-white { color: var(--warm-text) !important; }
 body.theme-warm #sidebar .text-slate-400,
 body.theme-warm #sidebar .text-slate-500 { color: var(--warm-text-soft) !important; }
 body.theme-warm #sidebar .border-slate-700 { border-color: var(--warm-border) !important; }
-body.theme-warm .sidebar-nav-item { color: var(--warm-text-soft) !important; }
-body.theme-warm .sidebar-nav-item:hover { background: rgba(99, 102, 241, 0.06) !important; color: var(--warm-text) !important; }
+body.theme-warm .sidebar-nav-item,
+body.theme-warm .sidebar-nav-item span,
+body.theme-warm .sidebar-nav-item svg { color: var(--warm-text-soft) !important; }
+body.theme-warm .sidebar-nav-item:hover { background: rgba(99, 102, 241, 0.06) !important; }
+body.theme-warm .sidebar-nav-item:hover,
+body.theme-warm .sidebar-nav-item:hover span,
+body.theme-warm .sidebar-nav-item:hover svg { color: var(--warm-text) !important; }
 body.theme-warm .sidebar-nav-item.active {
     background: linear-gradient(90deg, rgba(99, 102, 241, 0.12) 0%, rgba(139, 92, 246, 0.06) 100%) !important;
-    color: var(--warm-primary) !important;
     border-left: 3px solid var(--warm-primary) !important;
 }
+body.theme-warm .sidebar-nav-item.active,
+body.theme-warm .sidebar-nav-item.active span,
 body.theme-warm .sidebar-nav-item.active svg { color: var(--warm-primary) !important; }
 body.theme-warm .sidebar-group-title { color: var(--warm-text-mute) !important; }
 
