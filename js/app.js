@@ -6,10 +6,7 @@ const App = {
     currentRole: 'admin', // admin-教育局管理员, principal-园长, teacher-教师
     selectedSchool: null,  // 选中的园所（园长视角）
     selectedClass: null,   // 选中的班级（教师视角）
-    aiAnalysisTab: 'school', // AI分析标签页: school(园长-园所), class(园长-班级), teacherClass(教师-班级), student(教师-学生)
-    aiSelectedClass: 1, // AI分析选中的班级ID（园长）
-    aiSelectedStudent: 1, // AI分析选中的学生ID（教师）
-    kindergartenRankingOrder: 'desc', // 园所活动次数排序：desc-降序, asc-升序
+    selectedKindergartensForLine: [], // 园所使用次数趋势选中的园所ID（多选）
 
     pagination: {
         activities: { page: 1, pageSize: 10 },
@@ -32,11 +29,17 @@ const App = {
 
     dateRanges: {
         dataOverview: { preset: '7d', startDate: '', endDate: '' },
-        schoolOverview: { preset: '7d', startDate: '', endDate: '' }
+        schoolOverview: { preset: '7d', startDate: '', endDate: '' },
+        aiOverview: { preset: '7d', startDate: '', endDate: '' }
     },
 
     init() {
         this.initDateRanges();
+        this.loadAiReports();
+        this.loadAiStudentReports();
+        this.loadAiClassReports();
+        this.initTheme();
+        this.initKindergartenSelection();
         this.updateTime();
         this.bindSidebarEvents();
         this.initRole();
@@ -47,14 +50,56 @@ const App = {
             this.updateSidebarForRole();
         });
         setInterval(() => this.updateTime(), 1000);
-        // 点击其他区域关闭角色选择器
+        // 点击其他区域关闭角色选择器和园所下拉菜单
         document.addEventListener('click', (e) => {
             const switcher = document.getElementById('role-switcher');
             const avatar = document.getElementById('user-avatar');
             if (switcher && avatar && !switcher.contains(e.target) && !avatar.contains(e.target)) {
                 switcher.classList.add('hidden');
             }
+            // 关闭园所下拉菜单
+            const dropdownContainer = document.getElementById('kindergarten-dropdown-container');
+            const dropdownMenu = document.getElementById('kindergarten-dropdown-menu');
+            if (dropdownMenu && dropdownContainer && !dropdownContainer.contains(e.target)) {
+                dropdownMenu.classList.add('hidden');
+            }
         });
+    },
+
+    // 初始化园所选择
+    initKindergartenSelection() {
+        const kindergartens = MockData.kindergartens || [];
+        this.selectedKindergartensForLine = kindergartens.slice(0, 3).map(k => k.id);
+    },
+
+    // 主题（暖白 / 深色）切换
+    initTheme() {
+        const saved = localStorage.getItem('uiTheme') || 'dark';
+        this.applyTheme(saved);
+    },
+    applyTheme(theme) {
+        const isWarm = theme === 'warm';
+        document.body.classList.toggle('theme-warm', isWarm);
+        const dark = document.getElementById('theme-icon-dark');
+        const light = document.getElementById('theme-icon-light');
+        if (dark && light) {
+            dark.classList.toggle('hidden', isWarm);
+            light.classList.toggle('hidden', !isWarm);
+        }
+        const btn = document.getElementById('theme-toggle');
+        if (btn) btn.title = isWarm ? '切换到深色主题' : '切换到暖白主题';
+        localStorage.setItem('uiTheme', theme);
+    },
+    toggleTheme() {
+        const next = document.body.classList.contains('theme-warm') ? 'dark' : 'warm';
+        this.applyTheme(next);
+        // 重新加载当前页面，让图表带新主题重建
+        try {
+            if (typeof Charts !== 'undefined' && Charts.dispose) Charts.dispose();
+        } catch (e) {}
+        if (this.currentPage) {
+            this.loadPage(this.currentPage);
+        }
     },
 
     // 初始化角色
@@ -72,10 +117,10 @@ const App = {
 
     // 切换角色
     initDateRanges() {
-        ['dataOverview', 'schoolOverview'].forEach(context => {
+        ['dataOverview', 'schoolOverview', 'aiOverview'].forEach(context => {
             this.dateRanges[context] = {
                 preset: '7d',
-                ...this.buildDateRangeByPreset('7d')
+                ...this.buildDateRangeByPreset('7d', context)
             };
         });
     },
@@ -111,8 +156,20 @@ const App = {
         return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     },
 
-    buildDateRangeByPreset(preset) {
-        const end = this.getLatestActivityDate();
+    getLatestAiHistoryDate() {
+        const history = MockData.aiOverview?.history || [];
+        if (!history.length) return this.getLatestActivityDate();
+        const parsed = history
+            .map(item => this.parseActivityDate(item.time))
+            .filter(date => !Number.isNaN(date.getTime()));
+        if (!parsed.length) return this.getLatestActivityDate();
+        const latest = parsed.reduce((max, cur) => cur > max ? cur : max, parsed[0]);
+        latest.setHours(0, 0, 0, 0);
+        return latest;
+    },
+
+    buildDateRangeByPreset(preset, context = null) {
+        const end = (context === 'aiOverview') ? this.getLatestAiHistoryDate() : this.getLatestActivityDate();
         if (Number.isNaN(end.getTime())) {
             return { startDate: '', endDate: '' };
         }
@@ -138,7 +195,7 @@ const App = {
     },
 
     applyDatePreset(context, preset) {
-        this.updateDateRange(context, { preset, ...this.buildDateRangeByPreset(preset) });
+        this.updateDateRange(context, { preset, ...this.buildDateRangeByPreset(preset, context) });
         this.rerenderDateRangeContext(context);
     },
 
@@ -157,24 +214,52 @@ const App = {
             this.loadPage('dataOverview');
             return;
         }
+        if (context === 'aiOverview') {
+            const filterHost = document.getElementById('ai-date-filter');
+            if (filterHost) filterHost.innerHTML = this.renderDateFilterBar('aiOverview');
+            this.refreshAiOverviewMetrics();
+            // 时间筛选变化时，明细面板的分页回到第 1 页
+            if (this._aiMetricPages) {
+                this._aiMetricPages = { chats: 1, books: 1, students: 1 };
+            }
+            // 刷新展开的明细面板
+            const wrapper = document.getElementById('ai-metric-panel-wrapper');
+            if (wrapper && this._aiActiveMetric) {
+                wrapper.innerHTML = this.renderAiMetricPanel(this._aiActiveMetric);
+            }
+            try { Charts.initAiBookInteractionBar(this.getAiBookInteractionsByRange()); } catch (e) {}
+            try { Charts.initAiClassDialogTrend(this.getAiClassDialogTrend()); } catch (e) {}
+            return;
+        }
         if (context === 'schoolOverview') {
-            this.renderSchoolTabContent('overview');
+            // 全局时间筛选影响所有子页签：刷新当前 tab 内容并更新顶部时间栏 UI
+            const filterHost = document.getElementById('school-date-filter');
+            if (filterHost) filterHost.innerHTML = this.renderDateFilterBar('schoolOverview');
+
+            // 如果班级详情正在显示（弹窗或子页面），需要联动重新渲染
+            const modalOpen = !document.getElementById('modal-overlay')?.classList.contains('hidden')
+                && !!document.getElementById('class-book-type-chart');
+            const subpageOpen = !!document.getElementById('class-subpage-container');
+            if ((modalOpen || subpageOpen) && this._currentClassDetailId != null) {
+                Charts.dispose();
+                this.viewClassDetail(this._currentClassDetailId, subpageOpen ? 'subpage' : 'modal');
+                return;
+            }
+
+            // 如果幼儿阅读报告正在显示（弹窗或子页面），也需要联动重新渲染
+            const studentModalOpen = !document.getElementById('modal-overlay')?.classList.contains('hidden')
+                && !!document.getElementById('student-booktype-trend-chart');
+            const studentSubpageOpen = !!document.getElementById('student-subpage-container');
+            if ((studentModalOpen || studentSubpageOpen) && this._currentStudentReportId != null) {
+                Charts.dispose();
+                this.viewStudentReport(this._currentStudentReportId, studentSubpageOpen ? 'subpage' : 'modal');
+                return;
+            }
+
+            this.renderSchoolTabContent(this.schoolDataTab || 'overview');
         }
     },
 
-    normalizeAiAnalysisTab() {
-        if (this.currentRole === 'principal') {
-            if (!['school', 'class'].includes(this.aiAnalysisTab)) {
-                this.aiAnalysisTab = 'school';
-            }
-            return;
-        }
-        if (this.currentRole === 'teacher') {
-            if (!['teacherClass', 'student'].includes(this.aiAnalysisTab)) {
-                this.aiAnalysisTab = 'teacherClass';
-            }
-        }
-    },
 
     getFilteredActivitiesByDateRange(context) {
         const range = this.dateRanges[context];
@@ -278,22 +363,12 @@ const App = {
             .slice(0, limit);
     },
 
-    getKindergartenActivityRanking() {
-        const activities = this.getFilteredActivitiesByDateRange('dataOverview');
-        const totalActivities = MockData.schoolData.activities.length || 1;
-        const ratio = activities.length / totalActivities;
-        return MockData.kindergartens
-            .map(kindergarten => {
-                const baseCount = MockData.classes
-                    .filter(cls => cls.kindergartenId === kindergarten.id)
-                    .reduce((sum, cls) => sum + (cls.activityCount || 0), 0);
-                const activityCount = this.scaleNumber(baseCount, ratio, activities.length ? 1 : 0);
-                return {
-                    ...kindergarten,
-                    activityCount
-                };
-            })
-            .sort((a, b) => b.activityCount - a.activityCount);
+    isTeacherScope() {
+        return this.currentRole === 'teacher' && !!this.selectedClass;
+    },
+
+    getTeacherClassName() {
+        return this.selectedClass?.name || '';
     },
 
     getAdminClassUsageComparison() {
@@ -317,6 +392,226 @@ const App = {
 
     scaleNumber(value, ratio, minimum = 0) {
         return Math.max(minimum, Math.round(value * ratio));
+    },
+
+    formatActivityDuration(startTime, endTime) {
+        if (!startTime || !endTime) return '—';
+        const start = new Date(startTime.replace(' ', 'T'));
+        const end = new Date(endTime.replace(' ', 'T'));
+        const diffMs = end.getTime() - start.getTime();
+        if (!Number.isFinite(diffMs) || diffMs <= 0) return '—';
+        const totalMinutes = Math.round(diffMs / 60000);
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        if (hours && minutes) return `${hours}小时${minutes}分钟`;
+        if (hours) return `${hours}小时`;
+        return `${minutes}分钟`;
+    },
+
+    // 园所/区域/班级数据页 - 全局时间筛选辅助
+    getSchoolDateRange() {
+        return this.dateRanges.schoolOverview || {};
+    },
+
+    getSchoolRangeRatio() {
+        const total = MockData.schoolData?.activities?.length || 0;
+        if (!total) return 0;
+        const inRange = this.getFilteredActivitiesByDateRange('schoolOverview').length;
+        return inRange / total;
+    },
+
+    scaleByDateRange(value, { decimals = 0, minimum = 0 } = {}) {
+        const ratio = this.getSchoolRangeRatio();
+        if (!Number.isFinite(value)) return value;
+        if (ratio <= 0) return decimals ? Number(0).toFixed(decimals) : 0;
+        const scaled = value * ratio;
+        if (decimals) return scaled.toFixed(decimals);
+        return Math.max(minimum, Math.round(scaled));
+    },
+
+    scaleDurationString(durationStr) {
+        if (durationStr == null) return durationStr;
+        const text = String(durationStr);
+        const match = text.match(/(\d+(?:\.\d+)?)/);
+        if (!match) return text;
+        const num = parseFloat(match[1]);
+        const unit = text.replace(match[1], '').trim();
+        const ratio = this.getSchoolRangeRatio();
+        const scaled = (num * (ratio <= 0 ? 0 : ratio));
+        const decimals = (match[1].split('.')[1] || '').length || 1;
+        return `${scaled.toFixed(decimals)}${unit}`;
+    },
+
+    filterActivitiesByGlobalRange(list) {
+        const range = this.getSchoolDateRange();
+        const start = range?.startDate ? new Date(`${range.startDate}T00:00:00`) : null;
+        const end = range?.endDate ? new Date(`${range.endDate}T23:59:59`) : null;
+        return (list || []).filter(item => {
+            const current = this.parseActivityDate(item.endTime);
+            if (Number.isNaN(current.getTime())) return false;
+            if (start && current < start) return false;
+            if (end && current > end) return false;
+            return true;
+        });
+    },
+
+    filterReadingStudentsByGlobalRange(list) {
+        if (!Array.isArray(list)) return list;
+        const range = this.getSchoolDateRange();
+        const start = range?.startDate ? new Date(`${range.startDate}T00:00:00`) : null;
+        const end = range?.endDate ? new Date(`${range.endDate}T23:59:59`) : null;
+        if (!start && !end) return list;
+        // mock 数据时间窗口与全局筛选错位时，按比例随机抽样保留对应比例的记录
+        const ratio = this.getSchoolRangeRatio();
+        if (ratio <= 0) return [];
+        if (ratio >= 1) return list;
+        const keep = Math.max(1, Math.round(list.length * ratio));
+        return list.slice(0, keep);
+    },
+
+    // 阅读报告 - 阅读明细（按全局时间筛选生成该幼儿在范围内的逐次阅读记录）
+    getStudentReadingDetail(sOriginal) {
+        const range = this.getSchoolDateRange();
+        const startMs = range?.startDate ? new Date(`${range.startDate}T00:00:00`).getTime() : null;
+        const endMs = range?.endDate ? new Date(`${range.endDate}T23:59:59`).getTime() : null;
+
+        const inRange = (timeStr) => {
+            const t = this.parseActivityDate(timeStr).getTime();
+            if (Number.isNaN(t)) return false;
+            if (startMs !== null && t < startMs) return false;
+            if (endMs !== null && t > endMs) return false;
+            return true;
+        };
+
+        const records = [];
+
+        // 1) 优先取真实的 readingRecords
+        const realRecords = (MockData.readingRecords || []).filter(r => r.studentId === sOriginal.id);
+        realRecords.forEach(r => {
+            const dateStr = `${r.date} 00:00:00`;
+            if (startMs !== null && !inRange(dateStr)) return;
+            const book = (MockData.schoolData?.books || []).find(b => b.id === r.bookId);
+            records.push({
+                date: r.date,
+                startTime: '',
+                endTime: '',
+                duration: Number(r.duration) || 0,
+                bookName: book?.name || `绘本${r.bookId}`,
+                bookType: book?.type || '-',
+                completed: true
+            });
+        });
+
+        // 2) 用班级在筛选范围内的活动合成补充记录（保证有数据可看）
+        const targetActs = this.filterActivitiesByGlobalRange(MockData.schoolData?.activities || [])
+            .filter(a => a.className === sOriginal.className);
+        const bookPool = (MockData.schoolData?.books || []);
+        targetActs.forEach((a, idx) => {
+            // 每个活动给该幼儿派 1-2 次阅读
+            const sessions = ((sOriginal.id + idx) % 3 === 0) ? 2 : 1;
+            for (let k = 0; k < sessions; k++) {
+                const offsetMin = (idx * 7 + k * 23 + sOriginal.id * 3) % 30;
+                const dur = 12 + ((idx + k + sOriginal.id) % 14); // 12-25 分钟
+                const start = new Date(this.parseActivityDate(a.startTime).getTime() + offsetMin * 60000);
+                const endT = new Date(start.getTime() + dur * 60000);
+                const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+                const dateOnly = fmt(start).slice(0, 10);
+                // 避免与真实记录同日同绘本重复
+                const book = bookPool.length ? bookPool[(sOriginal.id + idx + k) % bookPool.length] : null;
+                if (!book) continue;
+                if (records.some(r => r.date === dateOnly && r.bookName === book.name)) continue;
+                records.push({
+                    date: dateOnly,
+                    startTime: fmt(start),
+                    endTime: fmt(endT),
+                    duration: dur,
+                    bookName: book.name,
+                    bookType: book.type || '-',
+                    completed: ((idx + k) % 4) !== 0
+                });
+            }
+        });
+
+        records.sort((a, b) => (a.date === b.date ? a.startTime.localeCompare(b.startTime) : a.date.localeCompare(b.date)));
+
+        // 汇总
+        const totalDuration = records.reduce((sum, r) => sum + r.duration, 0);
+        const totalTimes = records.length;
+        const uniqueBooks = new Set(records.map(r => r.bookName));
+        const completedBooksSet = new Set(records.filter(r => r.completed).map(r => r.bookName));
+
+        return {
+            records,
+            summary: {
+                duration: totalDuration,
+                times: totalTimes,
+                books: uniqueBooks.size,
+                completed: completedBooksSet.size
+            }
+        };
+    },
+
+    renderStudentMetricTab({ key, label, unit, displayValue, active }) {
+        const activeClass = active
+            ? 'border-blue-400/60 bg-blue-500/10 ring-1 ring-blue-400/30'
+            : 'border-slate-700/50 hover:border-blue-400/30';
+        const arrow = active ? '▴' : '▾';
+        return `
+            <button type="button" class="text-left bg-slate-900/40 rounded-xl border ${activeClass} transition-colors p-4 relative" data-metric-tab="${key}" onclick="App.switchStudentMetricTab('${key}')">
+                <div class="text-2xl font-bold text-blue-400 text-center">${displayValue}</div>
+                <div class="text-xs text-slate-400 text-center">${unit}</div>
+                <div class="text-xs text-slate-500 text-center">${label}</div>
+                <span class="absolute top-2 right-3 text-[10px] text-slate-500" data-metric-arrow>${arrow}</span>
+            </button>
+        `;
+    },
+
+    renderStudentMetricPanel({ key, label, records, columns, emptyText, hint }) {
+        const tableHeaders = columns.map(c => `<th class="px-3 py-1.5 text-left font-normal text-slate-500">${c.label}</th>`).join('');
+        const tableRows = records.length
+            ? records.map((r, i) => `
+                <tr class="border-b border-slate-700/40 hover:bg-slate-700/20">
+                    ${columns.map(c => `<td class="px-3 py-1.5 text-slate-300">${c.render(r, i)}</td>`).join('')}
+                </tr>
+            `).join('')
+            : `<tr><td colspan="${columns.length}" class="px-3 py-8 text-center text-slate-500">${emptyText || '当前时间范围内暂无明细数据'}</td></tr>`;
+
+        const isActive = this._studentMetricTab === key;
+        return `
+            <div class="student-metric-panel ${isActive ? '' : 'hidden'}" data-metric-panel="${key}">
+                <div class="text-[11px] text-slate-400 mb-2">${hint || `${label}的具体阅读明细`}</div>
+                <div class="rounded-lg border border-slate-700/50 overflow-hidden">
+                    <table class="w-full text-xs">
+                        <thead class="bg-slate-800/60">
+                            <tr>${tableHeaders}</tr>
+                        </thead>
+                        <tbody>${tableRows}</tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    },
+
+    switchStudentMetricTab(key) {
+        // 再次点击同一个则收起
+        const next = this._studentMetricTab === key ? null : key;
+        this._studentMetricTab = next;
+        document.querySelectorAll('[data-metric-tab]').forEach(btn => {
+            const active = btn.dataset.metricTab === next;
+            btn.classList.toggle('border-blue-400/60', active);
+            btn.classList.toggle('bg-blue-500/10', active);
+            btn.classList.toggle('ring-1', active);
+            btn.classList.toggle('ring-blue-400/30', active);
+            btn.classList.toggle('border-slate-700/50', !active);
+            btn.classList.toggle('hover:border-blue-400/30', !active);
+            const arrow = btn.querySelector('[data-metric-arrow]');
+            if (arrow) arrow.textContent = active ? '▴' : '▾';
+        });
+        document.querySelectorAll('[data-metric-panel]').forEach(panel => {
+            panel.classList.toggle('hidden', panel.dataset.metricPanel !== next);
+        });
+        const wrapper = document.getElementById('student-metric-panel-wrapper');
+        if (wrapper) wrapper.classList.toggle('hidden', !next);
     },
 
     renderDateFilterBar(context) {
@@ -384,24 +679,16 @@ const App = {
             this.selectedClass = null;
         }
 
-        this.normalizeAiAnalysisTab();
-
         this.updateRoleUI();
         this.updateSidebarForRole();
 
-        // 关闭选择器
         const switcher = document.getElementById('role-switcher');
         if (switcher) switcher.classList.add('hidden');
 
-        // 重新加载当前页面或跳转到合适的页面
-        if (role === 'admin' || role === 'principal') {
-            this.loadPage('dataOverview');
-        } else {
-            this.loadPage('schoolData');
-        }
-
-        const roleNames = { admin: '教育局管理员', principal: '园长', teacher: '教师' };
-        this.showToast(`已切换为${roleNames[role]}角色`, 'success');
+        const targetPage = (role === 'teacher' && this.currentPage === 'dataOverview')
+            ? 'schoolData'
+            : this.currentPage;
+        this.loadPage(targetPage);
     },
 
     // 更新角色UI
@@ -481,18 +768,23 @@ const App = {
                 activityCount: activities.length,
                 activityDuration: totalDuration.toFixed(1),
                 participantCount,
-                readingDuration: (totalDuration * 0.42).toFixed(1)
+                readingDuration: (totalDuration * 0.42).toFixed(1),
+                llmBookCount: Math.max(0, this.scaleNumber(MockData.dataOverviewStats.llmBookCount || 0, ratio, activities.length ? 1 : 0)),
+                llmChatCount: Math.max(0, this.scaleNumber(MockData.dataOverviewStats.llmChatCount || 0, ratio, activities.length ? 1 : 0))
             },
             bookTypes: source.bookTypes.map(item => ({
                 ...item,
                 value: Math.max(1, this.scaleNumber(item.value, ratio, activities.length ? 1 : 0))
             })),
+            bookTypeTimeSeries: this.buildBookTypeTimeSeries(),
             abilityDistribution: source.abilityDistribution,
             weeklyActivity,
             teacherRanking: this.buildRanking(teacherMap, 10, name => ({
                 class: MockData.teacherRanking.find(item => item.name === name)?.class || ''
             })),
             classUsageComparison: this.currentRole === 'admin' ? this.getAdminClassUsageComparison() : null,
+            kindergartenUsageSeries: this.currentRole === 'admin' ? this.buildKindergartenUsageSeries() : null,
+            classRanking: MockData.classRanking,
             bookRanking: source.bookRanking.map(item => ({
                 ...item,
                 reads: this.scaleNumber(item.reads, ratio, activities.length ? 1 : 0),
@@ -502,12 +794,17 @@ const App = {
     },
 
     getSchoolOverviewDataForCurrentRange() {
+        if (this.isTeacherScope()) {
+            return this.getTeacherClassOverviewData();
+        }
         const activities = this.getFilteredActivitiesByDateRange('schoolOverview');
         const base = MockData.schoolData.overview;
         const totalActivities = MockData.schoolData.activities.length || 1;
         const ratio = activities.length / totalActivities;
         const activityDuration = activities.length * 0.5;
         const studentTotal = activities.reduce((sum, item) => sum + (item.studentCount || 0), 0);
+        const llmBookBase = base.llmBookCount != null ? base.llmBookCount : (MockData.dataOverviewStats?.llmBookCount || 0);
+        const llmChatBase = base.llmChatCount != null ? base.llmChatCount : (MockData.dataOverviewStats?.llmChatCount || 0);
         return {
             activityTotal: activities.length,
             activityDuration: activityDuration.toFixed(1),
@@ -520,6 +817,8 @@ const App = {
             classTotal: base.classTotal,
             teacherTotal: base.teacherTotal,
             studentTotal,
+            llmBookCount: this.scaleNumber(llmBookBase, ratio, activities.length ? 1 : 0),
+            llmChatCount: this.scaleNumber(llmChatBase, ratio, activities.length ? 1 : 0),
             categoryData: base.categoryData.map(item => ({
                 ...item,
                 readCount: this.scaleNumber(item.readCount, ratio, activities.length ? 1 : 0),
@@ -528,8 +827,54 @@ const App = {
         };
     },
 
+    getTeacherClassOverviewData() {
+        const cls = this.selectedClass;
+        const className = cls.name;
+        const activities = this.getFilteredActivitiesByDateRange('schoolOverview')
+            .filter(a => a.className === className);
+        const stats = cls.bookTypeStats || {};
+        const totalReads = Object.values(stats).reduce((a, b) => a + b, 0);
+        const allCategories = ['日常生活', '人际交往', '情商品格', '国学文化', '科普百科', '语言学习'];
+        const categoryData = allCategories.map(name => {
+            const count = stats[name] || 0;
+            return {
+                name,
+                readCount: count,
+                duration: `${(count * 0.05).toFixed(2)}h`
+            };
+        });
+        // 若班级自身无 LLM 字段，按班级活动占园所总活动比例推算
+        const allActivities = MockData.schoolData?.activities || [];
+        const ratio = allActivities.length ? activities.length / allActivities.length : 0;
+        const baseLlmBook = MockData.schoolData?.overview?.llmBookCount ?? MockData.dataOverviewStats?.llmBookCount ?? 0;
+        const baseLlmChat = MockData.schoolData?.overview?.llmChatCount ?? MockData.dataOverviewStats?.llmChatCount ?? 0;
+        const llmBookCount = cls.llmBookCount != null ? cls.llmBookCount : Math.max(0, this.scaleNumber(baseLlmBook, ratio, activities.length ? 1 : 0));
+        const llmChatCount = cls.llmChatCount != null ? cls.llmChatCount : Math.max(0, this.scaleNumber(baseLlmChat, ratio, activities.length ? 1 : 0));
+        return {
+            activityTotal: activities.length,
+            activityDuration: (activities.length * 0.5).toFixed(1),
+            bookTotal: Object.keys(stats).length,
+            bookReadCount: totalReads,
+            bookReadDuration: (parseFloat(cls.activityDuration) || 0).toFixed(1),
+            deviceTotal: cls.deviceUseCount || 0,
+            deviceUseCount: cls.deviceUseCount || 0,
+            deviceUseDuration: '—',
+            classTotal: 1,
+            teacherTotal: cls.teachers?.length || cls.teacherCount || 0,
+            studentTotal: cls.studentCount,
+            llmBookCount,
+            llmChatCount,
+            categoryData
+        };
+    },
+
     getSchoolOverviewBookRecommendations() {
-        const books = (MockData.schoolData?.books || []).slice().sort((a, b) => b.readCount - a.readCount);
+        let books = (MockData.schoolData?.books || []).slice();
+        if (this.isTeacherScope()) {
+            const stats = this.selectedClass.bookTypeStats || {};
+            books = books.filter(b => stats[b.type] != null);
+        }
+        books.sort((a, b) => b.readCount - a.readCount);
         const roleReasonMap = {
             principal: '园所整体阅读热度较高，适合纳入近期重点推荐。',
             teacher: '班级活动适配度较高，适合近期课堂共读与互动延展。'
@@ -551,14 +896,19 @@ const App = {
                 dataOverviewItem.classList.remove('hidden-role');
             }
         }
-        // AI分析菜单：园长和教师可以看到，管理员暂时不显示
-        const aiAnalysisItem = document.getElementById('nav-aiAnalysis');
-        if (aiAnalysisItem) {
-            if (this.currentRole === 'admin') {
-                aiAnalysisItem.classList.add('hidden-role');
+        // AI总览：园长和教师都可见
+        const aiOverviewItem = document.getElementById('nav-aiOverview');
+        if (aiOverviewItem) {
+            if (this.currentRole === 'principal' || this.currentRole === 'teacher') {
+                aiOverviewItem.classList.remove('hidden-role');
             } else {
-                aiAnalysisItem.classList.remove('hidden-role');
+                aiOverviewItem.classList.add('hidden-role');
             }
+        }
+        // 教师视角下"园所数据"菜单显示为"班级数据"，教育局管理员显示"区域数据"
+        const schoolDataLabel = document.getElementById('nav-schoolData-label');
+        if (schoolDataLabel) {
+            schoolDataLabel.textContent = this.currentRole === 'teacher' ? '班级数据' : this.currentRole === 'admin' ? '区域数据' : '园所数据';
         }
     },
 
@@ -594,9 +944,14 @@ const App = {
         if (pageName === 'dataOverview' && this.currentRole === 'teacher') {
             pageName = 'schoolData';
         }
-        // 权限检查：AI分析只有园长和教师可以访问
-        if (pageName === 'aiAnalysis' && this.currentRole === 'admin') {
+        // 权限检查：AI总览仅园长和教师可见
+        if (pageName === 'aiOverview' && this.currentRole !== 'principal' && this.currentRole !== 'teacher') {
             pageName = 'dataOverview';
+        }
+
+        // 离开 AI 总览时停止轮询
+        if (this.currentPage === 'aiOverview' && pageName !== 'aiOverview') {
+            this.teardownAiOverviewPage();
         }
 
         this.currentPage = pageName;
@@ -605,8 +960,10 @@ const App = {
         });
         const breadcrumbMap = {
             dataOverview: '首页 / 基础设置 / 大数据总览',
-            schoolData: '首页 / 基础设置 / 园所数据',
-            aiAnalysis: '首页 / 基础设置 / AI分析'
+            schoolData: this.currentRole === 'teacher'
+                ? '首页 / 基础设置 / 班级数据'
+                : this.currentRole === 'admin' ? '首页 / 基础设置 / 区域数据' : '首页 / 基础设置 / 园所数据',
+            aiOverview: '首页 / 基础设置 / AI总览',
         };
         document.getElementById('breadcrumb').textContent = breadcrumbMap[pageName] || '首页';
         Charts.dispose();
@@ -614,7 +971,7 @@ const App = {
         switch (pageName) {
             case 'dataOverview': container.innerHTML = this.renderDataOverviewPage(); break;
             case 'schoolData': container.innerHTML = this.renderSchoolDataPage(); break;
-            case 'aiAnalysis': container.innerHTML = this.renderAiAnalysisPage(); break;
+            case 'aiOverview': container.innerHTML = this.renderAiOverviewPage(); break;
             case 'activityDetail': container.innerHTML = this._activityDetailContent || '<div class="p-6 text-center text-slate-500">加载中...</div>'; break;
             default: container.innerHTML = this.renderDataOverviewPage();
         }
@@ -629,10 +986,9 @@ const App = {
                 const overviewData = this.getOverviewDataForCurrentRange();
                 Charts.initDataOverviewCharts(overviewData);
                 this.renderDataOverviewRankings(overviewData.bookRanking);
-                this.renderKindergartenActivityRanking();
                 break;
             case 'schoolData': this.initSchoolDataPage(); break;
-            case 'aiAnalysis': this.initAiAnalysisPage(); break;
+            case 'aiOverview': this.initAiOverviewPage(); break;
             case 'activityDetail': break; // 详情页无需初始化
         }
     },
@@ -652,16 +1008,41 @@ const App = {
         setTimeout(() => { toast.classList.add('opacity-0', 'transition-opacity'); setTimeout(() => toast.remove(), 300); }, 3000);
     },
 
-    openModal(html) {
-        document.getElementById('modal-content').innerHTML = html;
-        document.getElementById('modal-overlay').classList.remove('hidden');
+    openModal(html, options = {}) {
+        const content = document.getElementById('modal-content');
+        const overlay = document.getElementById('modal-overlay');
+        if (!content || !overlay) return;
+        // 切换弹窗最大宽度（默认 max-w-3xl，可通过 options.size 改为 'wide' / 'xwide'）
+        const sizeMap = { default: 'max-w-3xl', wide: 'max-w-4xl', xwide: 'max-w-5xl', xxwide: 'max-w-6xl' };
+        const target = sizeMap[options.size] || sizeMap.default;
+        // 移除旧 size 类，再加上新的
+        Object.values(sizeMap).forEach(c => content.classList.remove(c));
+        content.classList.add(target);
+        content.innerHTML = html;
+        overlay.classList.remove('hidden');
     },
     closeModal(e) {
         if (e && e.target !== document.getElementById('modal-overlay')) return;
         document.getElementById('modal-overlay').classList.add('hidden');
+        this._currentClassDetailId = null;
+        this._currentStudentReportId = null;
+        this._aiDialogReturnTo = null;
+        this._aiDrilldown = null;
+        this._refreshAiOverviewAfterModal();
     },
     closeModalDirect() {
         document.getElementById('modal-overlay').classList.add('hidden');
+        this._currentClassDetailId = null;
+        this._currentStudentReportId = null;
+        this._aiDialogReturnTo = null;
+        this._aiDrilldown = null;
+        this._refreshAiOverviewAfterModal();
+    },
+    _refreshAiOverviewAfterModal() {
+        if (this.currentPage !== 'aiOverview') return;
+        this.refreshAiMetricPanel();
+        const grid = document.getElementById('ai-summary-grid');
+        if (grid) grid.innerHTML = this.renderAiSummaryCards(this.getAiOverviewSummary());
     },
 
     // ============================================================
@@ -948,25 +1329,15 @@ const App = {
             <!-- 图表第二行 -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 ${this.card(this.chartTitle(this.currentRole === 'admin' ? '区域绘本活动次数' : '园所绘本活动次数', 'bg-cyan-500') + '<div id="weekly-activity-chart" class="h-72"></div>')}
-                ${this.card(this.chartTitle('绘本活动次数排名前十教师', 'bg-purple-500') + '<div id="teacher-ranking-chart" class="h-72"></div>')}
+                ${this.currentRole === 'admin' 
+                    ? this.card(this.renderKindergartenUsageChartHeader() + '<div id="kindergarten-usage-chart" class="h-72"></div>')
+                    : this.card(this.chartTitle('绘本活动次数排名前十教师', 'bg-purple-500') + '<div id="teacher-ranking-chart" class="h-72"></div>')}
             </div>
 
             <!-- 班级排名（园长端可见） -->
             ${this.currentRole === 'principal' ? this.card(this.chartTitle('绘本活动次数排名前十班级', 'bg-emerald-500') + '<div id="class-ranking-chart" class="h-72"></div>') : ''}
 
             ${this.currentRole === 'admin' ? this.card(this.renderAdminClassUsageComparison(overviewData.classUsageComparison), 'overflow-hidden') : ''}
-
-            <!-- 园所活动次数排序（管理员可见） -->
-            ${this.currentRole === 'admin' ? this.card(`
-                <div class="flex items-center justify-between gap-3 mb-4">
-                    ${this.chartTitle('园所活动次数排序', 'bg-cyan-500')}
-                    <button onclick="App.toggleKindergartenRankingOrder()" class="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 transition-all">
-                        <svg class="w-3.5 h-3.5 transition-transform ${this.kindergartenRankingOrder === 'desc' ? '' : 'rotate-180'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path></svg>
-                        <span>${this.kindergartenRankingOrder === 'desc' ? '降序' : '升序'}</span>
-                    </button>
-                </div>
-                <div id="kindergarten-ranking-wrap"></div>
-            `, 'overflow-hidden') : ''}
 
             <!-- 绘本排行表格（管理员不可见） -->
             ${this.currentRole !== 'admin' ? this.card(this.chartTitle('阅读次数排名前十绘本', 'bg-indigo-500') + '<div id="book-ranking-table-wrap"></div>') : ''}
@@ -1001,60 +1372,2975 @@ const App = {
         wrap.innerHTML = this.tableWrap(headers, rows);
     },
 
-    renderKindergartenActivityRanking() {
-        if (this.currentRole !== 'admin') return;
+    // 园所使用次数趋势图表头部（带折叠选择器）
+    renderKindergartenUsageChartHeader() {
+        const kindergartens = MockData.kindergartens || [];
+        const selectedNames = kindergartens.filter(k => this.selectedKindergartensForLine.includes(k.id)).map(k => k.name);
 
-        const wrap = document.getElementById('kindergarten-ranking-wrap');
-        if (!wrap) return;
-
-        const ranking = this.getKindergartenActivityRanking();
-        // 根据排序方式调整数据顺序
-        const sortedRanking = this.kindergartenRankingOrder === 'desc'
-            ? ranking
-            : [...ranking].reverse();
-        const maxCount = ranking[0]?.activityCount || 1;
-        wrap.innerHTML = `
-            <div class="space-y-3">
-                ${sortedRanking.map((item, index) => {
-                    const actualIndex = this.kindergartenRankingOrder === 'desc' ? index : ranking.length - 1 - index;
-                    return `
-                    <div class="grid grid-cols-[56px_minmax(0,1.6fr)_minmax(0,1fr)_120px] items-center gap-3 px-4 py-3 rounded-xl border border-slate-500/20 bg-slate-800/35 hover:border-cyan-400/30 hover:bg-slate-700/35 transition-all">
-                        <div class="flex items-center justify-center">
-                            <span class="w-8 h-8 rounded-full text-xs font-bold flex items-center justify-center ${actualIndex < 3 ? 'bg-amber-500/20 text-amber-300 border border-amber-400/20' : 'bg-slate-700/70 text-slate-300 border border-slate-500/20'}">${actualIndex + 1}</span>
-                        </div>
-                        <div class="min-w-0">
-                            <div class="text-sm font-semibold text-white truncate">${item.name}</div>
-                            <div class="text-xs text-slate-400 truncate">${item.district} · ${item.classCount} 班 · ${item.teacherCount} 教师 · ${item.studentCount} 幼儿</div>
-                        </div>
-                        <div class="min-w-0">
-                            <div class="h-2 rounded-full bg-slate-700/70 overflow-hidden">
-                                <div class="h-full rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500" style="width: ${Math.max(12, item.activityCount / maxCount * 100)}%"></div>
-                            </div>
-                            <div class="text-xs text-slate-400 mt-1"></div>
-                        </div>
-                        <div class="text-right">
-                            <div class="text-2xl font-bold text-cyan-300">${item.activityCount}</div>
-                            <div class="text-xs text-slate-500">活动次数</div>
-                        </div>
+        return `
+            <div class="space-y-3" id="kindergarten-usage-header">
+                <div class="flex items-center justify-between gap-3">
+                    <h3 class="text-base font-semibold text-white flex items-center gap-2">
+                        <span class="w-1.5 h-5 bg-purple-500 rounded-full"></span>
+                        园所使用次数趋势
+                    </h3>
+                    <div class="text-xs text-slate-400 px-2 py-1 rounded-full border border-slate-500/30 bg-slate-700/30">
+                        已选 ${selectedNames.length} 个园所
                     </div>
-                    `;
-                }).join('')}
+                </div>
+                <div class="relative" id="kindergarten-dropdown-container">
+                    <button onclick="event.stopPropagation();App.toggleKindergartenDropdown()" class="flex items-center justify-between w-full px-3 py-2 rounded-lg text-xs transition-all border bg-slate-700/40 text-slate-300 border-slate-500/30 hover:border-purple-400/30">
+                        <span class="truncate">${selectedNames.length > 0 ? selectedNames.join('、') : '请选择园所'}</span>
+                        <svg class="w-4 h-4 transition-transform" id="kindergarten-dropdown-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                    <div id="kindergarten-dropdown-menu" class="hidden absolute top-full left-0 right-0 mt-1 bg-slate-800/95 border border-slate-500/30 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto">
+                        ${kindergartens.map(k => `
+                            <div onclick="event.stopPropagation();App.toggleKindergartenForLine(${k.id})" class="flex items-center gap-2 px-3 py-2 text-xs cursor-pointer transition-all hover:bg-purple-500/10 ${this.selectedKindergartensForLine.includes(k.id) ? 'bg-purple-500/15 text-purple-300' : 'text-slate-300'}">
+                                <span class="w-4 h-4 rounded border flex items-center justify-center ${this.selectedKindergartensForLine.includes(k.id) ? 'bg-purple-500 border-purple-500' : 'border-slate-500'}">
+                                    ${this.selectedKindergartensForLine.includes(k.id) ? '<svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : ''}
+                                </span>
+                                <span class="truncate">${k.name}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
             </div>
         `;
     },
 
-    // 切换园所排序方式
-    toggleKindergartenRankingOrder() {
-        this.kindergartenRankingOrder = this.kindergartenRankingOrder === 'desc' ? 'asc' : 'desc';
-        this.renderKindergartenActivityRanking();
-        // 更新按钮状态
-        const btn = document.querySelector('button[onclick="App.toggleKindergartenRankingOrder()"]');
-        if (btn) {
-            const svg = btn.querySelector('svg');
-            const span = btn.querySelector('span');
-            if (svg) svg.classList.toggle('rotate-180', this.kindergartenRankingOrder === 'asc');
-            if (span) span.textContent = this.kindergartenRankingOrder === 'desc' ? '降序' : '升序';
+    // 切换园所下拉菜单显示
+    toggleKindergartenDropdown() {
+        const menu = document.getElementById('kindergarten-dropdown-menu');
+        const arrow = document.getElementById('kindergarten-dropdown-arrow');
+        if (menu) menu.classList.toggle('hidden');
+        if (arrow) arrow.classList.toggle('rotate-180');
+    },
+
+    // 切换园所选择（无数量限制）
+    toggleKindergartenForLine(id) {
+        const index = this.selectedKindergartensForLine.indexOf(id);
+        if (index > -1) {
+            // 已选中则取消（至少保留一个）
+            if (this.selectedKindergartensForLine.length > 1) {
+                this.selectedKindergartensForLine.splice(index, 1);
+            }
+        } else {
+            // 未选中则添加（无数量限制）
+            this.selectedKindergartensForLine.push(id);
         }
+        this.refreshKindergartenUsageChart();
+    },
+
+    // 刷新园所使用次数趋势图表
+    refreshKindergartenUsageChart() {
+        // 整段重渲染筛选栏（徽章 / 下拉文案 / 选项对勾全部跟着 selectedKindergartensForLine 同步）
+        const header = document.getElementById('kindergarten-usage-header');
+        if (header) {
+            const wasOpen = !document.getElementById('kindergarten-dropdown-menu')?.classList.contains('hidden');
+            header.outerHTML = this.renderKindergartenUsageChartHeader();
+            if (wasOpen) {
+                document.getElementById('kindergarten-dropdown-menu')?.classList.remove('hidden');
+                document.getElementById('kindergarten-dropdown-arrow')?.classList.add('rotate-180');
+            }
+        }
+        // 重新绘制图表前先释放旧实例（避免 setOption merge 残留旧 series）
+        const dom = document.getElementById('kindergarten-usage-chart');
+        if (dom && typeof echarts !== 'undefined') {
+            const existing = echarts.getInstanceByDom(dom);
+            if (existing && !existing.isDisposed()) {
+                existing.dispose();
+                Charts.instances = Charts.instances.filter(c => c !== existing);
+            }
+        }
+        const data = this.buildKindergartenUsageSeries();
+        Charts.safeInit(() => Charts.initKindergartenUsageLine(data));
+    },
+
+    // 构建园所使用次数序列数据
+    buildKindergartenUsageSeries() {
+        const range = this.dateRanges.dataOverview || {};
+        const start = range?.startDate ? new Date(`${range.startDate}T00:00:00`) : null;
+        const end = range?.endDate ? new Date(`${range.endDate}T23:59:59`) : null;
+        const granularity = this.getOverviewSeriesGranularity(range);
+
+        const kindergartens = MockData.kindergartens || [];
+        const selectedKindergartens = kindergartens.filter(k => this.selectedKindergartensForLine.includes(k.id));
+        const series = [];
+
+        // 构建时间轴
+        const dates = [];
+        if (start && end) {
+            if (granularity === 'month') {
+                const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+                const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+                while (cursor <= endMonth) {
+                    dates.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`);
+                    cursor.setMonth(cursor.getMonth() + 1);
+                }
+            } else {
+                const cursor = new Date(start);
+                cursor.setHours(0, 0, 0, 0);
+                const endDate = new Date(end);
+                endDate.setHours(0, 0, 0, 0);
+                while (cursor <= endDate) {
+                    dates.push(this.formatDateInput(cursor).slice(5));
+                    cursor.setDate(cursor.getDate() + 1);
+                }
+            }
+        }
+
+        // 为选中的园所生成使用次数数据
+        selectedKindergartens.forEach(kindergarten => {
+            const baseCount = kindergarten.activityCount || MockData.classes
+                .filter(cls => cls.kindergartenId === kindergarten.id)
+                .reduce((sum, cls) => sum + (cls.activityCount || 0), 0) || Math.round(50 + Math.random() * 100);
+
+            const wavePattern = this.generateWavePattern(dates.length);
+
+            const values = dates.map((dateKey, index) => {
+                const wave = wavePattern[index];
+                if (granularity === 'month') {
+                    return Math.round(baseCount / 4 * wave * (1 + (index % 3) * 0.15));
+                } else {
+                    const dailyBase = baseCount / 30;
+                    return Math.round(dailyBase * wave * (1 + Math.random() * 0.3));
+                }
+            });
+
+            series.push({
+                name: kindergarten.name,
+                values,
+                id: kindergarten.id
+            });
+        });
+
+        return { dates, series, granularity };
+    },
+
+    // 生成波动模式
+    generateWavePattern(length) {
+        const pattern = [];
+        for (let i = 0; i < length; i++) {
+            const baseWave = 0.7 + 0.5 * Math.sin(i * 0.5 + Math.random() * 0.3);
+            const noise = 0.2 + Math.random() * 0.6;
+            const weekendFactor = (i % 7 === 0 || i % 7 === 6) ? 0.6 : 1.0;
+            pattern.push(Math.max(0.5, Math.min(1.5, baseWave * noise * weekendFactor)));
+        }
+        return pattern;
+    },
+
+    // 构建绘本类型时间序列数据
+    buildBookTypeTimeSeries() {
+        const range = this.dateRanges.dataOverview || {};
+        const start = range?.startDate ? new Date(`${range.startDate}T00:00:00`) : null;
+        const end = range?.endDate ? new Date(`${range.endDate}T23:59:59`) : null;
+        const granularity = this.getOverviewSeriesGranularity(range);
+
+        const bookTypes = MockData.bookTypes || [];
+        const typeColors = ['#3b82f6', '#06b6d4', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444'];
+
+        const dates = [];
+        if (start && end) {
+            if (granularity === 'month') {
+                const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+                const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+                while (cursor <= endMonth) {
+                    dates.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`);
+                    cursor.setMonth(cursor.getMonth() + 1);
+                }
+            } else {
+                const cursor = new Date(start);
+                cursor.setHours(0, 0, 0, 0);
+                const endDate = new Date(end);
+                endDate.setHours(0, 0, 0, 0);
+                while (cursor <= endDate) {
+                    dates.push(this.formatDateInput(cursor).slice(5));
+                    cursor.setDate(cursor.getDate() + 1);
+                }
+            }
+        }
+
+        const series = bookTypes.map((type, typeIndex) => {
+            const baseValue = type.value || 30;
+            const wavePattern = this.generateWavePattern(dates.length);
+
+            const values = dates.map((dateKey, index) => {
+                const wave = wavePattern[index];
+                if (granularity === 'month') {
+                    return Math.round(baseValue * wave * (1 + (index % 3) * 0.1));
+                } else {
+                    const dailyBase = baseValue / (dates.length > 30 ? 30 : 7);
+                    return Math.round(dailyBase * wave * (1 + Math.random() * 0.25));
+                }
+            });
+
+            return {
+                name: type.name,
+                values,
+                color: typeColors[typeIndex % typeColors.length]
+            };
+        });
+
+        return { dates, series, granularity };
+    },
+
+    // ============================================================
+    //  页面3：AI总览（园长视角 - 绘本大模型相关数据汇总）
+    // ============================================================
+    renderAiOverviewPage() {
+        const summary = this.getAiOverviewSummary();
+        const isTeacher = this.isTeacherScope();
+        const teacherClassName = isTeacher ? this.getTeacherClassName() : '';
+        const pageTitle = isTeacher ? `${teacherClassName} · AI总览` : 'AI总览';
+        const pageSub = isTeacher
+            ? `仅展示「${teacherClassName}」的绘本大模型互动数据`
+            : '汇总园所内绘本大模型相关数据，洞察孩子的好奇心与互动偏好';
+        const trendTitle = isTeacher ? `${teacherClassName} AI 对话次数变化` : '各班级 AI 对话次数变化';
+        return `
+        <div class="space-y-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-2xl font-bold bg-gradient-to-r from-amber-300 to-cyan-300 bg-clip-text text-transparent">${pageTitle}</h2>
+                    <p class="text-xs text-slate-400 mt-1">${pageSub}</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="App.startAiClassAnalysis()" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-200 text-xs border border-amber-400/40 transition-colors flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+                        班级 AI 分析
+                    </button>
+                    ${isTeacher ? `<span class="px-3 py-1.5 rounded-full bg-cyan-500/15 text-cyan-300 text-xs border border-cyan-400/30">👩‍🏫 ${teacherClassName}</span>` : ''}
+                </div>
+            </div>
+
+            <div id="ai-date-filter">${this.renderDateFilterBar('aiOverview')}</div>
+
+            <!-- 3 张指标卡（可点击展开明细） -->
+            <div id="ai-summary-grid" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                ${this.renderAiSummaryCards(summary)}
+            </div>
+            <div id="ai-metric-panel-wrapper" class="${this._aiActiveMetric ? '' : 'hidden'}">
+                ${this._aiActiveMetric ? this.renderAiMetricPanel(this._aiActiveMetric) : ''}
+            </div>
+
+            <!-- AI 对话次数变化 与 绘本互动排行 并列 -->
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-slate-500/35 p-5">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-2">
+                            <span class="w-1.5 h-4 bg-cyan-400 rounded"></span>
+                            <h3 class="text-sm font-semibold text-slate-200">${trendTitle}</h3>
+                        </div>
+                        <span class="text-[11px] text-slate-500">${this.buildAiOverviewTimeline().granularity === 'month' ? '月' : '日'}</span>
+                    </div>
+                    <div id="ai-class-dialog-chart" class="h-80"></div>
+                </div>
+                <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-slate-500/35 p-5">
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="w-1.5 h-4 bg-emerald-400 rounded"></span>
+                        <h3 class="text-sm font-semibold text-slate-200">绘本互动排行 TOP10</h3>
+                    </div>
+                    <div id="ai-book-interaction-chart" class="h-80"></div>
+                </div>
+            </div>
+        </div>`;
+    },
+
+    renderAiSummaryCards(summary) {
+        const active = this._aiActiveMetric;
+        const cards = [
+            { key: 'students', label: '活跃幼儿数', value: summary.activeStudents, unit: '人', icon: '👶', color: 'from-emerald-500/30 to-teal-500/10 border-emerald-400/30', accent: 'text-emerald-300' },
+            { key: 'books', label: '互动绘本数', value: summary.totalBooks, unit: '本', icon: '📖', color: 'from-cyan-500/30 to-blue-500/10 border-cyan-400/30', accent: 'text-cyan-300' },
+            { key: 'chats', label: '累计 AI 对话次数', value: summary.totalChats, unit: '次', icon: '💬', color: 'from-amber-500/30 to-orange-500/10 border-amber-400/30', accent: 'text-amber-300' }
+        ];
+        return cards.map(c => `
+            <div onclick="App.toggleAiMetric('${c.key}')" class="rounded-2xl border bg-gradient-to-br ${c.color} p-4 backdrop-blur-sm cursor-pointer transition-all hover:scale-[1.01] ${active === c.key ? 'ring-2 ring-offset-2 ring-offset-slate-800 ring-white/30' : ''}">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs text-slate-300">${c.label}</span>
+                    <span class="text-2xl">${c.icon}</span>
+                </div>
+                <div class="flex items-end justify-between">
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-2xl font-bold ${c.accent}">${c.value}</span>
+                        <span class="text-xs text-slate-400">${c.unit}</span>
+                    </div>
+                    <span class="text-[11px] text-slate-400 flex items-center gap-0.5">
+                        ${active === c.key ? '收起' : '展开'}
+                        <svg class="w-3 h-3 transition-transform ${active === c.key ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </span>
+                </div>
+            </div>
+        `).join('');
+    },
+
+    toggleAiMetric(key) {
+        this._aiActiveMetric = (this._aiActiveMetric === key) ? null : key;
+        // 切换卡片时重置分页到第 1 页
+        if (!this._aiMetricPages) this._aiMetricPages = { chats: 1, books: 1, students: 1 };
+        if (this._aiActiveMetric) this._aiMetricPages[this._aiActiveMetric] = 1;
+        // 重新渲染卡片高亮状态
+        const grid = document.getElementById('ai-summary-grid');
+        if (grid) grid.innerHTML = this.renderAiSummaryCards(this.getAiOverviewSummary());
+        // 切换明细面板
+        const wrapper = document.getElementById('ai-metric-panel-wrapper');
+        if (wrapper) {
+            if (this._aiActiveMetric) {
+                wrapper.classList.remove('hidden');
+                wrapper.innerHTML = this.renderAiMetricPanel(this._aiActiveMetric);
+            } else {
+                wrapper.classList.add('hidden');
+                wrapper.innerHTML = '';
+            }
+        }
+    },
+
+    setAiMetricPage(key, page) {
+        if (!this._aiMetricPages) this._aiMetricPages = { chats: 1, books: 1, students: 1 };
+        this._aiMetricPages[key] = page;
+        const wrapper = document.getElementById('ai-metric-panel-wrapper');
+        if (wrapper) wrapper.innerHTML = this.renderAiMetricPanel(key);
+    },
+
+    renderAiMetricPagination(key, total, currentPage, totalPages) {
+        if (totalPages <= 1) return `<div class="mt-4 text-sm text-slate-500">共 ${total} 条记录</div>`;
+        const pages = [];
+        for (let i = 1; i <= totalPages; i++) {
+            if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) pages.push(i);
+            else if (pages[pages.length - 1] !== '...') pages.push('...');
+        }
+        const onclick = (p) => `App.setAiMetricPage('${key}', ${p})`;
+        return `
+        <div class="mt-4 flex items-center justify-between">
+            <div class="text-sm text-slate-500">共 ${total} 条记录，第 ${currentPage}/${totalPages} 页</div>
+            <div class="flex items-center gap-1">
+                <button class="px-3 py-1 rounded text-sm ${currentPage===1?'text-slate-600 cursor-not-allowed':'text-slate-400 hover:bg-slate-700/50 hover:text-white'}" ${currentPage===1?'disabled':''} onclick="${onclick(currentPage-1)}">上一页</button>
+                ${pages.map(p => p==='...'
+                    ? '<span class="px-2 text-slate-600">...</span>'
+                    : `<button class="w-8 h-8 rounded text-sm ${p===currentPage?'bg-blue-600 text-white shadow-lg shadow-blue-500/30':'text-slate-400 hover:bg-slate-700/50 hover:text-white'}" onclick="${onclick(p)}">${p}</button>`
+                ).join('')}
+                <button class="px-3 py-1 rounded text-sm ${currentPage===totalPages?'text-slate-600 cursor-not-allowed':'text-slate-400 hover:bg-slate-700/50 hover:text-white'}" ${currentPage===totalPages?'disabled':''} onclick="${onclick(currentPage+1)}">下一页</button>
+            </div>
+        </div>`;
+    },
+
+    // 明细面板渲染（按类型分发）
+    renderAiMetricPanel(key) {
+        if (key === 'chats') return this.renderAiChatsDetailPanel();
+        if (key === 'books') return this.renderAiBooksDetailPanel();
+        if (key === 'students') return this.renderAiStudentsDetailPanel();
+        return '';
+    },
+
+    _aiMetricPageSize: 20,
+
+    getAiMetricCurrentPage(key) {
+        if (!this._aiMetricPages) this._aiMetricPages = { chats: 1, books: 1, students: 1 };
+        return this._aiMetricPages[key] || 1;
+    },
+
+    renderAiChatsDetailPanel() {
+        // 按「绘本+小朋友+日期」分组：同一次阅读活动，左边合并书名，右边每次对话单独成行
+        const history = this.getAiHistoryByRange();
+        const grouped = new Map();
+        history.forEach(h => {
+            const dateStr = (h.time || '').split(' ')[0] || '';
+            const key = `${h.book}||${h.student || '匿名'}||${dateStr}`;
+            if (!grouped.has(key)) grouped.set(key, { book: h.book, student: h.student || '匿名', className: h.className || '-', date: dateStr, items: [] });
+            grouped.get(key).items.push(h);
+        });
+        // 组内按时间正序
+        grouped.forEach(g => g.items.sort((a, b) => a.time.localeCompare(b.time)));
+        const groups = [...grouped.values()]
+            .map(g => ({
+                ...g,
+                latestTime: g.items[g.items.length - 1]?.time || '',
+                totalTurns: g.items.reduce((s, h) => s + (h.session?.length || 0), 0)
+            }))
+            .sort((a, b) => b.latestTime.localeCompare(a.latestTime));
+
+        const total = groups.length;
+        const pageSize = this._aiMetricPageSize;
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+        let currentPage = this.getAiMetricCurrentPage('chats');
+        if (currentPage > totalPages) { currentPage = totalPages; this._aiMetricPages.chats = currentPage; }
+        const list = groups.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+        // 每个分组渲染 rowspan 合并的左侧 + 每次对话独占一行的右侧
+        const tableRows = list.length ? list.flatMap(g => {
+            const escBook = g.book.replace(/'/g, "\\'");
+            const escStudent = g.student.replace(/'/g, "\\'");
+            const rowCount = g.items.length;
+            return g.items.map((item, idx) => {
+                const isFirst = idx === 0;
+                const scopeBadge = item.scope === 'page'
+                    ? '<span class="px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-400/30">阅读中</span>'
+                    : '<span class="px-1.5 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">阅读后</span>';
+                const turns = item.session?.length || 0;
+                const firstQ = item.session?.[0]?.q || '';
+                const escId = (item.id || '').replace(/'/g, "\\'");
+                const bookCell = isFirst
+                    ? `<td class="px-3 py-3 align-middle border-r border-slate-700/40 bg-slate-800/30" rowspan="${rowCount}">
+                            <div class="flex flex-col gap-1">
+                                <span class="text-amber-300 text-sm font-medium">《${g.book}》</span>
+                                <span class="text-cyan-300 text-xs">${g.student}</span>
+                                <span class="text-slate-400 text-[11px]">${g.className} · ${g.date}</span>
+                                <span class="text-blue-400 text-[11px] mt-1">共 ${rowCount} 次对话 · ${g.totalTurns} 轮</span>
+                            </div>
+                        </td>`
+                    : '';
+                return `
+                <tr class="${isFirst ? 'border-t-2 border-amber-400/20' : ''} border-b border-slate-700/40 hover:bg-slate-700/30">
+                    ${bookCell}
+                    <td class="px-3 py-2.5 text-center text-xs text-slate-300 whitespace-nowrap">${item.time.split(' ')[1] || item.time}</td>
+                    <td class="px-3 py-2.5 text-center">${scopeBadge}</td>
+                    <td class="px-3 py-2.5 text-center text-xs text-slate-300">${item.page || '-'}</td>
+                    <td class="px-3 py-2.5 text-center text-sm text-blue-400">${turns}</td>
+                    <td class="px-3 py-2.5 text-xs text-slate-300 truncate" title="${firstQ}">${firstQ}</td>
+                    <td class="px-3 py-2.5 text-center">
+                        <button onclick="App.viewAiDialogDetail('${escId}')" class="text-blue-400 hover:text-blue-300 text-xs">查看 ›</button>
+                    </td>
+                </tr>`;
+            });
+        }).join('') : `<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500 text-sm">当前时间范围内暂无对话明细</td></tr>`;
+
+        const headers = [
+            { label: '绘本 / 学生', align: 'left', width: '22%' },
+            { label: '时间', align: 'center', width: '10%' },
+            { label: '类型', align: 'center', width: '10%' },
+            { label: '页码', align: 'center', width: '8%' },
+            { label: '轮次', align: 'center', width: '8%' },
+            { label: '首条提问', align: 'left', width: '32%' },
+            { label: '操作', align: 'center', width: '10%' }
+        ];
+        return `
+            <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-amber-400/25 p-4 mt-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h4 class="text-sm font-semibold text-amber-300">💬 累计 AI 对话明细</h4>
+                    <span class="text-xs text-slate-400">共 ${total} 次阅读活动</span>
+                </div>
+                <div class="overflow-x-auto rounded-xl border border-slate-700/40">
+                    <table class="w-full table-fixed">
+                        <thead class="bg-slate-800/60">
+                            <tr>${headers.map(h => `<th class="px-3 py-2.5 text-${h.align} text-xs font-medium text-slate-400 whitespace-nowrap" style="width:${h.width}">${h.label}</th>`).join('')}</tr>
+                        </thead>
+                        <tbody>${tableRows}</tbody>
+                    </table>
+                </div>
+                ${this.renderAiMetricPagination('chats', total, currentPage, totalPages)}
+            </div>
+        `;
+    },
+
+    renderAiBooksDetailPanel() {
+        const list = this.getAiHistoryByRange();
+        const map = new Map();
+        list.forEach(item => {
+            if (!item.book) return;
+            if (!map.has(item.book)) map.set(item.book, { book: item.book, chatCount: 0, turns: 0, students: new Set(), classes: new Set(), latestTime: '', scopes: { full: 0, page: 0 } });
+            const stat = map.get(item.book);
+            stat.chatCount += 1;
+            stat.turns += item.session?.length || 0;
+            if (item.student) stat.students.add(item.student);
+            if (item.className) stat.classes.add(item.className);
+            if (!stat.latestTime || item.time > stat.latestTime) stat.latestTime = item.time;
+            if (item.scope === 'full') stat.scopes.full += 1; else stat.scopes.page += 1;
+        });
+        const all = [...map.values()].sort((a, b) => b.chatCount - a.chatCount);
+        const total = all.length;
+        const pageSize = this._aiMetricPageSize;
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+        let currentPage = this.getAiMetricCurrentPage('books');
+        if (currentPage > totalPages) { currentPage = totalPages; this._aiMetricPages.books = currentPage; }
+        const rows = all.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+        const baseIdx = (currentPage - 1) * pageSize;
+        const tableRows = rows.length ? rows.map((r, idx) => {
+            const cached = (this._aiBookAnalysis || {})[r.book];
+            const history = (this._aiBookReports || {})[r.book] || [];
+            const hasReport = history.length > 0 || (cached && cached.done);
+            const escBook = r.book.replace(/'/g, "\\'");
+            const bookHash = this.hashStr(r.book);
+            const histBtn = history.length
+                ? `<button data-ai-hist-trigger="${bookHash}" onclick="event.stopPropagation();App.toggleAiBookHistoryPopover('${escBook}')" class="ml-1 px-2 py-1 rounded-lg bg-slate-700/50 hover:bg-slate-600/60 text-slate-200 text-xs border border-slate-500/40 transition-colors" title="查看历史报告">📚 ${history.length}</button>`
+                : '';
+            const analysisCell = hasReport
+                ? `<div class="inline-flex items-center"><button onclick="App.openAiBookAnalysis('${escBook}')" class="px-2 py-1 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 text-xs border border-violet-400/30 transition-colors">📊 打开AI分析</button>${histBtn}</div>`
+                : `<button onclick="App.startAiBookAnalysis('${escBook}')" class="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs border border-amber-400/30 transition-colors">✨ 生成AI分析</button>`;
+            return `
+            <tr class="border-b border-slate-700/40 hover:bg-slate-700/30">
+                <td class="px-3 py-2.5 text-center text-xs text-slate-400 w-12">${baseIdx + idx + 1}</td>
+                <td class="px-3 py-2.5 text-left"><span class="text-cyan-300 text-sm">《${r.book}》</span></td>
+                <td class="px-3 py-2.5 text-center text-sm text-cyan-400">${r.chatCount}</td>
+                <td class="px-3 py-2.5 text-center text-sm text-slate-200">${r.turns}</td>
+                <td class="px-3 py-2.5 text-center text-sm text-slate-200">${r.students.size}</td>
+                <td class="px-3 py-2.5 text-center text-sm text-slate-200">${r.classes.size}</td>
+                <td class="px-3 py-2.5 text-center text-xs text-slate-400">
+                    <span class="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 mr-1">阅读中 ${r.scopes.page}</span>
+                    <span class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300">阅读后 ${r.scopes.full}</span>
+                </td>
+                <td class="px-3 py-2.5 text-center text-xs text-slate-400">${r.latestTime || '-'}</td>
+                <td class="px-3 py-2.5 text-center">${analysisCell}</td>
+                <td class="px-3 py-2.5 text-center">
+                    <button onclick="App.viewAiBookDrilldown('${escBook}')" class="text-cyan-300 hover:text-cyan-200 text-xs">查看 ›</button>
+                </td>
+            </tr>`;
+        }).join('') : `<tr><td colspan="10" class="px-3 py-8 text-center text-slate-500 text-sm">当前时间范围内暂无绘本互动明细</td></tr>`;
+        const headers = [
+            { label: '#', align: 'center', width: '4%' },
+            { label: '绘本', align: 'left', width: '13%' },
+            { label: '对话次数', align: 'center', width: '8%' },
+            { label: '累计轮次', align: 'center', width: '8%' },
+            { label: '涉及幼儿', align: 'center', width: '8%' },
+            { label: '涉及班级', align: 'center', width: '8%' },
+            { label: '对话类型分布', align: 'center', width: '18%' },
+            { label: '最近互动', align: 'center', width: '11%' },
+            { label: '热点问题分析', align: 'center', width: '16%' },
+            { label: '操作', align: 'center', width: '6%' }
+        ];
+        return `
+            <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-cyan-400/25 p-4 mt-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h4 class="text-sm font-semibold text-cyan-300">📖 互动绘本明细</h4>
+                    <span class="text-xs text-slate-400">共 ${total} 本绘本</span>
+                </div>
+                <div class="overflow-x-auto rounded-xl border border-slate-700/40">
+                    <table class="w-full table-fixed">
+                        <thead class="bg-slate-800/60">
+                            <tr>${headers.map(h => `<th class="px-3 py-2.5 text-${h.align} text-xs font-medium text-slate-400 whitespace-nowrap" style="width:${h.width}">${h.label}</th>`).join('')}</tr>
+                        </thead>
+                        <tbody>${tableRows}</tbody>
+                    </table>
+                </div>
+                ${this.renderAiMetricPagination('books', total, currentPage, totalPages)}
+            </div>
+        `;
+    },
+
+    renderAiStudentsDetailPanel() {
+        const list = this.getAiHistoryByRange();
+        const map = new Map();
+        list.forEach(item => {
+            const key = item.student || '匿名';
+            if (!map.has(key)) map.set(key, { student: key, className: item.className || '-', chatCount: 0, turns: 0, books: new Set(), latestTime: '', latestBook: '' });
+            const stat = map.get(key);
+            stat.chatCount += 1;
+            stat.turns += item.session?.length || 0;
+            if (item.book) stat.books.add(item.book);
+            if (!stat.latestTime || item.time > stat.latestTime) {
+                stat.latestTime = item.time;
+                stat.latestBook = item.book || '';
+            }
+        });
+        const all = [...map.values()].sort((a, b) => b.chatCount - a.chatCount);
+        const total = all.length;
+        const pageSize = this._aiMetricPageSize;
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+        let currentPage = this.getAiMetricCurrentPage('students');
+        if (currentPage > totalPages) { currentPage = totalPages; this._aiMetricPages.students = currentPage; }
+        const rows = all.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+        const baseIdx = (currentPage - 1) * pageSize;
+        const tableRows = rows.length ? rows.map((r, idx) => {
+            const cached = (this._aiStudentAnalysis || {})[r.student];
+            const history = (this._aiStudentReports || {})[r.student] || [];
+            const hasReport = history.length > 0 || (cached && cached.done);
+            const escStudent = r.student.replace(/'/g, "\\'");
+            const studentHash = this.hashStr(r.student);
+            const histBtn = history.length
+                ? `<button data-ai-stu-hist-trigger="${studentHash}" onclick="event.stopPropagation();App.toggleAiStudentHistoryPopover('${escStudent}')" class="ml-1 px-2 py-1 rounded-lg bg-slate-700/50 hover:bg-slate-600/60 text-slate-200 text-xs border border-slate-500/40 transition-colors" title="查看历史报告">📚 ${history.length}</button>`
+                : '';
+            const analysisCell = hasReport
+                ? `<div class="inline-flex items-center"><button onclick="App.openAiStudentAnalysis('${escStudent}')" class="px-2 py-1 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 text-xs border border-violet-400/30 transition-colors">📊 打开AI分析</button>${histBtn}</div>`
+                : `<button onclick="App.startAiStudentAnalysis('${escStudent}')" class="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs border border-amber-400/30 transition-colors">✨ 生成AI分析</button>`;
+            return `
+            <tr class="border-b border-slate-700/40 hover:bg-slate-700/30">
+                <td class="px-3 py-2.5 text-center text-xs text-slate-400 w-12">${baseIdx + idx + 1}</td>
+                <td class="px-3 py-2.5 text-left text-sm text-slate-200">${r.student}</td>
+                <td class="px-3 py-2.5 text-center text-xs text-slate-400">${r.className}</td>
+                <td class="px-3 py-2.5 text-center text-sm text-emerald-400">${r.chatCount}</td>
+                <td class="px-3 py-2.5 text-center text-sm text-slate-200">${r.turns}</td>
+                <td class="px-3 py-2.5 text-center text-sm text-slate-200">${r.books.size}</td>
+                <td class="px-3 py-2.5 text-center text-xs text-slate-400">${r.latestTime || '-'}</td>
+                <td class="px-3 py-2.5 text-left text-xs text-amber-300">${r.latestBook ? `《${r.latestBook}》` : '-'}</td>
+                <td class="px-3 py-2.5 text-center">${analysisCell}</td>
+                <td class="px-3 py-2.5 text-center">
+                    <button onclick="App.viewAiStudentDrilldown('${escStudent}')" class="text-emerald-300 hover:text-emerald-200 text-xs">查看 ›</button>
+                </td>
+            </tr>`;
+        }).join('') : `<tr><td colspan="10" class="px-3 py-8 text-center text-slate-500 text-sm">当前时间范围内暂无幼儿互动明细</td></tr>`;
+        const headers = [
+            { label: '#', align: 'center', width: '4%' },
+            { label: '幼儿', align: 'left', width: '11%' },
+            { label: '班级', align: 'center', width: '9%' },
+            { label: '对话次数', align: 'center', width: '8%' },
+            { label: '累计轮次', align: 'center', width: '8%' },
+            { label: '互动绘本', align: 'center', width: '8%' },
+            { label: '最近对话', align: 'center', width: '12%' },
+            { label: '最近绘本', align: 'left', width: '16%' },
+            { label: '兴趣画像分析', align: 'center', width: '17%' },
+            { label: '操作', align: 'center', width: '7%' }
+        ];
+        return `
+            <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-emerald-400/25 p-4 mt-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h4 class="text-sm font-semibold text-emerald-300">👶 活跃幼儿明细</h4>
+                    <span class="text-xs text-slate-400">共 ${total} 位幼儿</span>
+                </div>
+                <div class="overflow-x-auto rounded-xl border border-slate-700/40">
+                    <table class="w-full table-fixed">
+                        <thead class="bg-slate-800/60">
+                            <tr>${headers.map(h => `<th class="px-3 py-2.5 text-${h.align} text-xs font-medium text-slate-400 whitespace-nowrap" style="width:${h.width}">${h.label}</th>`).join('')}</tr>
+                        </thead>
+                        <tbody>${tableRows}</tbody>
+                    </table>
+                </div>
+                ${this.renderAiMetricPagination('students', total, currentPage, totalPages)}
+            </div>
+        `;
+    },
+
+    // 按 aiOverview 时间筛选过滤 mock 对话历史（教师视角下仅返回所带班级的数据）
+    getAiHistoryByRange() {
+        const range = this.dateRanges.aiOverview || {};
+        const start = range?.startDate ? new Date(`${range.startDate}T00:00:00`).getTime() : null;
+        const end = range?.endDate ? new Date(`${range.endDate}T23:59:59`).getTime() : null;
+        const teacherClassName = this.isTeacherScope() ? this.getTeacherClassName() : null;
+        return (MockData.aiOverview?.history || []).filter(item => {
+            // 教师作用域过滤
+            if (teacherClassName && item.className !== teacherClassName) return false;
+            if (start === null && end === null) return true;
+            const t = this.parseActivityDate(item.time).getTime();
+            if (Number.isNaN(t)) return true;
+            if (start !== null && t < start) return false;
+            if (end !== null && t > end) return false;
+            return true;
+        });
+    },
+
+    getAiOverviewSummary() {
+        // 教师视角：基于本班的 history 实时聚合
+        if (this.isTeacherScope()) {
+            const list = this.getAiHistoryByRange();
+            const books = new Set();
+            const students = new Set();
+            let totalTurns = 0;
+            list.forEach(h => {
+                if (h.book) books.add(h.book);
+                if (h.student) students.add(h.student);
+                totalTurns += (h.session?.length || 0);
+            });
+            return {
+                totalChats: list.length,
+                totalBooks: books.size,
+                activeStudents: students.size,
+                avgTurnsPerSession: list.length ? (totalTurns / list.length).toFixed(1) : '0.0'
+            };
+        }
+        return MockData.aiOverview?.summary || { totalChats: 0, totalBooks: 0, activeStudents: 0, avgTurnsPerSession: 0 };
+    },
+
+    getAiHotQuestionsByRange() {
+        // 教师视角：基于本班对话实时统计 TOP10
+        if (this.isTeacherScope()) {
+            const map = new Map();
+            this.getAiHistoryByRange().forEach(h => (h.session || []).forEach(t => {
+                if (t.q) map.set(t.q, (map.get(t.q) || 0) + 1);
+            }));
+            return [...map.entries()].map(([q, count]) => ({ q, count }))
+                .sort((a, b) => b.count - a.count).slice(0, 10);
+        }
+        return (MockData.aiOverview?.hotQuestions || []).slice(0, 10);
+    },
+
+    // ===== 绘本明细 → 查看该绘本所有阅读活动的完整对话 =====
+    viewAiBookDrilldown(book) {
+        this._aiDrilldown = { type: 'book', value: book, studentFilter: null };
+        this.openModal(this.renderAiDrilldownModal(), { size: 'xwide' });
+    },
+
+    viewAiStudentDrilldown(student) {
+        this._aiDrilldown = { type: 'student', value: student, studentFilter: null };
+        this.openModal(this.renderAiDrilldownModal(), { size: 'xwide' });
+    },
+
+    filterAiDrilldownStudent(student) {
+        if (!this._aiDrilldown) return;
+        this._aiDrilldown.studentFilter = student || null;
+        const host = document.getElementById('modal-content');
+        if (host) {
+            host.innerHTML = this.renderAiDrilldownModal();
+            const input = document.getElementById('ai-drilldown-student-search');
+            if (input) {
+                input.focus();
+                const len = input.value.length;
+                input.setSelectionRange(len, len);
+            }
+        }
+    },
+
+    viewAiDrilldownSession(student, date, book) {
+        const dd = this._aiDrilldown || {};
+        const isBook = dd.type === 'book';
+        const bookName = book || (isBook ? dd.value : null);
+        const all = this.getAiHistoryByRange()
+            .filter(item => {
+                if (student !== (item.student || '匿名')) return false;
+                if (bookName && item.book !== bookName) return false;
+                const dateStr = (item.time || '').split(' ')[0] || '';
+                return dateStr === date;
+            })
+            .slice()
+            .sort((a, b) => a.time.localeCompare(b.time));
+        if (!all.length) return;
+
+        const firstItem = all[0];
+        const displayBook = bookName || firstItem.book;
+        const className = firstItem.className || '-';
+        const totalTurns = all.reduce((s, h) => s + (h.session?.length || 0), 0);
+
+        const dialogsHtml = all.map(item => {
+            const scopeBadge = item.scope === 'page'
+                ? '<span class="px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-400/30">阅读中</span>'
+                : '<span class="px-1.5 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">阅读后</span>';
+            const turnsHtml = (item.session || []).map((t, idx) => `
+                <div class="mb-3 last:mb-0">
+                    <div class="flex items-center gap-2 mb-1.5">
+                        <span class="text-xs text-amber-400 font-semibold">第 ${idx + 1} 轮</span>
+                        <span class="text-[11px] text-slate-500">${item.page || '-'}</span>
+                        ${scopeBadge}
+                    </div>
+                    <div class="bg-amber-500/10 border border-amber-400/20 rounded-lg px-3 py-2 mb-1.5">
+                        <div class="text-[11px] text-amber-300 mb-0.5">小朋友提问</div>
+                        <div class="text-sm text-amber-100 leading-relaxed">${t.q || ''}</div>
+                    </div>
+                    <div class="bg-slate-700/40 border border-slate-600/30 rounded-lg px-3 py-2">
+                        <div class="text-[11px] text-cyan-300 mb-0.5">AI 回复</div>
+                        <div class="text-sm text-slate-200 leading-relaxed">${t.a || ''}</div>
+                    </div>
+                </div>
+            `).join('');
+            return `
+                <div class="px-4 py-3 border-b border-slate-700/30 last:border-b-0">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="text-xs text-slate-400">${item.time}</span>
+                        <span class="text-slate-600">|</span>
+                        <span class="text-xs text-slate-400">${item.page || '-'}</span>
+                        <span class="text-slate-600">|</span>
+                        ${scopeBadge}
+                        <span class="text-slate-600">|</span>
+                        <span class="text-xs text-blue-400">${item.session?.length || 0} 轮</span>
+                    </div>
+                    ${turnsHtml}
+                </div>`;
+        }).join('');
+
+        const content = `
+            <div class="bg-slate-900 rounded-xl p-6 w-full max-w-4xl mx-auto">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="text-lg font-bold text-white">📖 阅读对话明细</h3>
+                    <div class="flex items-center">
+                        <button onclick="App.returnFromAiDrilldownSession()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors mr-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                            返回
+                        </button>
+                        <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="bg-slate-700/40 border border-slate-600/30 rounded-xl p-4 mb-5">
+                    <div class="grid grid-cols-3 gap-3 text-sm">
+                        <div><span class="text-slate-400">绘本：</span><span class="text-amber-300">《${displayBook}》</span></div>
+                        <div><span class="text-slate-400">日期：</span><span class="text-slate-200">${date}</span></div>
+                        <div><span class="text-slate-400">小朋友：</span><span class="text-cyan-300">${student}</span></div>
+                        <div><span class="text-slate-400">班级：</span><span class="text-slate-200">${className}</span></div>
+                        <div><span class="text-slate-400">对话次数：</span><span class="text-blue-400">${all.length}</span></div>
+                        <div><span class="text-slate-400">累计轮次：</span><span class="text-blue-400">${totalTurns}</span></div>
+                    </div>
+                </div>
+                <div class="max-h-[55vh] overflow-y-auto pr-1">
+                    ${dialogsHtml || '<div class="text-center text-slate-500 py-8">暂无对话内容</div>'}
+                </div>
+            </div>
+        `;
+        this.openModal(content, { size: 'wide' });
+    },
+
+    returnFromAiDrilldownSession() {
+        if (this._aiDrilldown) {
+            const host = document.getElementById('modal-content');
+            if (host) host.innerHTML = this.renderAiDrilldownModal();
+            this.openModal(this.renderAiDrilldownModal(), { size: 'xwide' });
+        } else {
+            this.closeModalDirect();
+        }
+    },
+
+    renderAiDrilldownModal() {
+        const dd = this._aiDrilldown || {};
+        const isBook = dd.type === 'book';
+        const accent = isBook ? 'text-cyan-300' : 'text-emerald-300';
+        const all = this.getAiHistoryByRange()
+            .filter(item => isBook ? item.book === dd.value : item.student === dd.value)
+            .slice()
+            .sort((a, b) => this.parseActivityDate(b.time) - this.parseActivityDate(a.time));
+
+        // 按「学生+日期」分组
+        const groups = new Map();
+        all.forEach(item => {
+            const dateStr = (item.time || '').split(' ')[0] || '';
+            const key = `${item.student || '匿名'}||${dateStr}`;
+            if (!groups.has(key)) groups.set(key, { student: item.student || '匿名', className: item.className || '-', date: dateStr, book: item.book, items: [] });
+            groups.get(key).items.push(item);
+        });
+        groups.forEach(g => g.items.sort((a, b) => a.time.localeCompare(b.time)));
+        const sortedGroups = [...groups.values()]
+            .sort((a, b) => b.items[b.items.length - 1].time.localeCompare(a.items[a.items.length - 1].time));
+
+        // 学生筛选（按名称搜索）
+        const studentFilterRaw = dd.studentFilter || '';
+        const studentFilter = studentFilterRaw.trim();
+        const filteredGroups = studentFilter
+            ? sortedGroups.filter(g => g.student.includes(studentFilter))
+            : sortedGroups;
+        const filteredChats = filteredGroups.reduce((s, g) => s + g.items.length, 0);
+        const filteredTurns = filteredGroups.reduce((s, g) => s + g.items.reduce((ss, h) => ss + (h.session?.length || 0), 0), 0);
+
+        const filterBar = `
+            <div class="flex flex-wrap items-center gap-2 mb-4">
+                <span class="text-xs text-slate-400">搜索小朋友：</span>
+                <div class="relative">
+                    <svg class="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <input id="ai-drilldown-student-search" type="text" value="${studentFilterRaw.replace(/"/g, '&quot;')}" oninput="App.filterAiDrilldownStudent(this.value)" placeholder="输入小朋友姓名..." class="pl-8 pr-8 py-1.5 bg-slate-700/40 border border-slate-600/40 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-400/50 w-56">
+                    ${studentFilter ? `<button onclick="App.filterAiDrilldownStudent('')" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white" title="清除"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>` : ''}
+                </div>
+                ${studentFilter ? `<span class="text-xs text-cyan-300">已筛选 "${studentFilter}" · 命中 ${filteredGroups.length} 条</span>` : `<span class="text-xs text-slate-500">共 ${sortedGroups.length} 次阅读活动</span>`}
+            </div>`;
+
+        // 表格选择栏
+        const headers = isBook
+            ? [
+                { label: '小朋友', align: 'left', width: '14%' },
+                { label: '日期', align: 'center', width: '12%' },
+                { label: '班级', align: 'center', width: '10%' },
+                { label: '对话次数', align: 'center', width: '10%' },
+                { label: '累计轮次', align: 'center', width: '10%' },
+                { label: '最近时间', align: 'center', width: '14%' },
+                { label: '操作', align: 'center', width: '10%' }
+            ]
+            : [
+                { label: '小朋友', align: 'left', width: '12%' },
+                { label: '日期', align: 'center', width: '10%' },
+                { label: '班级', align: 'center', width: '9%' },
+                { label: '绘本', align: 'left', width: '14%' },
+                { label: '对话次数', align: 'center', width: '9%' },
+                { label: '累计轮次', align: 'center', width: '9%' },
+                { label: '最近时间', align: 'center', width: '14%' },
+                { label: '操作', align: 'center', width: '10%' }
+            ];
+
+        const tableRows = filteredGroups.length ? filteredGroups.map(g => {
+            const groupTotalTurns = g.items.reduce((s, h) => s + (h.session?.length || 0), 0);
+            const latestTime = g.items[g.items.length - 1]?.time || '';
+            const escStudent = g.student.replace(/'/g, "\\'");
+            const escDate = g.date.replace(/'/g, "\\'");
+            const escBook = g.book.replace(/'/g, "\\'");
+            return `
+                <tr class="border-b border-slate-700/40 hover:bg-slate-700/30">
+                    <td class="px-3 py-2.5 text-left text-xs text-cyan-300">${g.student}</td>
+                    <td class="px-3 py-2.5 text-center text-xs text-slate-300">${g.date}</td>
+                    <td class="px-3 py-2.5 text-center text-xs text-slate-400">${g.className}</td>
+                    ${!isBook ? `<td class="px-3 py-2.5 text-left"><span class="text-amber-300 text-sm">《${g.book}》</span></td>` : ''}
+                    <td class="px-3 py-2.5 text-center text-sm text-cyan-400">${g.items.length}</td>
+                    <td class="px-3 py-2.5 text-center text-sm text-slate-200">${groupTotalTurns}</td>
+                    <td class="px-3 py-2.5 text-center text-xs text-slate-400">${latestTime}</td>
+                    <td class="px-3 py-2.5 text-center">
+                        <button onclick="App.viewAiDrilldownSession('${escStudent}','${escDate}','${escBook}')" class="text-blue-400 hover:text-blue-300 text-xs">查看 ›</button>
+                    </td>
+                </tr>`;
+        }).join('') : `<tr><td colspan="${isBook ? 7 : 8}" class="px-3 py-8 text-center text-slate-500 text-sm">暂无对话明细</td></tr>`;
+
+        const titleText = isBook ? `《${dd.value}》全部对话` : `${dd.value} 的全部对话`;
+
+        return `
+            <div class="bg-slate-900 rounded-xl p-6 w-full">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-white"><span class="${accent}">${titleText}</span></h3>
+                        <div class="text-xs text-slate-400 mt-1">${studentFilter ? `${studentFilter} · ` : ''}${filteredGroups.length} 次阅读活动 · ${filteredChats} 次对话 · ${filteredTurns} 轮</div>
+                    </div>
+                    <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                ${filterBar}
+                <div class="overflow-x-auto rounded-xl border border-slate-700/40">
+                    <table class="w-full table-fixed">
+                        <thead class="bg-slate-800/60">
+                            <tr>${headers.map(h => `<th class="px-3 py-2.5 text-${h.align} text-xs font-medium text-slate-400 whitespace-nowrap" style="width:${h.width}">${h.label}</th>`).join('')}</tr>
+                        </thead>
+                        <tbody>${tableRows}</tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    },
+
+    getAiBookInteractionsByRange() {
+        if (this.isTeacherScope()) {
+            const map = new Map();
+            this.getAiHistoryByRange().forEach(h => {
+                if (!h.book) return;
+                map.set(h.book, (map.get(h.book) || 0) + 1);
+            });
+            return [...map.entries()].map(([book, count]) => ({ book, count }))
+                .sort((a, b) => b.count - a.count).slice(0, 10);
+        }
+        return (MockData.aiOverview?.bookInteractions || []).slice(0, 10);
+    },
+
+    // AI总览 - 时间轴（按 aiOverview 时间筛选，1 个月内日维度，否则月维度）
+    buildAiOverviewTimeline() {
+        const range = this.dateRanges.aiOverview || {};
+        const start = range?.startDate ? new Date(`${range.startDate}T00:00:00`) : null;
+        const end = range?.endDate ? new Date(`${range.endDate}T23:59:59`) : null;
+        const granularity = this.getOverviewSeriesGranularity(range);
+        const dates = [];
+        if (start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+            if (granularity === 'month') {
+                const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+                const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+                while (cursor <= endMonth) {
+                    dates.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`);
+                    cursor.setMonth(cursor.getMonth() + 1);
+                }
+            } else {
+                const cursor = new Date(start);
+                cursor.setHours(0, 0, 0, 0);
+                const endDate = new Date(end);
+                endDate.setHours(0, 0, 0, 0);
+                while (cursor <= endDate) {
+                    dates.push(this.formatDateInput(cursor).slice(5));
+                    cursor.setDate(cursor.getDate() + 1);
+                }
+            }
+        }
+        return { dates, granularity };
+    },
+
+    // AI总览 - 各班级 AI 对话次数变化趋势（教师视角仅展示本班 1 条线）
+    getAiClassDialogTrend() {
+        const { dates, granularity } = this.buildAiOverviewTimeline();
+        if (!dates.length) return { dates: [], granularity, series: [] };
+
+        // 教师视角：基于真实 history 聚合本班每日/每月对话次数
+        if (this.isTeacherScope()) {
+            const cls = this.selectedClass;
+            const list = this.getAiHistoryByRange();
+            const bucket = new Map(dates.map(d => [d, 0]));
+            const keyOf = (timeStr) => {
+                const date = this.parseActivityDate(timeStr);
+                if (Number.isNaN(date.getTime())) return null;
+                if (granularity === 'month') {
+                    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                }
+                return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            };
+            list.forEach(h => {
+                const k = keyOf(h.time);
+                if (k != null && bucket.has(k)) bucket.set(k, bucket.get(k) + 1);
+            });
+            const values = dates.map(d => bucket.get(d) || 0);
+            return { dates, granularity, series: [{ name: cls?.name || '本班', values }] };
+        }
+
+        // 园长/管理员视角：按园所内多个班级派生伪随机趋势
+        const classes = (MockData.classes || [])
+            .filter(c => {
+                if (!this.selectedSchool) return true;
+                return c.kindergartenId === this.selectedSchool.id;
+            })
+            .slice(0, 6);
+        const series = classes.map((cls, clsIdx) => {
+            const baseTotal = Math.max(8, Math.round((cls.activityCount || 20) * 0.6));
+            const seedBase = (cls.id || 1) * 9 + clsIdx * 13;
+            const values = dates.map((_, i) => {
+                if (granularity === 'month') {
+                    const wave = Math.sin((i + seedBase) * 0.7) * 0.4 + 1;
+                    return Math.max(1, Math.round(baseTotal * wave));
+                }
+                const dailyBase = Math.max(0.4, baseTotal / 30);
+                const wave = Math.sin((i + seedBase) * 0.85) * 0.6 + Math.cos((i + clsIdx) * 0.4) * 0.3 + 1;
+                return Math.max(0, Math.round(dailyBase * wave));
+            });
+            return { name: cls.name, values };
+        });
+        return { dates, granularity, series };
+    },
+
+    refreshAiOverviewMetrics() {
+        const grid = document.getElementById('ai-summary-grid');
+        if (grid) grid.innerHTML = this.renderAiSummaryCards(this.getAiOverviewSummary());
+    },
+
+    initAiOverviewPage() {
+        Charts.safeInit(() => Charts.initAiHotQuestionsBar(this.getAiHotQuestionsByRange()));
+        Charts.safeInit(() => Charts.initAiBookInteractionBar(this.getAiBookInteractionsByRange()));
+        Charts.safeInit(() => Charts.initAiClassDialogTrend(this.getAiClassDialogTrend()));
+    },
+
+    teardownAiOverviewPage() {
+        // AI总览页无后台资源需要清理
+    },
+
+    viewAiDialogDetail(id, fromDrilldown = false) {
+        const item = (MockData.aiOverview?.history || []).find(x => x.id === id);
+        if (!item) return;
+        this._aiDialogReturnTo = fromDrilldown && this._aiDrilldown ? 'drilldown' : null;
+        const scopeText = item.scope === 'page' ? '阅读中对话' : '阅读后对话';
+        const turnsHtml = (item.session || []).map((t, idx) => `
+            <div class="mb-4">
+                <div class="flex items-start gap-2 mb-2">
+                    <span class="text-xs text-amber-400 font-semibold shrink-0">第 ${idx + 1} 轮</span>
+                </div>
+                <div class="bg-amber-500/10 border border-amber-400/20 rounded-lg px-3 py-2.5 mb-2">
+                    <div class="text-[11px] text-amber-300 mb-1">小朋友提问</div>
+                    <div class="text-sm text-amber-100 leading-relaxed">${t.q || ''}</div>
+                </div>
+                <div class="bg-slate-700/40 border border-slate-600/30 rounded-lg px-3 py-2.5">
+                    <div class="text-[11px] text-cyan-300 mb-1">AI 回复</div>
+                    <div class="text-sm text-slate-200 leading-relaxed">${t.a || ''}</div>
+                </div>
+            </div>
+        `).join('');
+        const backBtn = this._aiDialogReturnTo === 'drilldown'
+            ? `<button onclick="App.returnFromAiDialogDetail()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors mr-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                    返回
+                </button>`
+            : '';
+        const content = `
+            <div class="bg-slate-900 rounded-xl p-6 max-w-4xl">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="text-lg font-bold text-white">AI 对话详情</h3>
+                    <div class="flex items-center">
+                        ${backBtn}
+                        <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="bg-slate-700/40 border border-slate-600/30 rounded-xl p-4 mb-5">
+                    <div class="grid grid-cols-3 gap-3 text-sm">
+                        <div><span class="text-slate-400">绘本：</span><span class="text-amber-300">《${item.book}》</span></div>
+                        <div><span class="text-slate-400">页码：</span><span class="text-slate-200">${item.page || '-'}</span></div>
+                        <div><span class="text-slate-400">对话类型：</span><span class="text-slate-200">${scopeText}</span></div>
+                        <div><span class="text-slate-400">时间：</span><span class="text-slate-200">${item.time}</span></div>
+                        <div><span class="text-slate-400">小朋友：</span><span class="text-slate-200">${item.student || '匿名'}</span></div>
+                        <div><span class="text-slate-400">班级：</span><span class="text-slate-200">${item.className || '-'}</span></div>
+                    </div>
+                </div>
+                <div class="max-h-[55vh] overflow-y-auto pr-1">
+                    ${turnsHtml || '<div class="text-center text-slate-500 py-8">暂无对话内容</div>'}
+                </div>
+            </div>
+        `;
+        this.openModal(content);
+    },
+
+    returnFromAiDialogDetail() {
+        if (this._aiDrilldown) {
+            const host = document.getElementById('modal-content');
+            if (host) host.innerHTML = this.renderAiDrilldownModal();
+        } else {
+            this.closeModalDirect();
+        }
+        this._aiDialogReturnTo = null;
+    },
+
+    // 查看孩子某天读某本绘本的完整对话明细
+    viewAiReadingSession(student, date, book) {
+        const dd = this._aiDrilldown || {};
+        const isBook = dd.type === 'book';
+        const bookName = book || (isBook ? dd.value : null);
+        const all = this.getAiHistoryByRange()
+            .filter(item => {
+                if (student !== (item.student || '匿名')) return false;
+                if (bookName && item.book !== bookName) return false;
+                const dateStr = (item.time || '').split(' ')[0] || '';
+                return dateStr === date;
+            })
+            .slice()
+            .sort((a, b) => a.time.localeCompare(b.time));
+        if (!all.length) return;
+
+        const firstItem = all[0];
+        const displayBook = bookName || firstItem.book;
+        const className = firstItem.className || '-';
+        const totalTurns = all.reduce((s, h) => s + (h.session?.length || 0), 0);
+
+        const dialogsHtml = all.map(item => {
+            const scopeBadge = item.scope === 'page'
+                ? '<span class="px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-400/30">阅读中</span>'
+                : '<span class="px-1.5 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">阅读后</span>';
+            const turnsHtml = (item.session || []).map((t, idx) => `
+                <div class="mb-3">
+                    <div class="flex items-center gap-2 mb-1.5">
+                        <span class="text-xs text-amber-400 font-semibold">第 ${idx + 1} 轮</span>
+                        <span class="text-[11px] text-slate-500">${item.page || '-'}</span>
+                        ${scopeBadge}
+                    </div>
+                    <div class="bg-amber-500/10 border border-amber-400/20 rounded-lg px-3 py-2 mb-1.5">
+                        <div class="text-[11px] text-amber-300 mb-0.5">小朋友提问</div>
+                        <div class="text-sm text-amber-100 leading-relaxed">${t.q || ''}</div>
+                    </div>
+                    <div class="bg-slate-700/40 border border-slate-600/30 rounded-lg px-3 py-2">
+                        <div class="text-[11px] text-cyan-300 mb-0.5">AI 回复</div>
+                        <div class="text-sm text-slate-200 leading-relaxed">${t.a || ''}</div>
+                    </div>
+                </div>
+            `).join('');
+            return `
+                <div class="px-4 py-3 border-b border-slate-700/30 last:border-b-0">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="text-xs text-slate-400">${item.time}</span>
+                        <span class="text-slate-600">|</span>
+                        <span class="text-xs text-slate-400">${item.page || '-'}</span>
+                        <span class="text-slate-600">|</span>
+                        ${scopeBadge}
+                        <span class="text-slate-600">|</span>
+                        <span class="text-xs text-blue-400">${item.session?.length || 0} 轮</span>
+                    </div>
+                    ${turnsHtml}
+                </div>`;
+        }).join('');
+
+        const content = `
+            <div class="bg-slate-900 rounded-xl p-6 w-full max-w-4xl mx-auto">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="text-lg font-bold text-white">📖 阅读对话明细</h3>
+                    <div class="flex items-center">
+                        <button onclick="App.returnFromAiDialogDetail()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors mr-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                            返回
+                        </button>
+                        <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="bg-slate-700/40 border border-slate-600/30 rounded-xl p-4 mb-5">
+                    <div class="grid grid-cols-3 gap-3 text-sm">
+                        <div><span class="text-slate-400">绘本：</span><span class="text-amber-300">《${displayBook}》</span></div>
+                        <div><span class="text-slate-400">日期：</span><span class="text-slate-200">${date}</span></div>
+                        <div><span class="text-slate-400">小朋友：</span><span class="text-cyan-300">${student}</span></div>
+                        <div><span class="text-slate-400">班级：</span><span class="text-slate-200">${className}</span></div>
+                        <div><span class="text-slate-400">对话次数：</span><span class="text-blue-400">${all.length}</span></div>
+                        <div><span class="text-slate-400">累计轮次：</span><span class="text-blue-400">${totalTurns}</span></div>
+                    </div>
+                </div>
+                <div class="max-h-[55vh] overflow-y-auto pr-1">
+                    ${dialogsHtml || '<div class="text-center text-slate-500 py-8">暂无对话内容</div>'}
+                </div>
+            </div>
+        `;
+        this._aiDialogReturnTo = 'drilldown';
+        this.openModal(content);
+    },
+
+    // ============================================================
+    //  互动绘本 - AI 热点问题分析
+    // ============================================================
+    _llmConfig: {
+        endpoint: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
+        model: 'ep-20250722141707-qzdfz',
+        apiKey: '0765c87e-3032-45a2-b0a9-0900d1feb978'
+    },
+
+    _aiBookAnalysisRangeOptions: [
+        { key: '7d', label: '近7天', days: 7 },
+        { key: '1m', label: '近1个月', days: 30 },
+        { key: '6m', label: '近半年', days: 183 },
+        { key: 'all', label: '历史累积数据', days: null }
+    ],
+
+    // ---------- AI 报告 localStorage 持久化 ----------
+    _aiReportsStorageKey: 'aiBookReports',
+    _aiReportsMaxPerBook: 50,
+
+    loadAiReports() {
+        try {
+            const raw = localStorage.getItem(this._aiReportsStorageKey);
+            const parsed = raw ? JSON.parse(raw) : {};
+            this._aiBookReports = (parsed && typeof parsed === 'object') ? parsed : {};
+        } catch (e) {
+            this._aiBookReports = {};
+        }
+        // 用历史首条（最新一份）填充 _aiBookAnalysis，让"已生成"态在刷新后仍可用
+        if (!this._aiBookAnalysis) this._aiBookAnalysis = {};
+        Object.keys(this._aiBookReports).forEach(book => {
+            const list = this._aiBookReports[book];
+            if (Array.isArray(list) && list.length) {
+                this._aiBookAnalysis[book] = list[0];
+            }
+        });
+    },
+
+    persistAiReports() {
+        try {
+            localStorage.setItem(this._aiReportsStorageKey, JSON.stringify(this._aiBookReports || {}));
+        } catch (e) { /* 配额满则忽略 */ }
+    },
+
+    saveAiReport(book, report) {
+        if (!book || !report) return;
+        if (!this._aiBookReports) this._aiBookReports = {};
+        const list = this._aiBookReports[book] || [];
+        // 拷贝快照，避免后续修改污染历史条目
+        const snapshot = JSON.parse(JSON.stringify(report));
+        list.unshift(snapshot);
+        if (list.length > this._aiReportsMaxPerBook) list.length = this._aiReportsMaxPerBook;
+        this._aiBookReports[book] = list;
+        this.persistAiReports();
+    },
+
+    // 刷新当前 metric 面板（books 表格里的"📚 N"数字增加时调用）
+    refreshAiMetricPanel() {
+        if (!this._aiActiveMetric) return;
+        const wrapper = document.getElementById('ai-metric-panel-wrapper');
+        if (wrapper) wrapper.innerHTML = this.renderAiMetricPanel(this._aiActiveMetric);
+    },
+
+    deleteAiReport(book, generatedAt) {
+        const list = (this._aiBookReports || {})[book];
+        if (!list) return;
+        const idx = list.findIndex(r => r.generatedAt === generatedAt);
+        if (idx < 0) return;
+        list.splice(idx, 1);
+        if (list.length === 0) {
+            delete this._aiBookReports[book];
+            if (this._aiBookAnalysis) delete this._aiBookAnalysis[book];
+        } else {
+            // 若删的是当前展示版本，则回退到最新一份
+            this._aiBookAnalysis[book] = list[0];
+        }
+        this.persistAiReports();
+        // 刷新历史 popover 与底层表格
+        this.refreshAiBookHistoryPopover(book);
+        this.refreshAiMetricPanel();
+    },
+
+    loadHistoricalReport(book, generatedAt) {
+        const list = (this._aiBookReports || {})[book] || [];
+        const found = list.find(r => r.generatedAt === generatedAt);
+        if (!found) return;
+        if (!this._aiBookAnalysis) this._aiBookAnalysis = {};
+        this._aiBookAnalysis[book] = found;
+        this._aiBookAnalysisCtx = { book, rangeKey: found.rangeKey };
+        this.openModal(this.renderAiBookAnalysisModal('done'), { size: 'xwide' });
+    },
+
+    toggleAiBookHistoryPopover(book) {
+        const id = `ai-hist-pop-${this.hashStr(book)}`;
+        const existing = document.getElementById(id);
+        if (existing) { existing.remove(); return; }
+        // 关掉其它已展开的 popover
+        document.querySelectorAll('[data-ai-hist-pop]').forEach(n => n.remove());
+        const trigger = document.querySelector(`[data-ai-hist-trigger="${this.hashStr(book)}"]`);
+        if (!trigger) return;
+        const pop = document.createElement('div');
+        pop.id = id;
+        pop.dataset.aiHistPop = '1';
+        pop.className = 'fixed z-[60] bg-slate-900 border border-slate-600 rounded-xl shadow-2xl p-3 w-80 max-h-96 overflow-y-auto';
+        pop.innerHTML = this.renderAiBookHistoryPopover(book);
+        document.body.appendChild(pop);
+        const rect = trigger.getBoundingClientRect();
+        let top = rect.bottom + 6;
+        let left = rect.right - 320;
+        if (left < 8) left = 8;
+        if (top + 384 > window.innerHeight) top = Math.max(8, rect.top - 384 - 6);
+        pop.style.top = `${top}px`;
+        pop.style.left = `${left}px`;
+        // 点击外部关闭
+        setTimeout(() => {
+            const onDocClick = (e) => {
+                if (!pop.contains(e.target) && !trigger.contains(e.target)) {
+                    pop.remove();
+                    document.removeEventListener('click', onDocClick);
+                }
+            };
+            document.addEventListener('click', onDocClick);
+        }, 0);
+    },
+
+    refreshAiBookHistoryPopover(book) {
+        const id = `ai-hist-pop-${this.hashStr(book)}`;
+        const pop = document.getElementById(id);
+        if (pop) pop.innerHTML = this.renderAiBookHistoryPopover(book);
+    },
+
+    renderAiBookHistoryPopover(book) {
+        const list = (this._aiBookReports || {})[book] || [];
+        const escBook = book.replace(/'/g, "\\'");
+        if (!list.length) {
+            return `<div class="text-sm text-slate-400 px-2 py-3 text-center">暂无历史报告</div>`;
+        }
+        const items = list.map((r, i) => {
+            const rangeLabel = r.rangeLabel || r.rangeKey || '-';
+            const dateStr = (r.generatedAt || '-').split(' ')[0] || '-';
+            const bookLabel = r.book || escBook;
+            const scopeLabel = r.roleLabel || '-';
+            const sample = r.sampleCount || 0;
+            return `
+                <div class="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-700/40 border border-slate-700/40 mb-1.5">
+                    <div class="flex-1 min-w-0">
+                        <div class="text-xs text-slate-200 truncate">${dateStr} - ${bookLabel}</div>
+                        <div class="text-[11px] text-slate-500 mt-0.5">分析维度：${scopeLabel} · ${rangeLabel} · 样本：${sample}</div>
+                    </div>
+                    <button onclick="App.loadHistoricalReport('${escBook}', '${(r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-400/30">查看</button>
+                    <button onclick="App.deleteAiReport('${escBook}', '${(r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-400/30">删除</button>
+                </div>
+            `;
+        }).join('');
+        return `
+            <div class="flex items-center justify-between mb-2 px-1">
+                <div class="text-sm font-semibold text-amber-300">📚 历史报告 · ${list.length} 份</div>
+                <button onclick="App.toggleAiBookHistoryPopover('${escBook}')" class="text-slate-400 hover:text-white text-xs">✕</button>
+            </div>
+            ${items}
+        `;
+    },
+
+    hashStr(s) {
+        let h = 0;
+        for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+        return Math.abs(h).toString(36);
+    },
+
+    // 从模型输出中提取 ```json ... ``` 块，解析为 {clusters:[{representative,count,samples}]}
+    parseClusterJson(text) {
+        if (!text) return null;
+        const fence = text.match(/```\s*json\s*([\s\S]*?)```/i) || text.match(/```\s*([\s\S]*?)```/);
+        let raw = fence ? fence[1] : null;
+        if (!raw) {
+            // 尝试找首个 { 开始的 JSON
+            const start = text.indexOf('{');
+            const end = text.lastIndexOf('}');
+            if (start >= 0 && end > start) raw = text.slice(start, end + 1);
+        }
+        if (!raw) return null;
+        try {
+            const obj = JSON.parse(raw.trim());
+            if (obj && Array.isArray(obj.clusters)) return obj;
+        } catch (e) { /* ignore */ }
+        return null;
+    },
+
+    // 去除模型回复中的 JSON 代码块，仅保留分析正文（用于展示）
+    stripClusterJson(text) {
+        if (!text) return '';
+        return text.replace(/```\s*json[\s\S]*?```/gi, '').replace(/^```[\s\S]*?```$/m, '').trim();
+    },
+
+    startAiBookAnalysis(book) {
+        this._aiBookAnalysisCtx = { book, rangeKey: '7d' };
+        this.openModal(this.renderAiBookAnalysisRangeModal(), { size: 'wide' });
+    },
+
+    selectAiBookAnalysisRange(rangeKey) {
+        if (!this._aiBookAnalysisCtx) return;
+        this._aiBookAnalysisCtx.rangeKey = rangeKey;
+        const host = document.getElementById('modal-content');
+        if (host) host.innerHTML = this.renderAiBookAnalysisRangeModal();
+    },
+
+    renderAiBookAnalysisRangeModal() {
+        const ctx = this._aiBookAnalysisCtx || {};
+        const book = ctx.book || '';
+        const rangeKey = ctx.rangeKey || '7d';
+        const roleLabel = this.isTeacherScope() ? `本班「${this.getTeacherClassName()}」` : '本园';
+        const sampleCount = this.collectAiBookDialogues(book, rangeKey).length;
+        return `
+            <div class="bg-slate-900 rounded-xl p-6 w-full">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="text-lg font-bold text-white">✨ 生成 AI 热点问题分析</h3>
+                    <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="bg-slate-800/60 border border-slate-600/30 rounded-xl p-4 mb-5">
+                    <div class="text-xs text-slate-400 mb-1">绘本</div>
+                    <div class="text-cyan-300 font-medium">《${book}》</div>
+                    <div class="text-xs text-slate-500 mt-2">将提取 <span class="text-amber-300">${roleLabel}</span> 在所选时间范围内关于本书的全部对话发送给大模型进行分析。</div>
+                </div>
+                <div class="mb-4">
+                    <div class="text-sm text-slate-300 mb-3">选择上传数据时间</div>
+                    <div class="grid grid-cols-2 gap-3">
+                        ${this._aiBookAnalysisRangeOptions.map(opt => `
+                            <label class="cursor-pointer">
+                                <input type="radio" name="ai-book-range" value="${opt.key}" ${rangeKey === opt.key ? 'checked' : ''} class="hidden peer" onchange="App.selectAiBookAnalysisRange('${opt.key}')">
+                                <div class="px-4 py-3 rounded-xl border transition-all ${rangeKey === opt.key ? 'border-amber-400/60 bg-amber-500/15 text-amber-200' : 'border-slate-600/40 bg-slate-800/40 text-slate-300 hover:border-slate-500/60'}">
+                                    <div class="text-sm font-medium">${opt.label}</div>
+                                </div>
+                            </label>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="text-xs text-slate-500 mb-5">当前可用对话样本：<span class="text-cyan-300">${sampleCount}</span> 次</div>
+                <div class="flex items-center justify-end gap-3">
+                    <button onclick="App.closeModalDirect()" class="px-4 py-2 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors">取消</button>
+                    <button onclick="App.confirmAiBookAnalysis()" ${sampleCount === 0 ? 'disabled' : ''} class="px-4 py-2 rounded-lg ${sampleCount === 0 ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white'} text-sm transition-colors">开始分析</button>
+                </div>
+            </div>
+        `;
+    },
+
+    // 按时间范围与角色筛选某本绘本的对话
+    collectAiBookDialogues(book, rangeKey) {
+        const all = MockData.aiOverview?.history || [];
+        const teacherClassName = this.isTeacherScope() ? this.getTeacherClassName() : null;
+        const opt = this._aiBookAnalysisRangeOptions.find(o => o.key === rangeKey);
+        let startMs = null;
+        if (opt && opt.days != null) {
+            const latest = this.getLatestAiHistoryDate();
+            const start = new Date(latest);
+            start.setDate(start.getDate() - opt.days + 1);
+            start.setHours(0, 0, 0, 0);
+            startMs = start.getTime();
+        }
+        return all.filter(h => {
+            if (h.book !== book) return false;
+            if (teacherClassName && h.className !== teacherClassName) return false;
+            if (startMs !== null) {
+                const t = this.parseActivityDate(h.time).getTime();
+                if (Number.isNaN(t) || t < startMs) return false;
+            }
+            return true;
+        });
+    },
+
+    confirmAiBookAnalysis() {
+        const ctx = this._aiBookAnalysisCtx;
+        if (!ctx) return;
+        this.runAiBookAnalysis(ctx.book, ctx.rangeKey);
+    },
+
+    // 重新生成
+    regenerateAiBookAnalysis() {
+        const cached = (this._aiBookAnalysis || {})[this._aiBookAnalysisCtx?.book];
+        const rangeKey = cached?.rangeKey || this._aiBookAnalysisCtx?.rangeKey || '7d';
+        const book = this._aiBookAnalysisCtx?.book;
+        if (!book) return;
+        // 清空缓存以便重新展示流式过程
+        if (this._aiBookAnalysis && this._aiBookAnalysis[book]) {
+            delete this._aiBookAnalysis[book];
+        }
+        this.runAiBookAnalysis(book, rangeKey);
+    },
+
+    async runAiBookAnalysis(book, rangeKey) {
+        const dialogues = this.collectAiBookDialogues(book, rangeKey);
+        // 本地字面量统计 TOP10 作为 fallback（模型聚类失败时使用）
+        const qMap = new Map();
+        dialogues.forEach(d => (d.session || []).forEach(t => {
+            if (t.q) qMap.set(t.q, (qMap.get(t.q) || 0) + 1);
+        }));
+        const fallbackTop = [...qMap.entries()]
+            .map(([q, count]) => ({ q, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10);
+
+        const rangeLabel = this._aiBookAnalysisRangeOptions.find(o => o.key === rangeKey)?.label || rangeKey;
+        const roleLabel = this.isTeacherScope() ? `班级「${this.getTeacherClassName()}」` : '园内';
+
+        if (!this._aiBookAnalysis) this._aiBookAnalysis = {};
+        this._aiBookAnalysis[book] = {
+            book, rangeKey, rangeLabel, roleLabel,
+            generatedAt: '',
+            sampleCount: dialogues.length,
+            topQuestions: fallbackTop,
+            clusterMode: 'fallback',
+            analysis: '',
+            done: false,
+            generating: true
+        };
+        this._aiBookAnalysisCtx = { book, rangeKey };
+        this.openModal(this.renderAiBookAnalysisModal(), { size: 'xwide' });
+
+        const allQuestionsText = dialogues
+            .flatMap(d => (d.session || []).map(t => t.q).filter(Boolean))
+            .slice(0, 200)
+            .map((q, i) => `${i + 1}. ${q}`)
+            .join('\n');
+
+        const systemPrompt = '你是一个幼儿园教育与儿童心理分析专家，擅长基于幼儿与绘本AI助手的真实对话，洞察孩子的兴趣与认知发展需求。你需要先对提问进行语义聚类（同义不同表的归为一类），再给出教学建议。回复用简体中文。';
+        const userPrompt = `以下是${roleLabel}在${rangeLabel}内围绕绘本《${book}》产生的孩子提问数据。共 ${dialogues.length} 次对话。
+
+【全部提问（最多 200 条采样）】
+${allQuestionsText || '（无）'}
+
+请严格按以下两段式输出：
+
+第一段：在一个 \`\`\`json ... \`\`\` 代码块中输出 TOP10 语义聚类结果（最多 10 个，按 count 倒序）。结构如下，不要添加多余字段：
+\`\`\`json
+{
+  "clusters": [
+    {"representative": "用一句话概括的代表性问题", "count": 12, "samples": ["原始提问1", "原始提问2"]}
+  ]
+}
+\`\`\`
+要求：把表述不同但意图相同的问题（如"小兔子为什么爱妈妈"和"兔子为啥喜欢妈妈"）合并到同一类；representative 用通顺自然的一句中文；count 是该类合并后的总数；samples 给 2-4 条原始问句即可。
+
+第二段：紧接 JSON 块后输出 Markdown 分析正文（不要再放进代码块）：
+1) 简洁概述孩子最关注的核心主题与情感诉求（3 段内）；
+2) 指出孩子表现出的认知发展信号、潜在兴趣点；
+3) 给出 3-5 条可立即落地的教学/亲子互动建议；
+4) 全文 600-900 字，使用 ## 和 - 分小标题与列表，避免空话套话。`;
+
+        try {
+            await this.streamLlmAnalysis({
+                book,
+                systemPrompt,
+                userPrompt,
+                onDelta: (delta) => {
+                    const entry = this._aiBookAnalysis[book];
+                    if (!entry) return;
+                    entry.analysis += delta;
+                    this.refreshAiBookAnalysisModal('streaming');
+                },
+                onDone: async (full) => {
+                    const entry = this._aiBookAnalysis[book];
+                    if (!entry) return;
+                    const rawText = full || entry.analysis;
+                    // 1) 解析模型聚类
+                    const cluster = this.parseClusterJson(rawText);
+                    if (cluster && Array.isArray(cluster.clusters) && cluster.clusters.length) {
+                        entry.topQuestions = cluster.clusters.slice(0, 10).map(c => ({
+                            q: c.representative || (Array.isArray(c.samples) ? c.samples[0] : '') || '',
+                            count: Number(c.count) || (Array.isArray(c.samples) ? c.samples.length : 0),
+                            samples: Array.isArray(c.samples) ? c.samples.slice(0, 6) : []
+                        })).filter(t => t.q);
+                        entry.clusterMode = 'model';
+                    } else {
+                        entry.clusterMode = 'fallback';
+                    }
+                    // 2) 剥掉 JSON 块作为正文
+                    const bodyOnly = this.stripClusterJson(rawText);
+                    entry.analysis = bodyOnly || rawText;
+                    // 3) 润色（不阻塞）
+                    try {
+                        const polished = await this.polishAiAnalysis(book, entry.analysis, entry.topQuestions);
+                        if (polished) entry.analysis = polished;
+                    } catch (e) { /* ignore */ }
+                    entry.done = true;
+                    entry.generating = false;
+                    entry.generatedAt = this.formatNowDateTime();
+                    this.refreshAiBookAnalysisModal('done');
+                    // 4) 保存历史
+                    this.saveAiReport(book, entry);
+                    // 5) 刷新底层表格（让"📚 N"数字增加）
+                    this.refreshAiMetricPanel();
+                },
+                onError: (err) => {
+                    const entry = this._aiBookAnalysis[book];
+                    if (!entry) return;
+                    entry.error = String(err?.message || err || '生成失败');
+                    entry.generating = false;
+                    this.refreshAiBookAnalysisModal('error');
+                }
+            });
+        } catch (e) {
+            const entry = this._aiBookAnalysis[book];
+            if (entry) {
+                entry.error = String(e?.message || e || '生成失败');
+                entry.generating = false;
+                this.refreshAiBookAnalysisModal('error');
+            }
+        }
+    },
+
+    formatNowDateTime() {
+        const d = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    },
+
+    async streamLlmAnalysis({ book, systemPrompt, userPrompt, onDelta, onDone, onError }) {
+        const cfg = this._llmConfig;
+        let res;
+        try {
+            res = await fetch(cfg.endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.apiKey}` },
+                body: JSON.stringify({
+                    model: cfg.model,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                    ],
+                    temperature: 0.7,
+                    max_tokens: 1400,
+                    stream: true
+                })
+            });
+        } catch (err) {
+            if (onError) onError(err);
+            return;
+        }
+        if (!res || !res.ok) {
+            if (onError) onError(new Error(`HTTP ${res?.status || '?'}`));
+            return;
+        }
+        const reader = res.body?.getReader();
+        if (!reader) {
+            const text = await res.text().catch(() => '');
+            if (onDone) onDone(text);
+            return;
+        }
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        let fullText = '';
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            for (const raw of lines) {
+                const line = raw.trim();
+                if (!line || !line.startsWith('data:')) continue;
+                const payload = line.slice(5).trim();
+                if (payload === '[DONE]') continue;
+                try {
+                    const json = JSON.parse(payload);
+                    const delta = json.choices?.[0]?.delta?.content || '';
+                    if (delta) {
+                        fullText += delta;
+                        if (onDelta) onDelta(delta);
+                    }
+                } catch (e) { /* 忽略解析失败行 */ }
+            }
+        }
+        if (onDone) onDone(fullText);
+    },
+
+    async polishAiAnalysis(book, rawText, topQuestions) {
+        if (!rawText) return '';
+        const cfg = this._llmConfig;
+        const sys = '你是一个专业的儿童教育内容编辑，请把下文整理为结构清晰、措辞简洁、易于幼儿园教师快速阅读的分析报告。保留原意，但请：合并重复、统一小标题、突出关键结论与建议，避免空泛的客套。回复用简体中文，使用 Markdown（标题用 ## ，列表用 - ）。';
+        const usr = `以下是关于绘本《${book}》孩子提问分析的草稿，请整理润色。\n\n${rawText}`;
+        try {
+            const res = await fetch(cfg.endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.apiKey}` },
+                body: JSON.stringify({
+                    model: cfg.model,
+                    messages: [
+                        { role: 'system', content: sys },
+                        { role: 'user', content: usr }
+                    ],
+                    temperature: 0.4,
+                    max_tokens: 1400
+                })
+            });
+            if (!res.ok) return '';
+            const data = await res.json();
+            return (data?.choices?.[0]?.message?.content || '').trim();
+        } catch (e) { return ''; }
+    },
+
+    refreshAiBookAnalysisModal(phase) {
+        const host = document.getElementById('modal-content');
+        if (host) host.innerHTML = this.renderAiBookAnalysisModal(phase);
+        // 自动滚到最新输出
+        const stream = document.getElementById('ai-analysis-stream');
+        if (stream) stream.scrollTop = stream.scrollHeight;
+    },
+
+    // markdown 极简渲染（**bold** / ## 标题 / - 列表 / 换行）
+    simpleMarkdown(text) {
+        if (!text) return '';
+        const escape = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const lines = text.split(/\r?\n/);
+        let html = '';
+        let inUl = false;
+        const flushUl = () => { if (inUl) { html += '</ul>'; inUl = false; } };
+        lines.forEach(raw => {
+            let line = raw;
+            const headingMatch = line.match(/^\s*(#{1,6})\s+(.*)$/);
+            if (headingMatch) {
+                flushUl();
+                const level = headingMatch[1].length;
+                const txt = escape(headingMatch[2]).replace(/\*\*(.+?)\*\*/g, '<strong class="text-amber-200">$1</strong>');
+                const cls = {
+                    1: 'text-lg font-bold text-amber-300 mt-4 mb-2',
+                    2: 'text-base font-bold text-amber-300 mt-4 mb-2',
+                    3: 'text-sm font-semibold text-cyan-300 mt-3 mb-1',
+                    4: 'text-sm font-semibold text-cyan-200 mt-3 mb-1',
+                    5: 'text-xs font-semibold text-cyan-200 mt-2 mb-1',
+                    6: 'text-xs font-semibold text-slate-300 mt-2 mb-1'
+                }[level];
+                const tag = level <= 2 ? `h${level + 1}` : `h${Math.min(level + 1, 6)}`;
+                html += `<${tag} class="${cls}">${txt}</${tag}>`;
+            } else if (/^\s*[-*]\s+/.test(line)) {
+                if (!inUl) { html += '<ul class="list-disc pl-5 space-y-1 my-2 text-slate-200">'; inUl = true; }
+                const content = escape(line.replace(/^\s*[-*]\s+/, ''))
+                    .replace(/\*\*(.+?)\*\*/g, '<strong class="text-amber-200">$1</strong>');
+                html += `<li>${content}</li>`;
+            } else if (line.trim() === '') {
+                flushUl();
+                html += '<div class="h-2"></div>';
+            } else {
+                flushUl();
+                const content = escape(line).replace(/\*\*(.+?)\*\*/g, '<strong class="text-amber-200">$1</strong>');
+                html += `<p class="text-sm text-slate-200 leading-relaxed">${content}</p>`;
+            }
+        });
+        flushUl();
+        return html;
+    },
+
+    renderAiBookAnalysisModal(phase) {
+        const ctx = this._aiBookAnalysisCtx || {};
+        const book = ctx.book || '';
+        const entry = (this._aiBookAnalysis || {})[book] || {};
+        const top = entry.topQuestions || [];
+        const isGenerating = !!entry.generating;
+        const hasError = !!entry.error;
+        const isDone = !!entry.done;
+        const statusBadge = isGenerating
+            ? '<span class="px-2 py-0.5 rounded text-[11px] bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-cyan-300 animate-pulse"></span>生成中</span>'
+            : isDone
+                ? `<span class="px-2 py-0.5 rounded text-[11px] bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">已生成 · ${entry.generatedAt || ''}</span>`
+                : hasError
+                    ? '<span class="px-2 py-0.5 rounded text-[11px] bg-red-500/20 text-red-300 border border-red-400/30">生成失败</span>'
+                    : '';
+        const regenBtn = isDone || hasError
+            ? `<button onclick="App.regenerateAiBookAnalysis()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs border border-amber-400/30 transition-colors mr-2">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    重新生成
+                </button>`
+            : '';
+        const exportBtn = isDone
+            ? `<button onclick="App.exportAiReport('book', App._aiBookAnalysisCtx?.book)" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs border border-emerald-400/30 transition-colors mr-2" title="导出报告"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>导出</button>`
+            : '';
+        const errorHtml = hasError
+            ? `<div class="bg-red-500/10 border border-red-400/30 rounded-lg p-3 text-sm text-red-300 mb-3">生成失败：${entry.error}。请检查网络或稍后重试。</div>`
+            : '';
+        const analysisHtml = entry.analysis
+            ? this.simpleMarkdown(this.stripClusterJson(entry.analysis))
+            : '<div class="text-slate-500 text-sm">正在思考分析中…</div>';
+        const clusterTag = entry.clusterMode === 'model'
+            ? '<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-400/30">AI 聚类</span>'
+            : (entry.clusterMode === 'fallback' && isDone ? '<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-slate-700/40 text-slate-400 border border-slate-600/40">字面统计</span>' : '');
+        return `
+            <div class="bg-slate-900 rounded-xl p-6 w-full">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-3">
+                        <h3 class="text-lg font-bold text-white">📊 《${book}》AI 热点问题分析</h3>
+                        ${statusBadge}
+                    </div>
+                    <div class="flex items-center">
+                        ${exportBtn}
+                        ${regenBtn}
+                        <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-3 text-xs text-slate-400 mb-4">
+                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">范围</span><div class="text-slate-200">${entry.roleLabel || '-'} · ${entry.rangeLabel || '-'}</div></div>
+                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">样本</span><div class="text-cyan-300">${entry.sampleCount || 0} 次对话</div></div>
+                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">生成时间</span><div class="text-slate-200">${entry.generatedAt || '—'}</div></div>
+                </div>
+
+                <div class="mb-4">
+                    <h4 class="text-sm font-semibold text-amber-300 mb-2 flex items-center">🔥 热门问题 TOP${Math.min(10, top.length)}${clusterTag}</h4>
+                    ${top.length ? `
+                    <div class="space-y-1.5">
+                        ${top.map((t, i) => {
+                            const sampleAttr = (t.samples && t.samples.length)
+                                ? `title="原始提问示例：\n- ${t.samples.join('\n- ').replace(/"/g, '&quot;')}"`
+                                : '';
+                            return `
+                            <div class="flex items-center gap-2 text-sm" ${sampleAttr}>
+                                <span class="shrink-0 w-6 h-6 rounded-full ${i < 3 ? 'bg-amber-500/30 text-amber-200' : 'bg-slate-700/60 text-slate-300'} text-xs flex items-center justify-center">${i + 1}</span>
+                                <span class="flex-1 text-slate-200">${t.q}</span>
+                                <span class="text-xs text-slate-400">${t.count} 次</span>
+                            </div>`;
+                        }).join('')}
+                    </div>` : '<div class="text-slate-500 text-sm">暂无问题数据</div>'}
+                </div>
+
+                <div>
+                    <h4 class="text-sm font-semibold text-cyan-300 mb-2 flex items-center gap-2">
+                        🧠 AI 分析
+                        ${isGenerating ? '<span class="inline-block w-2 h-3 bg-cyan-300 animate-pulse rounded-sm"></span>' : ''}
+                    </h4>
+                    ${errorHtml}
+                    <div id="ai-analysis-stream" class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-4 pr-5 max-h-[50vh] overflow-y-auto whitespace-normal break-words">
+                        ${analysisHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    // ============================================================
+    //  AI 分析报告 - 导出（Markdown / HTML 打印）
+    // ============================================================
+    exportAiReport(type, key) {
+        const entry = this._getAiReportEntry(type, key);
+        if (!entry || !entry.done) {
+            this.showToast?.('请先生成分析报告', 'warn');
+            return;
+        }
+        const md = this._buildAiReportMarkdown(type, entry);
+        this._showExportMenu(type, key, md);
+    },
+
+    _getAiReportEntry(type, key) {
+        if (type === 'book') return (this._aiBookAnalysis || {})[key];
+        if (type === 'student') return (this._aiStudentAnalysis || {})[key];
+        if (type === 'class') return (this._aiClassAnalysis || {})[key];
+        return null;
+    },
+
+    _buildAiReportMarkdown(type, entry) {
+        const titleMap = {
+            book: `《${entry.book}》AI 热点问题分析`,
+            student: `${entry.student} 的 AI 兴趣画像分析`,
+            class: `${entry.className} · 班级 AI 画像分析`
+        };
+        const title = titleMap[type] || 'AI 分析报告';
+        const meta = [
+            `- **生成时间**：${entry.generatedAt || '-'}`,
+            `- **分析范围**：${entry.roleLabel || '-'} · ${entry.rangeLabel || '-'}`,
+            `- **对话样本**：${entry.sampleCount || 0} 次`
+        ];
+        if (type === 'class') meta.push(`- **涉及幼儿/绘本**：${entry.studentCount || 0} 人 · ${entry.bookCount || 0} 本`);
+        const top = entry.topQuestions || [];
+        const topSection = top.length
+            ? top.map((t, i) => `${i + 1}. ${t.q}（${t.count} 次）`).join('\n')
+            : '_暂无_';
+        const analysis = (entry.analysis || '').trim() || '_暂无_';
+        return `# ${title}
+
+${meta.join('\n')}
+
+## 🔥 ${type === 'book' ? '热门问题' : '核心关注主题'} TOP${Math.min(10, top.length)}
+
+${topSection}
+
+## 🧠 AI 分析
+
+${analysis}
+`;
+    },
+
+    _showExportMenu(type, key, md) {
+        const safeName = (type === 'book' ? '绘本-' + (this._aiBookAnalysisCtx?.book || key)
+            : type === 'student' ? '幼儿-' + (this._aiStudentAnalysisCtx?.student || key)
+            : '班级-' + (this._aiClassAnalysisCtx?.className || key)) + '-AI分析-' + this._stampForFile();
+        const content = `
+            <div class="bg-white rounded-xl p-6 w-full">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="text-lg font-bold text-slate-900">📥 导出 AI 分析报告</h3>
+                    <button class="text-slate-400 hover:text-slate-700" onclick="App.closeModalDirect()">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="space-y-3">
+                    <button onclick="App._doExportMarkdown(${JSON.stringify(safeName)})" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 transition-all text-left">
+                        <span class="text-2xl">📝</span>
+                        <div class="flex-1">
+                            <div class="text-sm font-semibold text-slate-900">下载 Markdown (.md)</div>
+                            <div class="text-xs text-slate-500">原始结构，方便二次编辑、归档</div>
+                        </div>
+                    </button>
+                    <button onclick="App._doExportHtmlPrint()" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 transition-all text-left">
+                        <span class="text-2xl">🖨️</span>
+                        <div class="flex-1">
+                            <div class="text-sm font-semibold text-slate-900">打开网页版（可另存为 PDF）</div>
+                            <div class="text-xs text-slate-500">新窗口打开排版好的报告，⌘P / Ctrl+P 即可保存 PDF</div>
+                        </div>
+                    </button>
+                    <button onclick="App._doCopyMarkdown()" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 transition-all text-left">
+                        <span class="text-2xl">📋</span>
+                        <div class="flex-1">
+                            <div class="text-sm font-semibold text-slate-900">复制 Markdown 到剪贴板</div>
+                            <div class="text-xs text-slate-500">粘贴到飞书 / Notion / 微信文档</div>
+                        </div>
+                    </button>
+                </div>
+            </div>
+        `;
+        this._pendingExport = { type, key, md, fileName: safeName };
+        this.openModal(content, { size: 'default' });
+    },
+
+    _doExportMarkdown(fileName) {
+        const pe = this._pendingExport;
+        if (!pe) return;
+        const blob = new Blob([pe.md], { type: 'text/markdown;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `${fileName}.md`;
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
+        this.showToast?.('Markdown 已下载', 'success');
+    },
+
+    _doCopyMarkdown() {
+        const pe = this._pendingExport;
+        if (!pe) return;
+        navigator.clipboard?.writeText(pe.md).then(
+            () => this.showToast?.('已复制到剪贴板', 'success'),
+            () => this.showToast?.('复制失败，请手动选择', 'error')
+        );
+    },
+
+    _doExportHtmlPrint() {
+        const pe = this._pendingExport;
+        if (!pe) return;
+        const bodyHtml = this.simpleMarkdown(pe.md);
+        const title = pe.fileName;
+        const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${title}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; color: #1A1B25; max-width: 820px; margin: 40px auto; padding: 0 24px; line-height: 1.75; background: #fff; }
+  h1 { font-size: 26px; font-weight: 700; margin: 0 0 16px; padding-bottom: 12px; border-bottom: 2px solid #6366F1; color: #0F1020; }
+  h2 { font-size: 20px; font-weight: 700; margin: 32px 0 14px; color: #6D28D9; }
+  h3 { font-size: 16px; font-weight: 600; margin: 22px 0 10px; color: #4338CA; }
+  h4 { font-size: 15px; font-weight: 600; margin: 18px 0 8px; color: #4338CA; }
+  p { margin: 8px 0; color: #2A2C3D; }
+  ul { padding-left: 22px; margin: 8px 0; }
+  li { margin: 4px 0; color: #2A2C3D; }
+  strong { color: #6D28D9; }
+  .meta { background: #F7F8FC; border: 1px solid #ECECF2; border-radius: 8px; padding: 12px 16px; margin: 12px 0 20px; }
+  .meta li { list-style: none; margin-left: -22px; }
+  @media print {
+    body { margin: 0; max-width: 100%; }
+    h2 { page-break-after: avoid; }
+    li { page-break-inside: avoid; }
+  }
+  .toolbar { position: fixed; top: 16px; right: 16px; display: flex; gap: 8px; }
+  .toolbar button { background: #6366F1; color: #fff; border: 0; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+  .toolbar button:hover { background: #4F46E5; }
+  @media print { .toolbar { display: none; } }
+</style></head><body>
+<div class="toolbar"><button onclick="window.print()">打印 / 保存为 PDF</button></div>
+${bodyHtml}
+</body></html>`;
+        const w = window.open('', '_blank');
+        if (!w) { this.showToast?.('请允许弹出窗口', 'warn'); return; }
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+    },
+
+    _stampForFile() {
+        const d = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+    },
+
+    // 已生成 → 打开
+    openAiBookAnalysis(book) {
+        const entry = (this._aiBookAnalysis || {})[book];
+        if (!entry) {
+            this.startAiBookAnalysis(book);
+            return;
+        }
+        this._aiBookAnalysisCtx = { book, rangeKey: entry.rangeKey };
+        this.openModal(this.renderAiBookAnalysisModal('done'), { size: 'xwide' });
+    },
+
+    // ============================================================
+    //  活跃幼儿 - AI 兴趣画像分析（与互动绘本 AI 分析对应）
+    // ============================================================
+    _aiStudentReportsStorageKey: 'aiStudentReports',
+    _aiStudentReportsMaxPerStudent: 50,
+
+    loadAiStudentReports() {
+        try {
+            const raw = localStorage.getItem(this._aiStudentReportsStorageKey);
+            const parsed = raw ? JSON.parse(raw) : {};
+            this._aiStudentReports = (parsed && typeof parsed === 'object') ? parsed : {};
+        } catch (e) {
+            this._aiStudentReports = {};
+        }
+        if (!this._aiStudentAnalysis) this._aiStudentAnalysis = {};
+        Object.keys(this._aiStudentReports).forEach(student => {
+            const list = this._aiStudentReports[student];
+            if (Array.isArray(list) && list.length) {
+                this._aiStudentAnalysis[student] = list[0];
+            }
+        });
+    },
+
+    persistAiStudentReports() {
+        try {
+            localStorage.setItem(this._aiStudentReportsStorageKey, JSON.stringify(this._aiStudentReports || {}));
+        } catch (e) { /* 配额满则忽略 */ }
+    },
+
+    saveAiStudentReport(student, report) {
+        if (!student || !report) return;
+        if (!this._aiStudentReports) this._aiStudentReports = {};
+        const list = this._aiStudentReports[student] || [];
+        const snapshot = JSON.parse(JSON.stringify(report));
+        list.unshift(snapshot);
+        if (list.length > this._aiStudentReportsMaxPerStudent) list.length = this._aiStudentReportsMaxPerStudent;
+        this._aiStudentReports[student] = list;
+        this.persistAiStudentReports();
+    },
+
+    deleteAiStudentReport(student, generatedAt) {
+        const list = (this._aiStudentReports || {})[student];
+        if (!list) return;
+        const idx = list.findIndex(r => r.generatedAt === generatedAt);
+        if (idx < 0) return;
+        list.splice(idx, 1);
+        if (list.length === 0) {
+            delete this._aiStudentReports[student];
+            if (this._aiStudentAnalysis) delete this._aiStudentAnalysis[student];
+        } else {
+            this._aiStudentAnalysis[student] = list[0];
+        }
+        this.persistAiStudentReports();
+        this.refreshAiStudentHistoryPopover(student);
+        this.refreshAiMetricPanel();
+    },
+
+    loadHistoricalStudentReport(student, generatedAt) {
+        const list = (this._aiStudentReports || {})[student] || [];
+        const found = list.find(r => r.generatedAt === generatedAt);
+        if (!found) return;
+        if (!this._aiStudentAnalysis) this._aiStudentAnalysis = {};
+        this._aiStudentAnalysis[student] = found;
+        this._aiStudentAnalysisCtx = { student, rangeKey: found.rangeKey };
+        this.openModal(this.renderAiStudentAnalysisModal('done'), { size: 'xwide' });
+    },
+
+    toggleAiStudentHistoryPopover(student) {
+        const id = `ai-stu-hist-pop-${this.hashStr(student)}`;
+        const existing = document.getElementById(id);
+        if (existing) { existing.remove(); return; }
+        document.querySelectorAll('[data-ai-stu-hist-pop]').forEach(n => n.remove());
+        const trigger = document.querySelector(`[data-ai-stu-hist-trigger="${this.hashStr(student)}"]`);
+        if (!trigger) return;
+        const pop = document.createElement('div');
+        pop.id = id;
+        pop.dataset.aiStuHistPop = '1';
+        pop.className = 'fixed z-[60] bg-slate-900 border border-slate-600 rounded-xl shadow-2xl p-3 w-80 max-h-96 overflow-y-auto';
+        pop.innerHTML = this.renderAiStudentHistoryPopover(student);
+        document.body.appendChild(pop);
+        const rect = trigger.getBoundingClientRect();
+        let top = rect.bottom + 6;
+        let left = rect.right - 320;
+        if (left < 8) left = 8;
+        if (top + 384 > window.innerHeight) top = Math.max(8, rect.top - 384 - 6);
+        pop.style.top = `${top}px`;
+        pop.style.left = `${left}px`;
+        setTimeout(() => {
+            const onDocClick = (e) => {
+                if (!pop.contains(e.target) && !trigger.contains(e.target)) {
+                    pop.remove();
+                    document.removeEventListener('click', onDocClick);
+                }
+            };
+            document.addEventListener('click', onDocClick);
+        }, 0);
+    },
+
+    refreshAiStudentHistoryPopover(student) {
+        const id = `ai-stu-hist-pop-${this.hashStr(student)}`;
+        const pop = document.getElementById(id);
+        if (pop) pop.innerHTML = this.renderAiStudentHistoryPopover(student);
+    },
+
+    renderAiStudentHistoryPopover(student) {
+        const list = (this._aiStudentReports || {})[student] || [];
+        const escStudent = student.replace(/'/g, "\\'");
+        if (!list.length) {
+            return `<div class="text-sm text-slate-400 px-2 py-3 text-center">暂无历史报告</div>`;
+        }
+        const items = list.map(r => {
+            const rangeLabel = r.rangeLabel || r.rangeKey || '-';
+            const dateStr = (r.generatedAt || '-').split(' ')[0] || '-';
+            const stuLabel = r.student || escStudent;
+            const scopeLabel = r.roleLabel || '-';
+            const sample = r.sampleCount || 0;
+            return `
+                <div class="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-700/40 border border-slate-700/40 mb-1.5">
+                    <div class="flex-1 min-w-0">
+                        <div class="text-xs text-slate-200 truncate">${dateStr} - ${stuLabel}</div>
+                        <div class="text-[11px] text-slate-500 mt-0.5">分析维度：${scopeLabel} · ${rangeLabel} · 样本：${sample}</div>
+                    </div>
+                    <button onclick="App.loadHistoricalStudentReport('${escStudent}', '${(r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/30">查看</button>
+                    <button onclick="App.deleteAiStudentReport('${escStudent}', '${(r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-400/30">删除</button>
+                </div>
+            `;
+        }).join('');
+        return `
+            <div class="flex items-center justify-between mb-2 px-1">
+                <div class="text-sm font-semibold text-amber-300">📚 历史报告 · ${list.length} 份</div>
+                <button onclick="App.toggleAiStudentHistoryPopover('${escStudent}')" class="text-slate-400 hover:text-white text-xs">✕</button>
+            </div>
+            ${items}
+        `;
+    },
+
+    startAiStudentAnalysis(student) {
+        this._aiStudentAnalysisCtx = { student, rangeKey: '7d' };
+        this.openModal(this.renderAiStudentAnalysisRangeModal(), { size: 'wide' });
+    },
+
+    selectAiStudentAnalysisRange(rangeKey) {
+        if (!this._aiStudentAnalysisCtx) return;
+        this._aiStudentAnalysisCtx.rangeKey = rangeKey;
+        const host = document.getElementById('modal-content');
+        if (host) host.innerHTML = this.renderAiStudentAnalysisRangeModal();
+    },
+
+    renderAiStudentAnalysisRangeModal() {
+        const ctx = this._aiStudentAnalysisCtx || {};
+        const student = ctx.student || '';
+        const rangeKey = ctx.rangeKey || '7d';
+        const dialogues = this.collectAiStudentDialogues(student, rangeKey);
+        const sampleCount = dialogues.length;
+        const className = (dialogues[0]?.className) || '-';
+        const roleLabel = `小朋友「${student}」（${className}）`;
+        return `
+            <div class="bg-slate-900 rounded-xl p-6 w-full">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="text-lg font-bold text-white">✨ 生成 AI 兴趣画像分析</h3>
+                    <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="bg-slate-800/60 border border-slate-600/30 rounded-xl p-4 mb-5">
+                    <div class="text-xs text-slate-400 mb-1">小朋友</div>
+                    <div class="text-emerald-300 font-medium">${student} · ${className}</div>
+                    <div class="text-xs text-slate-500 mt-2">将提取 <span class="text-amber-300">${roleLabel}</span> 在所选时间范围内的全部 AI 对话发送给大模型，生成兴趣画像与教学建议。</div>
+                </div>
+                <div class="mb-4">
+                    <div class="text-sm text-slate-300 mb-3">选择上传数据时间</div>
+                    <div class="grid grid-cols-2 gap-3">
+                        ${this._aiBookAnalysisRangeOptions.map(opt => `
+                            <label class="cursor-pointer">
+                                <input type="radio" name="ai-stu-range" value="${opt.key}" ${rangeKey === opt.key ? 'checked' : ''} class="hidden peer" onchange="App.selectAiStudentAnalysisRange('${opt.key}')">
+                                <div class="px-4 py-3 rounded-xl border transition-all ${rangeKey === opt.key ? 'border-amber-400/60 bg-amber-500/15 text-amber-200' : 'border-slate-600/40 bg-slate-800/40 text-slate-300 hover:border-slate-500/60'}">
+                                    <div class="text-sm font-medium">${opt.label}</div>
+                                </div>
+                            </label>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="text-xs text-slate-500 mb-5">当前可用对话样本：<span class="text-emerald-300">${sampleCount}</span> 次</div>
+                <div class="flex items-center justify-end gap-3">
+                    <button onclick="App.closeModalDirect()" class="px-4 py-2 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors">取消</button>
+                    <button onclick="App.confirmAiStudentAnalysis()" ${sampleCount === 0 ? 'disabled' : ''} class="px-4 py-2 rounded-lg ${sampleCount === 0 ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white'} text-sm transition-colors">开始分析</button>
+                </div>
+            </div>
+        `;
+    },
+
+    collectAiStudentDialogues(student, rangeKey) {
+        const all = MockData.aiOverview?.history || [];
+        const teacherClassName = this.isTeacherScope() ? this.getTeacherClassName() : null;
+        const opt = this._aiBookAnalysisRangeOptions.find(o => o.key === rangeKey);
+        let startMs = null;
+        if (opt && opt.days != null) {
+            const latest = this.getLatestAiHistoryDate();
+            const start = new Date(latest);
+            start.setDate(start.getDate() - opt.days + 1);
+            start.setHours(0, 0, 0, 0);
+            startMs = start.getTime();
+        }
+        return all.filter(h => {
+            if ((h.student || '匿名') !== student) return false;
+            if (teacherClassName && h.className !== teacherClassName) return false;
+            if (startMs !== null) {
+                const t = this.parseActivityDate(h.time).getTime();
+                if (Number.isNaN(t) || t < startMs) return false;
+            }
+            return true;
+        });
+    },
+
+    confirmAiStudentAnalysis() {
+        const ctx = this._aiStudentAnalysisCtx;
+        if (!ctx) return;
+        this.runAiStudentAnalysis(ctx.student, ctx.rangeKey);
+    },
+
+    regenerateAiStudentAnalysis() {
+        const cached = (this._aiStudentAnalysis || {})[this._aiStudentAnalysisCtx?.student];
+        const rangeKey = cached?.rangeKey || this._aiStudentAnalysisCtx?.rangeKey || '7d';
+        const student = this._aiStudentAnalysisCtx?.student;
+        if (!student) return;
+        if (this._aiStudentAnalysis && this._aiStudentAnalysis[student]) {
+            delete this._aiStudentAnalysis[student];
+        }
+        this.runAiStudentAnalysis(student, rangeKey);
+    },
+
+    async runAiStudentAnalysis(student, rangeKey) {
+        const dialogues = this.collectAiStudentDialogues(student, rangeKey);
+        const className = (dialogues[0]?.className) || '-';
+
+        const bookMap = new Map();
+        dialogues.forEach(d => {
+            if (!d.book) return;
+            bookMap.set(d.book, (bookMap.get(d.book) || 0) + 1);
+        });
+        const fallbackTop = [...bookMap.entries()]
+            .map(([q, count]) => ({ q, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10);
+
+        const rangeLabel = this._aiBookAnalysisRangeOptions.find(o => o.key === rangeKey)?.label || rangeKey;
+        const roleLabel = `小朋友「${student}」（${className}）`;
+
+        if (!this._aiStudentAnalysis) this._aiStudentAnalysis = {};
+        this._aiStudentAnalysis[student] = {
+            student, className, rangeKey, rangeLabel, roleLabel,
+            generatedAt: '',
+            sampleCount: dialogues.length,
+            topQuestions: fallbackTop,
+            clusterMode: 'fallback',
+            analysis: '',
+            done: false,
+            generating: true
+        };
+        this._aiStudentAnalysisCtx = { student, rangeKey };
+        this.openModal(this.renderAiStudentAnalysisModal(), { size: 'xwide' });
+
+        const allQuestionsText = dialogues
+            .flatMap(d => (d.session || []).map(t => ({ q: t.q, book: d.book })).filter(x => x.q))
+            .slice(0, 200)
+            .map((x, i) => `${i + 1}. [《${x.book || '未知'}》] ${x.q}`)
+            .join('\n');
+
+        const systemPrompt = '你是一个幼儿园教育与儿童心理分析专家，擅长基于幼儿与绘本AI助手的真实对话，洞察单个孩子的兴趣方向、认知阶段与情感发展。你需要先对该孩子的提问做语义聚类（同义不同表归为一类），再给出兴趣画像与教学建议。回复用简体中文。';
+        const userPrompt = `以下是${roleLabel}在${rangeLabel}内与绘本 AI 助手的全部提问数据，共 ${dialogues.length} 次对话。
+
+【全部提问（最多 200 条采样，前缀方括号为对应绘本）】
+${allQuestionsText || '（无）'}
+
+请严格按以下两段式输出：
+
+第一段：在一个 \`\`\`json ... \`\`\` 代码块中输出该孩子最关注的 TOP10 主题/话题语义聚类（最多 10 个，按 count 倒序）。结构如下，不要添加多余字段：
+\`\`\`json
+{
+  "clusters": [
+    {"representative": "用一句话概括的代表性主题/问题", "count": 12, "samples": ["原始提问1", "原始提问2"]}
+  ]
+}
+\`\`\`
+要求：把表述不同但意图相同的问题合并为同一类；representative 用通顺自然的一句中文；count 是该类合并后的总数；samples 给 2-4 条原始问句即可。
+
+第二段：紧接 JSON 块后输出 Markdown 兴趣画像分析正文（不要再放进代码块）：
+1) 概述这个孩子的核心兴趣方向、思维特点与情感关注（3 段内）；
+2) 指出其展现的认知发展信号、潜在优势与需要支持的方向；
+3) 给出 3-5 条针对该孩子可立即落地的个性化教学/亲子互动建议；
+4) 全文 600-900 字，使用 ## 和 - 分小标题与列表，避免空话套话。`;
+
+        try {
+            await this.streamLlmAnalysis({
+                book: student,
+                systemPrompt,
+                userPrompt,
+                onDelta: (delta) => {
+                    const entry = this._aiStudentAnalysis[student];
+                    if (!entry) return;
+                    entry.analysis += delta;
+                    this.refreshAiStudentAnalysisModal('streaming');
+                },
+                onDone: async (full) => {
+                    const entry = this._aiStudentAnalysis[student];
+                    if (!entry) return;
+                    const rawText = full || entry.analysis;
+                    const cluster = this.parseClusterJson(rawText);
+                    if (cluster && Array.isArray(cluster.clusters) && cluster.clusters.length) {
+                        entry.topQuestions = cluster.clusters.slice(0, 10).map(c => ({
+                            q: c.representative || (Array.isArray(c.samples) ? c.samples[0] : '') || '',
+                            count: Number(c.count) || (Array.isArray(c.samples) ? c.samples.length : 0),
+                            samples: Array.isArray(c.samples) ? c.samples.slice(0, 6) : []
+                        })).filter(t => t.q);
+                        entry.clusterMode = 'model';
+                    } else {
+                        entry.clusterMode = 'fallback';
+                    }
+                    const bodyOnly = this.stripClusterJson(rawText);
+                    entry.analysis = bodyOnly || rawText;
+                    try {
+                        const polished = await this.polishAiAnalysis(student, entry.analysis, entry.topQuestions);
+                        if (polished) entry.analysis = polished;
+                    } catch (e) { /* ignore */ }
+                    entry.done = true;
+                    entry.generating = false;
+                    entry.generatedAt = this.formatNowDateTime();
+                    this.refreshAiStudentAnalysisModal('done');
+                    this.saveAiStudentReport(student, entry);
+                    this.refreshAiMetricPanel();
+                },
+                onError: (err) => {
+                    const entry = this._aiStudentAnalysis[student];
+                    if (!entry) return;
+                    entry.error = String(err?.message || err || '生成失败');
+                    entry.generating = false;
+                    this.refreshAiStudentAnalysisModal('error');
+                }
+            });
+        } catch (e) {
+            const entry = this._aiStudentAnalysis[student];
+            if (entry) {
+                entry.error = String(e?.message || e || '生成失败');
+                entry.generating = false;
+                this.refreshAiStudentAnalysisModal('error');
+            }
+        }
+    },
+
+    refreshAiStudentAnalysisModal(phase) {
+        const host = document.getElementById('modal-content');
+        if (host) host.innerHTML = this.renderAiStudentAnalysisModal(phase);
+        const stream = document.getElementById('ai-analysis-stream');
+        if (stream) stream.scrollTop = stream.scrollHeight;
+    },
+
+    renderAiStudentAnalysisModal(phase) {
+        const ctx = this._aiStudentAnalysisCtx || {};
+        const student = ctx.student || '';
+        const entry = (this._aiStudentAnalysis || {})[student] || {};
+        const top = entry.topQuestions || [];
+        const isGenerating = !!entry.generating;
+        const hasError = !!entry.error;
+        const isDone = !!entry.done;
+        const statusBadge = isGenerating
+            ? '<span class="px-2 py-0.5 rounded text-[11px] bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-cyan-300 animate-pulse"></span>生成中</span>'
+            : isDone
+                ? `<span class="px-2 py-0.5 rounded text-[11px] bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">已生成 · ${entry.generatedAt || ''}</span>`
+                : hasError
+                    ? '<span class="px-2 py-0.5 rounded text-[11px] bg-red-500/20 text-red-300 border border-red-400/30">生成失败</span>'
+                    : '';
+        const regenBtn = isDone || hasError
+            ? `<button onclick="App.regenerateAiStudentAnalysis()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs border border-amber-400/30 transition-colors mr-2">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    重新生成
+                </button>`
+            : '';
+        const exportBtn = isDone
+            ? `<button onclick="App.exportAiReport('student', App._aiStudentAnalysisCtx?.student)" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs border border-emerald-400/30 transition-colors mr-2" title="导出报告"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>导出</button>`
+            : '';
+        const errorHtml = hasError
+            ? `<div class="bg-red-500/10 border border-red-400/30 rounded-lg p-3 text-sm text-red-300 mb-3">生成失败：${entry.error}。请检查网络或稍后重试。</div>`
+            : '';
+        const analysisHtml = entry.analysis
+            ? this.simpleMarkdown(this.stripClusterJson(entry.analysis))
+            : '<div class="text-slate-500 text-sm">正在思考分析中…</div>';
+        const clusterTag = entry.clusterMode === 'model'
+            ? '<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-400/30">AI 聚类</span>'
+            : (entry.clusterMode === 'fallback' && isDone ? '<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-slate-700/40 text-slate-400 border border-slate-600/40">字面统计</span>' : '');
+        return `
+            <div class="bg-slate-900 rounded-xl p-6 w-full">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-3">
+                        <h3 class="text-lg font-bold text-white">📊 ${student} 的 AI 兴趣画像分析</h3>
+                        ${statusBadge}
+                    </div>
+                    <div class="flex items-center">
+                        ${exportBtn}
+                        ${regenBtn}
+                        <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-3 text-xs text-slate-400 mb-4">
+                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">范围</span><div class="text-slate-200">${entry.roleLabel || '-'} · ${entry.rangeLabel || '-'}</div></div>
+                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">样本</span><div class="text-emerald-300">${entry.sampleCount || 0} 次对话</div></div>
+                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">生成时间</span><div class="text-slate-200">${entry.generatedAt || '—'}</div></div>
+                </div>
+
+                <div class="mb-4">
+                    <h4 class="text-sm font-semibold text-amber-300 mb-2 flex items-center">🔥 核心关注主题 TOP${Math.min(10, top.length)}${clusterTag}</h4>
+                    ${top.length ? `
+                    <div class="space-y-1.5">
+                        ${top.map((t, i) => {
+                            const sampleAttr = (t.samples && t.samples.length)
+                                ? `title="原始提问示例：\n- ${t.samples.join('\n- ').replace(/"/g, '&quot;')}"`
+                                : '';
+                            return `
+                            <div class="flex items-center gap-2 text-sm" ${sampleAttr}>
+                                <span class="shrink-0 w-6 h-6 rounded-full ${i < 3 ? 'bg-amber-500/30 text-amber-200' : 'bg-slate-700/60 text-slate-300'} text-xs flex items-center justify-center">${i + 1}</span>
+                                <span class="flex-1 text-slate-200">${t.q}</span>
+                                <span class="text-xs text-slate-400">${t.count} 次</span>
+                            </div>`;
+                        }).join('')}
+                    </div>` : '<div class="text-slate-500 text-sm">暂无问题数据</div>'}
+                </div>
+
+                <div>
+                    <h4 class="text-sm font-semibold text-cyan-300 mb-2 flex items-center gap-2">
+                        🧠 AI 分析
+                        ${isGenerating ? '<span class="inline-block w-2 h-3 bg-cyan-300 animate-pulse rounded-sm"></span>' : ''}
+                    </h4>
+                    ${errorHtml}
+                    <div id="ai-analysis-stream" class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-4 pr-5 max-h-[50vh] overflow-y-auto whitespace-normal break-words">
+                        ${analysisHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    openAiStudentAnalysis(student) {
+        const entry = (this._aiStudentAnalysis || {})[student];
+        if (!entry) {
+            this.startAiStudentAnalysis(student);
+            return;
+        }
+        this._aiStudentAnalysisCtx = { student, rangeKey: entry.rangeKey };
+        this.openModal(this.renderAiStudentAnalysisModal('done'), { size: 'xwide' });
+    },
+
+    // ============================================================
+    //  班级 AI 分析（AI 总览页面右上角入口）
+    // ============================================================
+    _aiClassReportsStorageKey: 'aiClassReports',
+    _aiClassReportsMaxPerClass: 50,
+
+    loadAiClassReports() {
+        try {
+            const raw = localStorage.getItem(this._aiClassReportsStorageKey);
+            const parsed = raw ? JSON.parse(raw) : {};
+            this._aiClassReports = (parsed && typeof parsed === 'object') ? parsed : {};
+        } catch (e) {
+            this._aiClassReports = {};
+        }
+        if (!this._aiClassAnalysis) this._aiClassAnalysis = {};
+        Object.keys(this._aiClassReports).forEach(cls => {
+            const list = this._aiClassReports[cls];
+            if (Array.isArray(list) && list.length) {
+                this._aiClassAnalysis[cls] = list[0];
+            }
+        });
+    },
+
+    persistAiClassReports() {
+        try {
+            localStorage.setItem(this._aiClassReportsStorageKey, JSON.stringify(this._aiClassReports || {}));
+        } catch (e) { /* ignore */ }
+    },
+
+    saveAiClassReport(className, report) {
+        if (!className || !report) return;
+        if (!this._aiClassReports) this._aiClassReports = {};
+        const list = this._aiClassReports[className] || [];
+        const snapshot = JSON.parse(JSON.stringify(report));
+        list.unshift(snapshot);
+        if (list.length > this._aiClassReportsMaxPerClass) list.length = this._aiClassReportsMaxPerClass;
+        this._aiClassReports[className] = list;
+        this.persistAiClassReports();
+    },
+
+    deleteAiClassReport(className, generatedAt) {
+        const list = (this._aiClassReports || {})[className];
+        if (!list) return;
+        const idx = list.findIndex(r => r.generatedAt === generatedAt);
+        if (idx < 0) return;
+        list.splice(idx, 1);
+        if (list.length === 0) {
+            delete this._aiClassReports[className];
+            if (this._aiClassAnalysis) delete this._aiClassAnalysis[className];
+        } else {
+            this._aiClassAnalysis[className] = list[0];
+        }
+        this.persistAiClassReports();
+        this.refreshAiClassPickerHistory();
+        this.refreshAiClassHistoryPopover(className);
+    },
+
+    loadHistoricalClassReport(className, generatedAt) {
+        const list = (this._aiClassReports || {})[className] || [];
+        const found = list.find(r => r.generatedAt === generatedAt);
+        if (!found) return;
+        if (!this._aiClassAnalysis) this._aiClassAnalysis = {};
+        this._aiClassAnalysis[className] = found;
+        this._aiClassAnalysisCtx = { className, rangeKey: found.rangeKey };
+        this.openModal(this.renderAiClassAnalysisModal('done'), { size: 'xwide' });
+    },
+
+    // 入口：右上角按钮调用
+    startAiClassAnalysis() {
+        if (this.isTeacherScope()) {
+            const className = this.getTeacherClassName();
+            if (!className) {
+                this.showToast?.('未识别到所带班级', 'error');
+                return;
+            }
+            this._aiClassAnalysisCtx = { className, rangeKey: '7d' };
+            this.openModal(this.renderAiClassAnalysisRangeModal(), { size: 'wide' });
+            return;
+        }
+        // 园长 / 管理员：先选班级
+        this._aiClassAnalysisCtx = { className: '', rangeKey: '7d' };
+        this.openModal(this.renderAiClassPickerModal(), { size: 'wide' });
+    },
+
+    getAiClassCandidates() {
+        const list = MockData.classes || [];
+        return list.filter(c => {
+            if (!this.selectedSchool) return true;
+            return c.kindergartenId === this.selectedSchool.id;
+        });
+    },
+
+    renderAiClassPickerModal() {
+        const classes = this.getAiClassCandidates();
+        const ctx = this._aiClassAnalysisCtx || {};
+        const items = classes.map(c => {
+            const list = (this._aiClassReports || {})[c.name] || [];
+            const escName = c.name.replace(/'/g, "\\'");
+            const histBtn = list.length
+                ? `<button data-ai-cls-hist-trigger="${this.hashStr(c.name)}" onclick="event.stopPropagation();App.toggleAiClassHistoryPopover('${escName}')" class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 border border-violet-400/30" title="查看历史报告">📚 ${list.length}</button>`
+                : '';
+            const isActive = ctx.className === c.name;
+            return `
+                <div onclick="App.selectAiClassForAnalysis('${escName}')" class="cursor-pointer text-left px-4 py-3 rounded-xl border transition-all ${isActive ? 'border-amber-400/60 bg-amber-500/15 text-amber-200' : 'border-slate-600/40 bg-slate-800/40 text-slate-200 hover:border-slate-500/60 hover:bg-slate-700/40'}">
+                    <div class="flex items-center justify-between">
+                        <div class="text-sm font-medium flex items-center">🏫 ${c.name}${histBtn}</div>
+                        <div class="text-[11px] text-slate-400">${c.studentCount || 0} 人 · 教师 ${c.teacherName || '-'}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        return `
+            <div class="bg-slate-900 rounded-xl p-6 w-full">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="text-lg font-bold text-white">🏫 选择班级进行 AI 分析</h3>
+                    <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="text-xs text-slate-400 mb-3">将基于该班级在 AI 总览所选时间范围内的全部对话数据，分析班级整体兴趣画像与教学建议。</div>
+                <div id="ai-class-picker-grid" class="grid grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
+                    ${items || '<div class="text-sm text-slate-500 col-span-2 text-center py-6">当前范围内暂无班级</div>'}
+                </div>
+                <div class="flex items-center justify-end gap-3 mt-5">
+                    <button onclick="App.closeModalDirect()" class="px-4 py-2 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors">取消</button>
+                    <button onclick="App.confirmAiClassPick()" ${ctx.className ? '' : 'disabled'} class="px-4 py-2 rounded-lg ${ctx.className ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white' : 'bg-slate-700 text-slate-500 cursor-not-allowed'} text-sm transition-colors">下一步</button>
+                </div>
+            </div>
+        `;
+    },
+
+    refreshAiClassPickerHistory() {
+        const grid = document.getElementById('ai-class-picker-grid');
+        if (grid) {
+            const host = document.getElementById('modal-content');
+            if (host) host.innerHTML = this.renderAiClassPickerModal();
+        }
+    },
+
+    selectAiClassForAnalysis(className) {
+        if (!this._aiClassAnalysisCtx) this._aiClassAnalysisCtx = { className: '', rangeKey: '7d' };
+        this._aiClassAnalysisCtx.className = className;
+        const host = document.getElementById('modal-content');
+        if (host) host.innerHTML = this.renderAiClassPickerModal();
+    },
+
+    confirmAiClassPick() {
+        const ctx = this._aiClassAnalysisCtx;
+        if (!ctx || !ctx.className) return;
+        this.openModal(this.renderAiClassAnalysisRangeModal(), { size: 'wide' });
+    },
+
+    selectAiClassAnalysisRange(rangeKey) {
+        if (!this._aiClassAnalysisCtx) return;
+        this._aiClassAnalysisCtx.rangeKey = rangeKey;
+        const host = document.getElementById('modal-content');
+        if (host) host.innerHTML = this.renderAiClassAnalysisRangeModal();
+    },
+
+    renderAiClassAnalysisRangeModal() {
+        const ctx = this._aiClassAnalysisCtx || {};
+        const className = ctx.className || '';
+        const rangeKey = ctx.rangeKey || '7d';
+        const dialogues = this.collectAiClassDialogues(className, rangeKey);
+        const sampleCount = dialogues.length;
+        const studentSet = new Set();
+        const bookSet = new Set();
+        dialogues.forEach(d => { if (d.student) studentSet.add(d.student); if (d.book) bookSet.add(d.book); });
+        const history = (this._aiClassReports || {})[className] || [];
+        const escName = className.replace(/'/g, "\\'");
+        const histBtn = history.length
+            ? `<button data-ai-cls-hist-trigger="${this.hashStr(className)}" onclick="App.toggleAiClassHistoryPopover('${escName}')" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-700/50 hover:bg-slate-600/60 text-slate-200 text-xs border border-slate-500/40 transition-colors mr-2" title="查看历史报告">📚 历史 ${history.length}</button>`
+            : '';
+        return `
+            <div class="bg-slate-900 rounded-xl p-6 w-full">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="text-lg font-bold text-white">✨ 生成 ${className} 班级 AI 分析</h3>
+                    <div class="flex items-center">
+                        ${histBtn}
+                        <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="bg-slate-800/60 border border-slate-600/30 rounded-xl p-4 mb-5">
+                    <div class="text-xs text-slate-400 mb-1">班级</div>
+                    <div class="text-amber-300 font-medium">🏫 ${className}</div>
+                    <div class="text-xs text-slate-500 mt-2">将提取本班在所选时间范围内的全部 AI 对话数据发送给大模型，生成班级整体兴趣画像、关注热点与教学建议。</div>
+                </div>
+                <div class="mb-4">
+                    <div class="text-sm text-slate-300 mb-3">选择上传数据时间</div>
+                    <div class="grid grid-cols-2 gap-3">
+                        ${this._aiBookAnalysisRangeOptions.map(opt => `
+                            <label class="cursor-pointer">
+                                <input type="radio" name="ai-class-range" value="${opt.key}" ${rangeKey === opt.key ? 'checked' : ''} class="hidden peer" onchange="App.selectAiClassAnalysisRange('${opt.key}')">
+                                <div class="px-4 py-3 rounded-xl border transition-all ${rangeKey === opt.key ? 'border-amber-400/60 bg-amber-500/15 text-amber-200' : 'border-slate-600/40 bg-slate-800/40 text-slate-300 hover:border-slate-500/60'}">
+                                    <div class="text-sm font-medium">${opt.label}</div>
+                                </div>
+                            </label>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-3 text-xs text-slate-400 mb-5">
+                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">对话样本</span><div class="text-amber-300">${sampleCount} 次</div></div>
+                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">涉及幼儿</span><div class="text-emerald-300">${studentSet.size} 人</div></div>
+                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">涉及绘本</span><div class="text-cyan-300">${bookSet.size} 本</div></div>
+                </div>
+                <div class="flex items-center justify-end gap-3">
+                    <button onclick="App.closeModalDirect()" class="px-4 py-2 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors">取消</button>
+                    <button onclick="App.confirmAiClassAnalysis()" ${sampleCount === 0 ? 'disabled' : ''} class="px-4 py-2 rounded-lg ${sampleCount === 0 ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white'} text-sm transition-colors">开始分析</button>
+                </div>
+            </div>
+        `;
+    },
+
+    collectAiClassDialogues(className, rangeKey) {
+        const all = MockData.aiOverview?.history || [];
+        const opt = this._aiBookAnalysisRangeOptions.find(o => o.key === rangeKey);
+        let startMs = null;
+        if (opt && opt.days != null) {
+            const latest = this.getLatestAiHistoryDate();
+            const start = new Date(latest);
+            start.setDate(start.getDate() - opt.days + 1);
+            start.setHours(0, 0, 0, 0);
+            startMs = start.getTime();
+        }
+        return all.filter(h => {
+            if (h.className !== className) return false;
+            if (startMs !== null) {
+                const t = this.parseActivityDate(h.time).getTime();
+                if (Number.isNaN(t) || t < startMs) return false;
+            }
+            return true;
+        });
+    },
+
+    confirmAiClassAnalysis() {
+        const ctx = this._aiClassAnalysisCtx;
+        if (!ctx || !ctx.className) return;
+        this.runAiClassAnalysis(ctx.className, ctx.rangeKey);
+    },
+
+    regenerateAiClassAnalysis() {
+        const cached = (this._aiClassAnalysis || {})[this._aiClassAnalysisCtx?.className];
+        const rangeKey = cached?.rangeKey || this._aiClassAnalysisCtx?.rangeKey || '7d';
+        const className = this._aiClassAnalysisCtx?.className;
+        if (!className) return;
+        if (this._aiClassAnalysis && this._aiClassAnalysis[className]) {
+            delete this._aiClassAnalysis[className];
+        }
+        this.runAiClassAnalysis(className, rangeKey);
+    },
+
+    async runAiClassAnalysis(className, rangeKey) {
+        const dialogues = this.collectAiClassDialogues(className, rangeKey);
+
+        const studentSet = new Set();
+        const bookCount = new Map();
+        dialogues.forEach(d => {
+            if (d.student) studentSet.add(d.student);
+            if (d.book) bookCount.set(d.book, (bookCount.get(d.book) || 0) + 1);
+        });
+        const fallbackTop = [...bookCount.entries()]
+            .map(([q, count]) => ({ q, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10);
+
+        const rangeLabel = this._aiBookAnalysisRangeOptions.find(o => o.key === rangeKey)?.label || rangeKey;
+        const roleLabel = `班级「${className}」`;
+
+        if (!this._aiClassAnalysis) this._aiClassAnalysis = {};
+        this._aiClassAnalysis[className] = {
+            className, rangeKey, rangeLabel, roleLabel,
+            generatedAt: '',
+            sampleCount: dialogues.length,
+            studentCount: studentSet.size,
+            bookCount: bookCount.size,
+            topQuestions: fallbackTop,
+            clusterMode: 'fallback',
+            analysis: '',
+            done: false,
+            generating: true
+        };
+        this._aiClassAnalysisCtx = { className, rangeKey };
+        this.openModal(this.renderAiClassAnalysisModal(), { size: 'xwide' });
+
+        const allQuestionsText = dialogues
+            .flatMap(d => (d.session || []).map(t => ({ q: t.q, book: d.book, student: d.student })).filter(x => x.q))
+            .slice(0, 220)
+            .map((x, i) => `${i + 1}. [${x.student || '匿名'} · 《${x.book || '未知'}》] ${x.q}`)
+            .join('\n');
+
+        const systemPrompt = '你是一个幼儿园教育与儿童发展研究专家，擅长基于一个班级孩子与绘本AI助手的真实对话，洞察整班孩子的兴趣方向、认知阶段、情感诉求与潜在差异。你需要先对该班级所有孩子的提问做语义聚类（同义不同表归为一类），再给出班级层面的整体画像与教学建议。回复用简体中文。';
+        const userPrompt = `以下是${roleLabel}在${rangeLabel}内全部孩子与绘本 AI 助手的提问数据，共 ${dialogues.length} 次对话，涉及 ${studentSet.size} 个孩子、${bookCount.size} 本绘本。
+
+【全部提问（最多 220 条采样，前缀方括号为孩子姓名与对应绘本）】
+${allQuestionsText || '（无）'}
+
+请严格按以下两段式输出：
+
+第一段：在一个 \`\`\`json ... \`\`\` 代码块中输出该班级最关注的 TOP10 主题/话题语义聚类（最多 10 个，按 count 倒序）。结构如下，不要添加多余字段：
+\`\`\`json
+{
+  "clusters": [
+    {"representative": "用一句话概括的代表性主题/问题", "count": 12, "samples": ["原始提问1", "原始提问2"]}
+  ]
+}
+\`\`\`
+要求：把表述不同但意图相同的问题合并为同一类；representative 用通顺自然的一句中文；count 是该类合并后的总数；samples 给 2-4 条原始问句即可。
+
+第二段：紧接 JSON 块后输出 Markdown 班级画像分析正文（不要再放进代码块）：
+1) 概述班级整体的核心兴趣方向、思维特点与情感关注（3 段内）；
+2) 指出班级整体认知发展信号、共性优势与可能存在的个体差异/需要关注的孩子方向（不点名）；
+3) 给出 4-6 条针对该班级可立即落地的集体教学/区角延伸/亲子互动建议；
+4) 全文 700-1000 字，使用 ## 和 - 分小标题与列表，避免空话套话。`;
+
+        try {
+            await this.streamLlmAnalysis({
+                book: className,
+                systemPrompt,
+                userPrompt,
+                onDelta: (delta) => {
+                    const entry = this._aiClassAnalysis[className];
+                    if (!entry) return;
+                    entry.analysis += delta;
+                    this.refreshAiClassAnalysisModal('streaming');
+                },
+                onDone: async (full) => {
+                    const entry = this._aiClassAnalysis[className];
+                    if (!entry) return;
+                    const rawText = full || entry.analysis;
+                    const cluster = this.parseClusterJson(rawText);
+                    if (cluster && Array.isArray(cluster.clusters) && cluster.clusters.length) {
+                        entry.topQuestions = cluster.clusters.slice(0, 10).map(c => ({
+                            q: c.representative || (Array.isArray(c.samples) ? c.samples[0] : '') || '',
+                            count: Number(c.count) || (Array.isArray(c.samples) ? c.samples.length : 0),
+                            samples: Array.isArray(c.samples) ? c.samples.slice(0, 6) : []
+                        })).filter(t => t.q);
+                        entry.clusterMode = 'model';
+                    } else {
+                        entry.clusterMode = 'fallback';
+                    }
+                    const bodyOnly = this.stripClusterJson(rawText);
+                    entry.analysis = bodyOnly || rawText;
+                    try {
+                        const polished = await this.polishAiAnalysis(className, entry.analysis, entry.topQuestions);
+                        if (polished) entry.analysis = polished;
+                    } catch (e) { /* ignore */ }
+                    entry.done = true;
+                    entry.generating = false;
+                    entry.generatedAt = this.formatNowDateTime();
+                    this.refreshAiClassAnalysisModal('done');
+                    this.saveAiClassReport(className, entry);
+                },
+                onError: (err) => {
+                    const entry = this._aiClassAnalysis[className];
+                    if (!entry) return;
+                    entry.error = String(err?.message || err || '生成失败');
+                    entry.generating = false;
+                    this.refreshAiClassAnalysisModal('error');
+                }
+            });
+        } catch (e) {
+            const entry = this._aiClassAnalysis[className];
+            if (entry) {
+                entry.error = String(e?.message || e || '生成失败');
+                entry.generating = false;
+                this.refreshAiClassAnalysisModal('error');
+            }
+        }
+    },
+
+    refreshAiClassAnalysisModal(phase) {
+        const host = document.getElementById('modal-content');
+        if (host) host.innerHTML = this.renderAiClassAnalysisModal(phase);
+        const stream = document.getElementById('ai-analysis-stream');
+        if (stream) stream.scrollTop = stream.scrollHeight;
+    },
+
+    renderAiClassAnalysisModal(phase) {
+        const ctx = this._aiClassAnalysisCtx || {};
+        const className = ctx.className || '';
+        const entry = (this._aiClassAnalysis || {})[className] || {};
+        const top = entry.topQuestions || [];
+        const isGenerating = !!entry.generating;
+        const hasError = !!entry.error;
+        const isDone = !!entry.done;
+        const history = (this._aiClassReports || {})[className] || [];
+        const statusBadge = isGenerating
+            ? '<span class="px-2 py-0.5 rounded text-[11px] bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-cyan-300 animate-pulse"></span>生成中</span>'
+            : isDone
+                ? `<span class="px-2 py-0.5 rounded text-[11px] bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">已生成 · ${entry.generatedAt || ''}</span>`
+                : hasError
+                    ? '<span class="px-2 py-0.5 rounded text-[11px] bg-red-500/20 text-red-300 border border-red-400/30">生成失败</span>'
+                    : '';
+        const histBtn = history.length
+            ? `<button onclick="App.toggleAiClassHistoryPopover('${className.replace(/'/g, "\\'")}')" data-ai-cls-hist-trigger="${this.hashStr(className)}" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-700/50 hover:bg-slate-600/60 text-slate-200 text-xs border border-slate-500/40 transition-colors mr-2" title="查看历史报告">📚 历史 ${history.length}</button>`
+            : '';
+        const regenBtn = isDone || hasError
+            ? `<button onclick="App.regenerateAiClassAnalysis()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs border border-amber-400/30 transition-colors mr-2">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    重新生成
+                </button>`
+            : '';
+        const exportBtn = isDone
+            ? `<button onclick="App.exportAiReport('class', App._aiClassAnalysisCtx?.className)" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs border border-emerald-400/30 transition-colors mr-2" title="导出报告"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>导出</button>`
+            : '';
+        const errorHtml = hasError
+            ? `<div class="bg-red-500/10 border border-red-400/30 rounded-lg p-3 text-sm text-red-300 mb-3">生成失败：${entry.error}。请检查网络或稍后重试。</div>`
+            : '';
+        const analysisHtml = entry.analysis
+            ? this.simpleMarkdown(this.stripClusterJson(entry.analysis))
+            : '<div class="text-slate-500 text-sm">正在思考分析中…</div>';
+        const clusterTag = entry.clusterMode === 'model'
+            ? '<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-400/30">AI 聚类</span>'
+            : (entry.clusterMode === 'fallback' && isDone ? '<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-slate-700/40 text-slate-400 border border-slate-600/40">字面统计</span>' : '');
+        return `
+            <div class="bg-slate-900 rounded-xl p-6 w-full">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-3">
+                        <h3 class="text-lg font-bold text-white">🏫 ${className} · 班级 AI 画像分析</h3>
+                        ${statusBadge}
+                    </div>
+                    <div class="flex items-center">
+                        ${histBtn}
+                        ${exportBtn}
+                        ${regenBtn}
+                        <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-4 gap-3 text-xs text-slate-400 mb-4">
+                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">范围</span><div class="text-slate-200">${entry.roleLabel || '-'} · ${entry.rangeLabel || '-'}</div></div>
+                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">对话样本</span><div class="text-amber-300">${entry.sampleCount || 0} 次</div></div>
+                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">涉及幼儿/绘本</span><div class="text-emerald-300">${entry.studentCount || 0} 人 · ${entry.bookCount || 0} 本</div></div>
+                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">生成时间</span><div class="text-slate-200">${entry.generatedAt || '—'}</div></div>
+                </div>
+
+                <div class="mb-4">
+                    <h4 class="text-sm font-semibold text-amber-300 mb-2 flex items-center">🔥 班级核心关注主题 TOP${Math.min(10, top.length)}${clusterTag}</h4>
+                    ${top.length ? `
+                    <div class="space-y-1.5">
+                        ${top.map((t, i) => {
+                            const sampleAttr = (t.samples && t.samples.length)
+                                ? `title="原始提问示例：\n- ${t.samples.join('\n- ').replace(/"/g, '&quot;')}"`
+                                : '';
+                            return `
+                            <div class="flex items-center gap-2 text-sm" ${sampleAttr}>
+                                <span class="shrink-0 w-6 h-6 rounded-full ${i < 3 ? 'bg-amber-500/30 text-amber-200' : 'bg-slate-700/60 text-slate-300'} text-xs flex items-center justify-center">${i + 1}</span>
+                                <span class="flex-1 text-slate-200">${t.q}</span>
+                                <span class="text-xs text-slate-400">${t.count} 次</span>
+                            </div>`;
+                        }).join('')}
+                    </div>` : '<div class="text-slate-500 text-sm">暂无问题数据</div>'}
+                </div>
+
+                <div>
+                    <h4 class="text-sm font-semibold text-cyan-300 mb-2 flex items-center gap-2">
+                        🧠 AI 分析
+                        ${isGenerating ? '<span class="inline-block w-2 h-3 bg-cyan-300 animate-pulse rounded-sm"></span>' : ''}
+                    </h4>
+                    ${errorHtml}
+                    <div id="ai-analysis-stream" class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-4 pr-5 max-h-[50vh] overflow-y-auto whitespace-normal break-words">
+                        ${analysisHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    toggleAiClassHistoryPopover(className) {
+        const id = `ai-cls-hist-pop-${this.hashStr(className)}`;
+        const existing = document.getElementById(id);
+        if (existing) { existing.remove(); return; }
+        document.querySelectorAll('[data-ai-cls-hist-pop]').forEach(n => n.remove());
+        const trigger = document.querySelector(`[data-ai-cls-hist-trigger="${this.hashStr(className)}"]`);
+        if (!trigger) return;
+        const pop = document.createElement('div');
+        pop.id = id;
+        pop.dataset.aiClsHistPop = '1';
+        pop.className = 'fixed z-[60] bg-slate-900 border border-slate-600 rounded-xl shadow-2xl p-3 w-80 max-h-96 overflow-y-auto';
+        pop.innerHTML = this.renderAiClassHistoryPopover(className);
+        document.body.appendChild(pop);
+        const rect = trigger.getBoundingClientRect();
+        let top = rect.bottom + 6;
+        let left = rect.right - 320;
+        if (left < 8) left = 8;
+        if (top + 384 > window.innerHeight) top = Math.max(8, rect.top - 384 - 6);
+        pop.style.top = `${top}px`;
+        pop.style.left = `${left}px`;
+        setTimeout(() => {
+            const onDocClick = (e) => {
+                if (!pop.contains(e.target) && !trigger.contains(e.target)) {
+                    pop.remove();
+                    document.removeEventListener('click', onDocClick);
+                }
+            };
+            document.addEventListener('click', onDocClick);
+        }, 0);
+    },
+
+    refreshAiClassHistoryPopover(className) {
+        const id = `ai-cls-hist-pop-${this.hashStr(className)}`;
+        const pop = document.getElementById(id);
+        if (pop) pop.innerHTML = this.renderAiClassHistoryPopover(className);
+    },
+
+    renderAiClassHistoryPopover(className) {
+        const list = (this._aiClassReports || {})[className] || [];
+        const escClass = className.replace(/'/g, "\\'");
+        if (!list.length) {
+            return `<div class="text-sm text-slate-400 px-2 py-3 text-center">暂无历史报告</div>`;
+        }
+        const items = list.map(r => {
+            const rangeLabel = r.rangeLabel || r.rangeKey || '-';
+            const dateStr = (r.generatedAt || '-').split(' ')[0] || '-';
+            const sample = r.sampleCount || 0;
+            return `
+                <div class="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-700/40 border border-slate-700/40 mb-1.5">
+                    <div class="flex-1 min-w-0">
+                        <div class="text-xs text-slate-200 truncate">${dateStr} - ${className}</div>
+                        <div class="text-[11px] text-slate-500 mt-0.5">${rangeLabel} · 样本：${sample}</div>
+                    </div>
+                    <button onclick="App.loadHistoricalClassReport('${escClass}', '${(r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-400/30">查看</button>
+                    <button onclick="App.deleteAiClassReport('${escClass}', '${(r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-400/30">删除</button>
+                </div>
+            `;
+        }).join('');
+        return `
+            <div class="flex items-center justify-between mb-2 px-1">
+                <div class="text-sm font-semibold text-amber-300">📚 历史报告 · ${list.length} 份</div>
+                <button onclick="App.toggleAiClassHistoryPopover('${escClass}')" class="text-slate-400 hover:text-white text-xs">✕</button>
+            </div>
+            ${items}
+        `;
     },
 
     // ============================================================
@@ -1083,6 +4369,9 @@ const App = {
             } else {
                 tabs = baseTabs;
             }
+        } else if (this.currentRole === 'teacher') {
+            // 教师视角：本班数据，去掉设备页（设备由园所统管，无班级维度）
+            tabs = baseTabs.filter(t => t.id !== 'devices');
         } else {
             tabs = baseTabs;
         }
@@ -1114,13 +4403,16 @@ const App = {
 
         return `
         <div class="space-y-6">
-            <div class="flex items-center justify-between">
+            <div id="school-data-header" class="flex items-center justify-between">
                 <h2 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">${titleText}</h2>
                 <div class="flex items-center gap-3">
                     ${scopeSelector}
                 </div>
             </div>
-            <div class="bg-slate-600/50 backdrop-blur-sm rounded-2xl border border-slate-500/35 overflow-hidden">
+            <div id="school-date-filter">
+                ${this.renderDateFilterBar('schoolOverview')}
+            </div>
+            <div id="school-data-panel" class="bg-slate-600/50 backdrop-blur-sm rounded-2xl border border-slate-500/35 overflow-hidden">
                 <!-- 标签页导航 -->
                 <div class="flex justify-center items-center border-b border-slate-500/35 overflow-x-auto bg-slate-700/40">
                     ${tabs.map(tab => `
@@ -1142,7 +4434,7 @@ const App = {
         const root = document.querySelector('#page-container > .space-y-6');
         if (!root) return;
 
-        const header = root.children[0];
+        const header = document.getElementById('school-data-header');
         if (header) {
             header.className = 'relative overflow-hidden rounded-[28px] border border-cyan-400/15 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_28%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.18),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.92))] p-6 lg:p-7 shadow-[0_24px_80px_rgba(2,6,23,0.35)] flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5';
             if (!header.querySelector('.school-hero-grid')) {
@@ -1160,7 +4452,7 @@ const App = {
             }
         }
 
-        const panel = root.children[1];
+        const panel = document.getElementById('school-data-panel');
         if (panel) {
             panel.className = 'rounded-[28px] border border-slate-500/30 bg-slate-900/35 backdrop-blur-md overflow-hidden shadow-[0_20px_60px_rgba(15,23,42,0.24)]';
             const nav = panel.children[0];
@@ -1198,6 +4490,10 @@ const App = {
             }
         } else {
             this.schoolDataTab = this.schoolDataTab || 'overview';
+        }
+        // 教师视角不可能停留在 devices 子页签
+        if (this.currentRole === 'teacher' && this.schoolDataTab === 'devices') {
+            this.schoolDataTab = 'overview';
         }
         this.renderSchoolTabContent(this.schoolDataTab);
         // 同步更新tab高亮状态
@@ -1449,10 +4745,11 @@ const App = {
         const d = this.getSchoolOverviewDataForCurrentRange();
         const recommendations = this.getSchoolOverviewBookRecommendations();
         // 教育局管理员显示"全区"，其他角色显示"园所"
-        const scopeLabel = this.currentRole === 'admin' && !this.selectedSchool ? '全区' : '园所';
+        const scopeLabel = this.isTeacherScope()
+            ? '本班'
+            : (this.currentRole === 'admin' && !this.selectedSchool ? '全区' : '园所');
         return `
         <div class="space-y-6">
-            ${this.renderDateFilterBar('schoolOverview')}
             <div>
                 ${this.chartTitle(scopeLabel + '绘本活动概览', 'bg-blue-500')}
                 <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
@@ -1461,6 +4758,13 @@ const App = {
                     ${this.miniStat('绘本总数', d.bookTotal, 'purple')}
                     ${this.miniStat('绘本阅读次数', d.bookReadCount, 'amber')}
                     ${this.miniStat('绘本阅读时长', d.bookReadDuration + 'h', 'cyan')}
+                </div>
+            </div>
+            <div>
+                ${this.chartTitle(scopeLabel + '大模型使用概况', 'bg-cyan-500')}
+                <div class="grid grid-cols-2 gap-3">
+                    ${this.miniStat('大模型绘本数', d.llmBookCount, 'cyan')}
+                    ${this.miniStat('大模型对话次数', d.llmChatCount, 'purple')}
                 </div>
             </div>
             <div>
@@ -1474,24 +4778,15 @@ const App = {
                     `).join('')}
                 </div>
             </div>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                    ${this.chartTitle(scopeLabel + '设备概况', 'bg-cyan-500')}
-                    <div class="grid grid-cols-3 gap-3">
-                        ${this.miniStat('设备总数', d.deviceTotal, 'cyan')}
-                        ${this.miniStat('使用次数', d.deviceUseCount, 'cyan')}
-                        ${this.miniStat('使用时长', d.deviceUseDuration + 'h', 'cyan')}
-                    </div>
+            ${this.isTeacherScope() ? '' : `
+            <div>
+                ${this.chartTitle(scopeLabel + '设备概况', 'bg-cyan-500')}
+                <div class="grid grid-cols-3 gap-3">
+                    ${this.miniStat('设备总数', d.deviceTotal, 'cyan')}
+                    ${this.miniStat('使用次数', d.deviceUseCount, 'cyan')}
+                    ${this.miniStat('使用时长', d.deviceUseDuration + 'h', 'cyan')}
                 </div>
-                <div>
-                    ${this.chartTitle(scopeLabel + '基础信息', 'bg-amber-500')}
-                    <div class="grid grid-cols-3 gap-3">
-                        ${this.miniStat('班级总数', d.classTotal, 'amber')}
-                        ${this.miniStat('教师总数', d.teacherTotal, 'amber')}
-                        ${this.miniStat('幼儿总数', d.studentTotal, 'amber')}
-                    </div>
-                </div>
-            </div>
+            </div>`}
             ${this.currentRole !== 'admin' ? this.card(`
                 <div class="flex items-center justify-between gap-3 mb-4">
                     ${this.chartTitle('绘本推荐栏', 'bg-rose-500')}
@@ -1525,11 +4820,11 @@ const App = {
     renderSchoolActivities() {
         const f = this.filters.activities;
         const p = this.pagination.activities;
-        let data = MockData.schoolData.activities;
+        const isTeacher = this.isTeacherScope();
+        let data = this.filterActivitiesByGlobalRange(MockData.schoolData.activities);
+        if (isTeacher) data = data.filter(a => a.className === this.getTeacherClassName());
         if (f.className) data = data.filter(a => a.className.includes(f.className));
         if (f.teacher) data = data.filter(a => a.teacher.includes(f.teacher));
-        if (f.startTime) data = data.filter(a => a.endTime >= f.startTime);
-        if (f.endTime) data = data.filter(a => a.endTime <= f.endTime + ' 23:59:59');
         const total = data.length;
         const totalPages = Math.ceil(total / p.pageSize);
         const pageData = data.slice((p.page - 1) * p.pageSize, p.page * p.pageSize);
@@ -1537,14 +4832,14 @@ const App = {
         const classOptions = '<option value="">全部</option>' + [...new Set(MockData.schoolData.activities.map(a => a.className))].map(c => `<option value="${c}" ${f.className===c?'selected':''}>${c}</option>`).join('');
 
         const headers = [
-            { label: '序号' }, { label: '活动开始时间' }, { label: '活动结束时间' },
+            { label: '序号' }, { label: '活动开始时间' }, { label: '活动持续时长', align: 'text-center' },
             { label: '教师' }, { label: '参与班级' }, { label: '参与幼儿', align: 'text-center' }, { label: '操作', align: 'text-center' }
         ];
         const rows = pageData.map((a, i) => `
             <tr class="hover:bg-blue-500/5 transition-colors">
                 <td class="px-4 py-3 text-slate-500">${(p.page-1)*p.pageSize+i+1}</td>
                 <td class="px-4 py-3 text-slate-300">${a.startTime}</td>
-                <td class="px-4 py-3 text-slate-300">${a.endTime}</td>
+                <td class="px-4 py-3 text-center text-slate-300">${this.formatActivityDuration(a.startTime, a.endTime)}</td>
                 <td class="px-4 py-3 text-slate-200">${a.teacher}</td>
                 <td class="px-4 py-3 text-slate-200">${a.className}</td>
                 <td class="px-4 py-3 text-center text-slate-300">${a.studentCount}人</td>
@@ -1555,9 +4850,7 @@ const App = {
         return `
         <div>
             ${this.filterBar(`
-                <div><label class="block text-xs text-slate-500 mb-1">活动结束时间（起）</label><input type="date" class="bg-slate-800/80 border border-slate-600/50 text-slate-200 text-sm rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500/40 outline-none" value="${f.startTime}" onchange="App.filters.activities.startTime=this.value"></div>
-                <div><label class="block text-xs text-slate-500 mb-1">活动结束时间（止）</label><input type="date" class="bg-slate-800/80 border border-slate-600/50 text-slate-200 text-sm rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500/40 outline-none" value="${f.endTime}" onchange="App.filters.activities.endTime=this.value"></div>
-                ${this.filterSelect('参与班级', classOptions, `onchange="App.filters.activities.className=this.value"`)}
+                ${isTeacher ? '' : this.filterSelect('参与班级', classOptions, `onchange="App.filters.activities.className=this.value"`)}
                 ${this.filterInput('教师', `placeholder="请输入教师姓名" value="${f.teacher}" oninput="App.filters.activities.teacher=this.value"`)}
                 ${this.btnPrimary('查询', "App.pagination.activities.page=1;App.renderSchoolTabContent('activities')")}
                 ${this.btnSecondary('重置', "App.filters.activities={startTime:'',endTime:'',className:'',teacher:''};App.pagination.activities.page=1;App.renderSchoolTabContent('activities')")}
@@ -1571,7 +4864,23 @@ const App = {
     renderSchoolBooks() {
         const f = this.filters.books;
         const p = this.pagination.books;
-        let data = MockData.schoolData.books;
+        const isTeacher = this.isTeacherScope();
+        const ratio = this.getSchoolRangeRatio();
+        let data = isTeacher ? this.buildTeacherClassBooks() : MockData.schoolData.books;
+        // 全局时间筛选：按比例缩放阅读次数与时长
+        data = data.map(b => {
+            const baseCount = Number(b.readCount) || 0;
+            const scaledCount = ratio <= 0 ? 0 : Math.max(0, Math.round(baseCount * ratio));
+            const durationMatch = String(b.readDuration || '').match(/([\d.]+)/);
+            const durationNum = durationMatch ? parseFloat(durationMatch[1]) : 0;
+            const durationUnit = String(b.readDuration || '').replace(durationMatch ? durationMatch[1] : '', '').trim();
+            const scaledDuration = ratio <= 0 ? 0 : durationNum * ratio;
+            return {
+                ...b,
+                readCount: scaledCount,
+                readDuration: durationMatch ? `${scaledDuration.toFixed(2)}${durationUnit}` : b.readDuration
+            };
+        });
         if (f.type) data = data.filter(b => b.type.includes(f.type));
         if (f.name) data = data.filter(b => b.name.includes(f.name));
         if (f.isbn) data = data.filter(b => b.isbn.includes(f.isbn));
@@ -1592,7 +4901,15 @@ const App = {
                 <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewBookDetail(${b.id})">查看</button></td>
             </tr>`).join('');
 
+        const teacherHint = isTeacher ? (() => {
+            const stats = this.selectedClass.bookTypeStats || {};
+            const totalReads = Object.values(stats).reduce((a,b)=>a+b,0);
+            const typeCount = Object.keys(stats).length;
+            return `<div class="mb-3 text-xs text-slate-400">本班共阅读 <span class="text-blue-400 font-semibold">${totalReads}</span> 次，覆盖 <span class="text-blue-400 font-semibold">${typeCount}</span> 个绘本类型</div>`;
+        })() : '';
+
         return `<div>
+            ${teacherHint}
             ${this.filterBar(`
                 ${this.filterSelect('绘本类型', typeOptions, `onchange="App.filters.books.type=this.value"`)}
                 ${this.filterInput('绘本名称', `placeholder="请输入绘本名称" value="${f.name}" oninput="App.filters.books.name=this.value"`)}
@@ -1605,10 +4922,53 @@ const App = {
         </div>`;
     },
 
+    buildTeacherClassBooks() {
+        const cls = this.selectedClass;
+        const stats = cls?.bookTypeStats || {};
+        const grouped = {};
+        MockData.schoolData.books.forEach(b => {
+            if (stats[b.type] != null) {
+                (grouped[b.type] = grouped[b.type] || []).push(b);
+            }
+        });
+        const out = [];
+        Object.entries(stats).forEach(([type, total]) => {
+            const list = (grouped[type] || []).slice(0, 3);
+            if (!list.length || total <= 0) return;
+            const per = Math.max(1, Math.floor(total / list.length));
+            list.forEach((b, i) => {
+                const reads = i === 0 ? total - per * (list.length - 1) : per;
+                out.push({
+                    ...b,
+                    readCount: Math.max(0, reads),
+                    readDuration: `${(reads * 0.05).toFixed(2)}h`
+                });
+            });
+        });
+        return out.sort((a, b) => b.readCount - a.readCount);
+    },
+
     // 园所数据 - 班级
     renderSchoolClasses() {
         const p = this.pagination.classes;
-        const data = MockData.classes;
+        const ratio = this.getSchoolRangeRatio();
+        let data = MockData.classes;
+        if (this.isTeacherScope()) data = data.filter(c => c.id === this.selectedClass.id);
+        // 全局时间筛选：按比例缩放活动次数/时长/参与人次/设备使用次数
+        data = data.map(c => {
+            const scaleCount = v => ratio <= 0 ? 0 : Math.max(0, Math.round((Number(v) || 0) * ratio));
+            const durationMatch = String(c.activityDuration || '').match(/([\d.]+)/);
+            const durationNum = durationMatch ? parseFloat(durationMatch[1]) : 0;
+            const durationUnit = String(c.activityDuration || '').replace(durationMatch ? durationMatch[1] : '', '').trim();
+            const scaledDuration = ratio <= 0 ? 0 : durationNum * ratio;
+            return {
+                ...c,
+                activityCount: scaleCount(c.activityCount),
+                activityDuration: durationMatch ? `${scaledDuration.toFixed(1)}${durationUnit}` : c.activityDuration,
+                deviceUseCount: scaleCount(c.deviceUseCount),
+                participantCount: scaleCount(c.participantCount)
+            };
+        });
         const total = data.length;
         const totalPages = Math.ceil(total / p.pageSize);
         const pageData = data.slice((p.page-1)*p.pageSize, p.page*p.pageSize);
@@ -1632,8 +4992,27 @@ const App = {
     renderSchoolTeachers() {
         const f = this.filters.teachers;
         const p = this.pagination.teachers;
-        let data = MockData.schoolData.teachers;
-        if (f.name) data = data.filter(t => t.name.includes(f.name));
+        const isTeacher = this.isTeacherScope();
+        const ratio = this.getSchoolRangeRatio();
+        let data;
+        if (isTeacher) {
+            data = (this.selectedClass.teachers || []).map((t, i) => ({ id: i + 1, ...t }));
+        } else {
+            data = MockData.schoolData.teachers;
+            if (f.name) data = data.filter(t => t.name.includes(f.name));
+        }
+        // 全局时间筛选：按比例缩放活动次数与时长
+        data = data.map(t => {
+            const durationMatch = String(t.activityDuration || '').match(/([\d.]+)/);
+            const durationNum = durationMatch ? parseFloat(durationMatch[1]) : 0;
+            const durationUnit = String(t.activityDuration || '').replace(durationMatch ? durationMatch[1] : '', '').trim();
+            const scaledDuration = ratio <= 0 ? 0 : durationNum * ratio;
+            return {
+                ...t,
+                activityCount: ratio <= 0 ? 0 : Math.max(0, Math.round((Number(t.activityCount) || 0) * ratio)),
+                activityDuration: durationMatch ? `${scaledDuration.toFixed(1)}${durationUnit}` : t.activityDuration
+            };
+        });
         const total = data.length;
         const totalPages = Math.ceil(total / p.pageSize);
         const pageData = data.slice((p.page-1)*p.pageSize, p.page*p.pageSize);
@@ -1647,7 +5026,7 @@ const App = {
                 <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewTeacherActivities('${t.name}')">查看绘本活动记录</button></td>
             </tr>`).join('');
         return `<div>
-            ${this.filterBar(`
+            ${isTeacher ? '' : this.filterBar(`
                 ${this.filterInput('教师姓名', `placeholder="请输入教师姓名" value="${f.name}" oninput="App.filters.teachers.name=this.value"`)}
                 ${this.btnPrimary('查询', "App.pagination.teachers.page=1;App.renderSchoolTabContent('teachers')")}
                 ${this.btnSecondary('重置', "App.filters.teachers={name:''};App.pagination.teachers.page=1;App.renderSchoolTabContent('teachers')")}
@@ -1661,9 +5040,26 @@ const App = {
     renderSchoolStudents() {
         const f = this.filters.students;
         const p = this.pagination.students;
+        const isTeacher = this.isTeacherScope();
+        const ratio = this.getSchoolRangeRatio();
         let data = MockData.students;
+        if (isTeacher) data = data.filter(s => s.classId === this.selectedClass.id);
         if (f.name) data = data.filter(s => s.name.includes(f.name));
         if (f.className) data = data.filter(s => s.className.includes(f.className));
+        // 全局时间筛选：按比例缩放参与活动次数/时长/绘本总数
+        data = data.map(s => {
+            const durationMatch = String(s.activityDuration || '').match(/([\d.]+)/);
+            const durationNum = durationMatch ? parseFloat(durationMatch[1]) : 0;
+            const durationUnit = String(s.activityDuration || '').replace(durationMatch ? durationMatch[1] : '', '').trim();
+            const scaledDuration = ratio <= 0 ? 0 : durationNum * ratio;
+            const scaleCount = v => ratio <= 0 ? 0 : Math.max(0, Math.round((Number(v) || 0) * ratio));
+            return {
+                ...s,
+                activityCount: scaleCount(s.activityCount),
+                activityDuration: durationMatch ? `${scaledDuration.toFixed(1)}${durationUnit}` : s.activityDuration,
+                bookCount: scaleCount(s.bookCount)
+            };
+        });
         const total = data.length;
         const totalPages = Math.ceil(total / p.pageSize);
         const pageData = data.slice((p.page-1)*p.pageSize, p.page*p.pageSize);
@@ -1683,7 +5079,7 @@ const App = {
         return `<div>
             ${this.filterBar(`
                 ${this.filterInput('幼儿姓名', `placeholder="请输入幼儿姓名" value="${f.name}" oninput="App.filters.students.name=this.value"`)}
-                ${this.filterSelect('所属班级', classOptions, `onchange="App.filters.students.className=this.value"`)}
+                ${isTeacher ? '' : this.filterSelect('所属班级', classOptions, `onchange="App.filters.students.className=this.value"`)}
                 ${this.btnPrimary('查询', "App.pagination.students.page=1;App.renderSchoolTabContent('students')")}
                 ${this.btnSecondary('重置', "App.filters.students={name:'',className:''};App.pagination.students.page=1;App.renderSchoolTabContent('students')")}
             `)}
@@ -1696,8 +5092,21 @@ const App = {
     renderSchoolDevices() {
         const f = this.filters.devices;
         const p = this.pagination.devices;
+        const ratio = this.getSchoolRangeRatio();
         let data = MockData.devices;
         if (f.sn) data = data.filter(d => d.sn.includes(f.sn));
+        // 全局时间筛选：按比例缩放使用次数与时长
+        data = data.map(d => {
+            const durationMatch = String(d.useDuration || '').match(/([\d.]+)/);
+            const durationNum = durationMatch ? parseFloat(durationMatch[1]) : 0;
+            const durationUnit = String(d.useDuration || '').replace(durationMatch ? durationMatch[1] : '', '').trim();
+            const scaledDuration = ratio <= 0 ? 0 : durationNum * ratio;
+            return {
+                ...d,
+                useCount: ratio <= 0 ? 0 : Math.max(0, Math.round((Number(d.useCount) || 0) * ratio)),
+                useDuration: durationMatch ? `${scaledDuration.toFixed(1)}${durationUnit}` : d.useDuration
+            };
+        });
         const total = data.length;
         const totalPages = Math.ceil(total / p.pageSize);
         const pageData = data.slice((p.page-1)*p.pageSize, p.page*p.pageSize);
@@ -2083,8 +5492,22 @@ const App = {
     },
 
     viewBookDetail(id, mode = 'modal') {
-        const b = MockData.schoolData.books.find(x => x.id === id);
-        if (!b) return;
+        const original = MockData.schoolData.books.find(x => x.id === id);
+        if (!original) return;
+        // 按全局时间筛选缩放阅读次数与时长
+        const ratio = this.getSchoolRangeRatio();
+        const baseCount = Number(original.readCount) || 0;
+        const scaledCount = ratio <= 0 ? 0 : Math.max(0, Math.round(baseCount * ratio));
+        const durationMatch = String(original.readDuration || '').match(/([\d.]+)/);
+        const durationNum = durationMatch ? parseFloat(durationMatch[1]) : 0;
+        const durationUnit = String(original.readDuration || '').replace(durationMatch ? durationMatch[1] : '', '').trim();
+        const scaledDuration = ratio <= 0 ? 0 : durationNum * ratio;
+        const b = {
+            ...original,
+            readCount: scaledCount,
+            readDuration: durationMatch ? `${scaledDuration.toFixed(2)}${durationUnit}` : original.readDuration,
+            readingStudents: this.filterReadingStudentsByGlobalRange(original.readingStudents)
+        };
         
         // 生成幼儿阅读数据表格
         const studentHeaders = [
@@ -2238,39 +5661,169 @@ const App = {
         this._originalBookTabContent = null;
     },
 
+    // 根据 schoolOverview 时间筛选生成班级报告的时间轴（日/月）
+    buildClassReportTimeline() {
+        const range = this.dateRanges.schoolOverview || {};
+        const start = range?.startDate ? new Date(`${range.startDate}T00:00:00`) : null;
+        const end = range?.endDate ? new Date(`${range.endDate}T23:59:59`) : null;
+        const granularity = this.getOverviewSeriesGranularity(range);
+        const dates = [];
+        if (start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+            if (granularity === 'month') {
+                const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+                const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+                while (cursor <= endMonth) {
+                    dates.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`);
+                    cursor.setMonth(cursor.getMonth() + 1);
+                }
+            } else {
+                const cursor = new Date(start);
+                cursor.setHours(0, 0, 0, 0);
+                const endDate = new Date(end);
+                endDate.setHours(0, 0, 0, 0);
+                while (cursor <= endDate) {
+                    dates.push(this.formatDateInput(cursor).slice(5));
+                    cursor.setDate(cursor.getDate() + 1);
+                }
+            }
+        }
+        return { dates, granularity };
+    },
+
+    // 构建班级绘本类型时间序列（各类型按时间分布的阅读本数）
+    buildClassBookTypeSeries(cls) {
+        const { dates, granularity } = this.buildClassReportTimeline();
+        const stats = cls.bookTypeStats || {};
+        const types = Object.keys(stats);
+        if (!dates.length || !types.length) return { dates, granularity, series: [] };
+
+        const series = types.map((typeName, typeIdx) => {
+            const total = stats[typeName] || 0;
+            // 基于班级ID+类型做伪随机分布，保证稳定且有差异
+            const seedBase = (cls.id || 1) * 7 + typeIdx * 13;
+            const weights = dates.map((_, i) => {
+                const v = Math.sin((i + seedBase) * 0.6) * 0.5 + Math.cos((i + typeIdx) * 0.35) * 0.3 + 1;
+                return Math.max(0.2, v);
+            });
+            const weightSum = weights.reduce((s, w) => s + w, 0);
+            let allocated = 0;
+            const values = weights.map((w, i) => {
+                if (i === weights.length - 1) return Math.max(0, total - allocated);
+                const v = Math.round(total * (w / weightSum));
+                allocated += v;
+                return v;
+            });
+            return { name: typeName, values };
+        });
+        return { dates, granularity, series };
+    },
+
+    // 构建班级能力分布时间序列（各能力随时间的得分变化）
+    buildClassAbilitySeries(cls) {
+        const { dates, granularity } = this.buildClassReportTimeline();
+        const stats = cls.abilityStats || {};
+        const abilities = Object.keys(stats);
+        if (!dates.length || !abilities.length) return { dates, granularity, series: [] };
+
+        const series = abilities.map((name, abilityIdx) => {
+            const target = stats[name] || 0;
+            const seedBase = (cls.id || 1) * 11 + abilityIdx * 17;
+            const n = dates.length;
+            // 从 target-8 起步渐进到 target，并叠加小幅波动，最终值收敛到 target
+            const startVal = Math.max(0, target - Math.min(10, Math.round(target * 0.12)));
+            const values = dates.map((_, i) => {
+                const progress = n === 1 ? 1 : i / (n - 1);
+                const base = startVal + (target - startVal) * progress;
+                const noise = Math.sin((i + seedBase) * 0.7) * 2.5 + Math.cos((i + abilityIdx) * 0.5) * 1.5;
+                const v = Math.round(base + (i === n - 1 ? 0 : noise));
+                return Math.max(0, Math.min(100, v));
+            });
+            return { name, values };
+        });
+        return { dates, granularity, series };
+    },
+
+    // 构建幼儿能力分布时间序列（复用班级逻辑，按学生 ID 生成稳定波动）
+    buildStudentAbilitySeries(student) {
+        const { dates, granularity } = this.buildClassReportTimeline();
+        const stats = student.abilityStats || {};
+        const abilities = Object.keys(stats);
+        if (!dates.length || !abilities.length) return { dates, granularity, series: [] };
+
+        const series = abilities.map((name, abilityIdx) => {
+            const target = stats[name] || 0;
+            const seedBase = (student.id || 1) * 13 + abilityIdx * 19;
+            const n = dates.length;
+            const startVal = Math.max(0, target - Math.min(10, Math.round(target * 0.15)));
+            const values = dates.map((_, i) => {
+                const progress = n === 1 ? 1 : i / (n - 1);
+                const base = startVal + (target - startVal) * progress;
+                const noise = Math.sin((i + seedBase) * 0.65) * 2.8 + Math.cos((i + abilityIdx) * 0.45) * 1.6;
+                const v = Math.round(base + (i === n - 1 ? 0 : noise));
+                return Math.max(0, Math.min(100, v));
+            });
+            return { name, values };
+        });
+        return { dates, granularity, series };
+    },
+
     viewClassDetail(id, mode = 'modal') {
-        const cls = MockData.classes.find(c => c.id === id);
-        if (!cls) return;
+        const clsOriginal = MockData.classes.find(c => c.id === id);
+        if (!clsOriginal) return;
+        // 按全局时间筛选缩放班级派生指标
+        const ratio = this.getSchoolRangeRatio();
+        const scaleCount = v => ratio <= 0 ? 0 : Math.max(0, Math.round((Number(v) || 0) * ratio));
+        const scaleDuration = (text, digits = 1) => {
+            const m = String(text || '').match(/([\d.]+)/);
+            if (!m) return text;
+            const n = parseFloat(m[1]);
+            const unit = String(text).replace(m[1], '').trim();
+            return `${(ratio <= 0 ? 0 : n * ratio).toFixed(digits)}${unit}`;
+        };
+        const cls = {
+            ...clsOriginal,
+            activityCount: scaleCount(clsOriginal.activityCount),
+            activityDuration: scaleDuration(clsOriginal.activityDuration),
+            deviceUseCount: scaleCount(clsOriginal.deviceUseCount),
+            participantCount: scaleCount(clsOriginal.participantCount),
+            teachers: (clsOriginal.teachers || []).map(t => ({
+                ...t,
+                activityCount: scaleCount(t.activityCount),
+                activityDuration: scaleDuration(t.activityDuration)
+            }))
+        };
+
+        // 获取班级学生数据（也按 ratio 缩放）
+        const students = MockData.students.filter(s => s.classId === id).map(s => ({
+            ...s,
+            activityCount: scaleCount(s.activityCount),
+            activityDuration: scaleDuration(s.activityDuration),
+            bookCount: scaleCount(s.bookCount)
+        }));
         
-        // 获取班级学生数据
-        const students = MockData.students.filter(s => s.classId === id);
-        
-        // 生成绘本类型占比HTML
-        const bookTypeStats = cls.bookTypeStats || {};
-        const bookTypeHtml = Object.entries(bookTypeStats).length > 0
-            ? Object.entries(bookTypeStats).map(([type, count]) => `
-                <div class="flex items-center justify-between py-1.5 px-2 rounded bg-blue-500/10 border border-blue-500/20">
-                    <span class="text-slate-300 text-sm">${type}</span>
-                    <span class="text-blue-400 text-sm font-medium">${count}本</span>
-                </div>
-            `).join('')
-            : '<span class="text-slate-500 text-sm">抱歉，没有统计到阅读数据，无法分析类型占比</span>';
-        
-        // 生成班级能力分布HTML
-        const abilityStats = cls.abilityStats || {};
-        const abilityHtml = Object.entries(abilityStats).length > 0
-            ? Object.entries(abilityStats).map(([ability, score]) => `
-                <div class="flex items-center justify-between py-1">
-                    <span class="text-slate-400 text-sm">${ability}</span>
-                    <div class="flex items-center gap-2">
-                        <div class="w-24 h-2 bg-slate-700 rounded-full overflow-hidden">
-                            <div class="h-full bg-gradient-to-r from-blue-500 to-cyan-500" style="width: ${score}%"></div>
-                        </div>
-                        <span class="text-blue-400 text-sm w-8">${score}</span>
-                    </div>
-                </div>
-            `).join('')
-            : '<span class="text-slate-500 text-sm">抱歉，没有统计到阅读数据，无法分析能力分布</span>';
+        // 绘本类型与能力分布改为按时间筛选联动的折线图
+        const bookTypeSeriesData = this.buildClassBookTypeSeries(clsOriginal);
+        const abilitySeriesData = this.buildClassAbilitySeries(clsOriginal);
+        const reportRange = this.dateRanges.schoolOverview || {};
+        const formatChineseDate = (str) => {
+            if (!str) return '';
+            const m = String(str).match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (!m) return str;
+            return `${parseInt(m[2], 10)}月${parseInt(m[3], 10)}日`;
+        };
+        const periodLabel = reportRange.startDate && reportRange.endDate
+            ? `${formatChineseDate(reportRange.startDate)}-${formatChineseDate(reportRange.endDate)}`
+            : '';
+        const hasBookTypeData = bookTypeSeriesData.series.length > 0;
+        const hasAbilityData = abilitySeriesData.series.length > 0;
+        const bookTypeHtml = hasBookTypeData
+            ? `<div class="text-xs text-slate-500 mb-2">展示周期：${periodLabel}</div>
+               <div id="class-book-type-chart" class="h-64"></div>`
+            : '<div class="h-64 flex items-center justify-center"><span class="text-slate-500 text-sm">抱歉，没有统计到阅读数据，无法分析类型占比</span></div>';
+        const abilityHtml = hasAbilityData
+            ? `<div class="text-xs text-slate-500 mb-2">展示周期：${periodLabel}</div>
+               <div id="class-ability-chart" class="h-64"></div>`
+            : '<div class="h-64 flex items-center justify-center"><span class="text-slate-500 text-sm">抱歉，没有统计到阅读数据，无法分析能力分布</span></div>';
         
         // 生成幼儿列表表格
         const studentHeaders = [
@@ -2352,7 +5905,7 @@ const App = {
                     <div class="p-4">
                         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                             <!-- 左侧：基本信息 -->
-                            <div class="space-y-3">
+                            <div class="space-y-3 lg:col-span-1">
                                 <div class="flex justify-between items-center py-2 border-b border-slate-700/30">
                                     <span class="text-slate-400 text-sm">班级：</span>
                                     <span class="text-slate-200">${cls.name}</span>
@@ -2378,17 +5931,17 @@ const App = {
                                     <span class="text-slate-200">${cls.participantCount}次</span>
                                 </div>
                             </div>
-                            
-                            <!-- 中间：阅读绘本类型占比 -->
-                            <div>
-                                <h4 class="text-sm font-semibold text-slate-300 mb-3">阅读绘本类型占比：</h4>
-                                <div class="grid grid-cols-2 gap-2">${bookTypeHtml}</div>
+
+                            <!-- 中间：阅读绘本类型趋势 -->
+                            <div class="lg:col-span-1">
+                                <h4 class="text-sm font-semibold text-slate-300 mb-3">阅读绘本类型趋势：</h4>
+                                ${bookTypeHtml}
                             </div>
-                            
-                            <!-- 右侧：班级能力分布 -->
-                            <div>
-                                <h4 class="text-sm font-semibold text-slate-300 mb-3">班级能力分布：</h4>
-                                <div class="space-y-1">${abilityHtml}</div>
+
+                            <!-- 右侧：班级能力分布趋势 -->
+                            <div class="lg:col-span-1">
+                                <h4 class="text-sm font-semibold text-slate-300 mb-3">班级能力分布趋势：</h4>
+                                ${abilityHtml}
                             </div>
                         </div>
                     </div>
@@ -2440,6 +5993,22 @@ const App = {
             // 弹窗模式：使用原有弹窗
             this.openModal(content);
         }
+
+        // 记录当前查看的班级ID（在 closeModal 之后设置，避免被清理）
+        this._currentClassDetailId = id;
+        this._currentClassDetailMode = mode;
+
+        // 初始化班级报告内的两个折线图（绘本类型趋势 / 能力分布趋势）
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                if (hasBookTypeData) {
+                    Charts.safeInit(() => Charts.initClassBookTypeLine(bookTypeSeriesData));
+                }
+                if (hasAbilityData) {
+                    Charts.safeInit(() => Charts.initClassAbilityLine(abilitySeriesData));
+                }
+            });
+        });
     },
     
     // 打开班级详情子页面（在当前标签页内容区域内）
@@ -2447,6 +6016,13 @@ const App = {
         // 找到当前标签页内容容器
         const tabContent = document.getElementById('school-tab-content');
         if (!tabContent) return;
+
+        // 已存在子页面：仅替换内部内容，避免覆盖原始 tab 内容备份
+        const existing = document.getElementById('class-subpage-container');
+        if (existing) {
+            existing.innerHTML = html;
+            return;
+        }
 
         // 保存当前 tab 状态
         this._previousSchoolDataTab = this.schoolDataTab;
@@ -2496,10 +6072,16 @@ const App = {
         // 清理保存的内容
         this._originalClassTabContent = null;
         this._previousSchoolDataTab = null;
+        this._currentClassDetailId = null;
     },
 
     viewTeacherActivities(name, mode = 'modal') {
-        const activities = MockData.schoolData.activities.filter(a => a.teacher === name);
+        const teacherClassName = this.isTeacherScope() ? this.getTeacherClassName() : null;
+        const activities = this.filterActivitiesByGlobalRange(MockData.schoolData.activities).filter(a => {
+            if (a.teacher !== name) return false;
+            if (teacherClassName && a.className !== teacherClassName) return false;
+            return true;
+        });
         
         // 生成活动记录表格
         const activityHeaders = [
@@ -2634,8 +6216,18 @@ const App = {
     },
 
     viewStudentReport(id, mode = 'modal') {
-        const s = MockData.students.find(x => x.id === id);
-        if (!s) return;
+        const sOriginal = MockData.students.find(x => x.id === id);
+        if (!sOriginal) return;
+        // 阅读明细：按全局时间筛选生成该幼儿在范围内的逐次阅读记录
+        const detail = this.getStudentReadingDetail(sOriginal);
+        const s = {
+            ...sOriginal,
+            readDurationMinutes: detail.summary.duration,
+            readTimes: detail.summary.times,
+            bookCount: detail.summary.books,
+            completedBooks: detail.summary.completed,
+            activityCount: detail.summary.times
+        };
         
         // 生成阅读类型饼图数据HTML
         const bookTypeStats = s.bookTypeStats || {};
@@ -2648,48 +6240,70 @@ const App = {
             `).join('')
             : '<span class="text-slate-500 text-sm">暂无阅读类型数据</span>';
         
-        // 生成能力分布HTML（气泡形式）
-        const abilityStats = s.abilityStats || {};
-        const abilityColors = {
-            '习惯养成': 'bg-orange-500',
-            '情绪管理': 'bg-cyan-500',
-            '想象力': 'bg-green-500',
-            '科学认知': 'bg-amber-700',
-            '品格养成': 'bg-yellow-500',
-            '社交力': 'bg-indigo-500'
+        // 能力分布改为按时间筛选联动的折线图
+        const abilitySeriesData = this.buildStudentAbilitySeries(sOriginal);
+        const hasAbilityTrend = abilitySeriesData.series.length > 0;
+        const studentReportRange = this.dateRanges.schoolOverview || {};
+        const formatChineseDate = (str) => {
+            if (!str) return '';
+            const m = String(str).match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (!m) return str;
+            return `${parseInt(m[2], 10)}月${parseInt(m[3], 10)}日`;
         };
-        const abilityHtml = Object.entries(abilityStats).length > 0
-            ? Object.entries(abilityStats).map(([ability, score]) => `
-                <div class="inline-flex items-center justify-center ${abilityColors[ability] || 'bg-blue-500'} text-white rounded-full m-1" 
-                     style="width: ${60 + score * 0.4}px; height: ${60 + score * 0.4}px;">
-                    <div class="text-center">
-                        <div class="text-xs font-bold">${ability}</div>
-                        <div class="text-xs">${score}</div>
-                    </div>
-                </div>
-            `).join('')
-            : '<span class="text-slate-500 text-sm">暂无能力分布数据</span>';
+        const studentPeriodLabel = studentReportRange.startDate && studentReportRange.endDate
+            ? `${formatChineseDate(studentReportRange.startDate)}-${formatChineseDate(studentReportRange.endDate)}`
+            : '';
         
-        // 生成爱读榜HTML
+        // 生成爱读榜HTML（绘本封面卡片）
+        const favoriteCoverPalette = [
+            'from-rose-500/35 to-amber-500/25 border-rose-400/30',
+            'from-sky-500/35 to-cyan-400/25 border-sky-400/30',
+            'from-emerald-500/35 to-teal-400/25 border-emerald-400/30',
+            'from-violet-500/35 to-fuchsia-400/25 border-violet-400/30',
+            'from-orange-500/35 to-yellow-400/25 border-orange-400/30',
+            'from-indigo-500/35 to-blue-400/25 border-indigo-400/30'
+        ];
         const favoriteBooksHtml = s.favoriteBooks?.length > 0
-            ? s.favoriteBooks.map((book, idx) => `
-                <div class="flex items-center justify-between py-2 border-b border-slate-700/30">
-                    <span class="text-slate-300">《${book}》</span>
-                    <span class="text-blue-400 text-sm">${3 - idx}次</span>
-                </div>
-            `).join('')
-            : '<span class="text-slate-500 text-sm">暂无数据</span>';
-        
-        // 生成兴趣书单HTML
-        const interestBooksHtml = s.interestBooks?.length > 0
-            ? s.interestBooks.map(book => `<span class="inline-block px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full text-sm mr-2 mb-2">《${book}》</span>`).join('')
-            : '<span class="text-slate-500 text-sm">基于${s.name}的阅读数据分析，发现她/他很喜欢以下类型的书单</span>';
-        
-        // 生成建议书单HTML
-        const recommendBooksHtml = s.recommendBooks?.length > 0
-            ? s.recommendBooks.map(book => `<span class="inline-block px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-full text-sm mr-2 mb-2">《${book}》</span>`).join('')
-            : '<span class="text-slate-500 text-sm">基于${s.name}在3-6岁年龄段中，接下来应更多关注以下类型书籍</span>';
-        
+            ? s.favoriteBooks.map((book, idx) => {
+                const palette = favoriteCoverPalette[idx % favoriteCoverPalette.length];
+                const matched = (MockData.schoolData?.books || []).find(b => b.name === book);
+                const typeBadge = matched?.type
+                    ? `<div class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/35 backdrop-blur text-[10px] text-white/90">${matched.type}</div>`
+                    : '';
+                const rankBadge = idx < 3
+                    ? `<div class="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-amber-400/90 text-slate-900 text-[11px] font-bold flex items-center justify-center shadow-lg">${idx + 1}</div>`
+                    : `<div class="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-slate-700/80 text-slate-200 text-[11px] font-bold flex items-center justify-center">${idx + 1}</div>`;
+                return `
+                    <div class="rounded-xl border border-slate-700/50 bg-slate-900/40 p-3 hover:border-blue-400/30 transition-colors flex flex-col">
+                        <div class="relative aspect-[3/4] rounded-lg overflow-hidden bg-gradient-to-br ${palette} border flex items-center justify-center p-3 shadow-inner">
+                            ${rankBadge}
+                            ${typeBadge}
+                            <div class="text-center">
+                                <div class="text-white text-sm font-semibold leading-snug drop-shadow [text-shadow:0_1px_2px_rgba(0,0,0,0.45)]">《${book}》</div>
+                            </div>
+                            <div class="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/40 to-transparent pointer-events-none"></div>
+                        </div>
+                        <div class="flex items-center justify-between mt-2">
+                            <span class="text-xs text-slate-300 truncate" title="《${book}》">《${book}》</span>
+                            <span class="text-xs text-blue-400 shrink-0 ml-2">${3 - idx}次</span>
+                        </div>
+                    </div>
+                `;
+            }).join('')
+            : '<div class="col-span-3 text-center text-slate-500 text-sm py-6">暂无数据</div>';
+
+        // 兴趣/建议书单：根据时间维度生成不同数量与组合的推荐
+        const studentId = s.id;
+        // 默认 7 天
+        if (!this._studentBookListRanges) this._studentBookListRanges = {};
+        if (!this._studentBookListRanges[studentId]) {
+            this._studentBookListRanges[studentId] = { interest: '7d', recommend: '7d' };
+        }
+        const interestRange = this._studentBookListRanges[studentId].interest;
+        const recommendRange = this._studentBookListRanges[studentId].recommend;
+        const interestBooksHtml = this.renderStudentInterestBooks(s, interestRange);
+        const recommendBooksHtml = this.renderStudentRecommendBooks(s, recommendRange);
+
         // 标题栏按钮
         const headerActions = mode === 'modal'
             ? `<button onclick="App.viewStudentReport(${s.id}, 'subpage')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2" title="在当前页面打开">
@@ -2729,54 +6343,156 @@ const App = {
                 
                 <!-- 阅读统计 -->
                 <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 mb-6">
-                    <h3 class="text-sm font-semibold text-slate-200 mb-4">阅读统计</h3>
-                    <div class="grid grid-cols-4 gap-4">
-                        <div class="text-center">
-                            <div class="text-2xl font-bold text-blue-400">${s.readDurationMinutes || 0}</div>
-                            <div class="text-xs text-slate-400">分钟</div>
-                            <div class="text-xs text-slate-500">阅读时长</div>
-                        </div>
-                        <div class="text-center">
-                            <div class="text-2xl font-bold text-blue-400">${s.readTimes || 0}</div>
-                            <div class="text-xs text-slate-400">次</div>
-                            <div class="text-xs text-slate-500">阅读次数</div>
-                        </div>
-                        <div class="text-center">
-                            <div class="text-2xl font-bold text-blue-400">${s.bookCount || 0}</div>
-                            <div class="text-xs text-slate-400">本</div>
-                            <div class="text-xs text-slate-500">阅读绘本</div>
-                        </div>
-                        <div class="text-center">
-                            <div class="text-2xl font-bold text-blue-400">${s.completedBooks || 0}</div>
-                            <div class="text-xs text-slate-400">本</div>
-                            <div class="text-xs text-slate-500">完整读完</div>
-                        </div>
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-sm font-semibold text-slate-200">阅读统计</h3>
+                        ${(() => {
+                            const dailyMap = new Map();
+                            detail.records.forEach(r => {
+                                if (!r.date) return;
+                                const cur = dailyMap.get(r.date) || { duration: 0, books: new Set() };
+                                cur.duration += Number(r.duration) || 0;
+                                if (r.bookName) cur.books.add(r.bookName);
+                                dailyMap.set(r.date, cur);
+                            });
+                            if (!dailyMap.size) {
+                                return '<span class="text-[11px] text-slate-500">当前时间范围内暂无阅读记录</span>';
+                            }
+                            let bestDate = null;
+                            let bestStat = null;
+                            dailyMap.forEach((stat, date) => {
+                                if (!bestStat || stat.duration > bestStat.duration) {
+                                    bestStat = stat;
+                                    bestDate = date;
+                                }
+                            });
+                            const m = parseInt(bestDate.slice(5, 7), 10);
+                            const d = parseInt(bestDate.slice(8, 10), 10);
+                            return `<span class="text-[11px] text-amber-300">${m}月${d}日阅读了${bestStat.duration}分钟${bestStat.books.size}本书，是最勤奋的一天！</span>`;
+                        })()}
                     </div>
+                    ${(() => {
+                        // 每次进入报告默认收起
+                        this._studentMetricTab = null;
+                        const activeKey = this._studentMetricTab;
+                        const tabs = [
+                            { key: 'duration', label: '阅读时长', unit: '分钟', displayValue: s.readDurationMinutes },
+                            { key: 'times', label: '阅读次数', unit: '次', displayValue: s.readTimes },
+                            { key: 'books', label: '阅读绘本', unit: '本', displayValue: s.bookCount },
+                            { key: 'completed', label: '完整读完', unit: '本', displayValue: s.completedBooks }
+                        ];
+                        const tabsHtml = tabs.map(t => this.renderStudentMetricTab({ ...t, active: t.key === activeKey })).join('');
+
+                        // 各 tab 对应的明细数据与列
+                        const booksAggregated = (() => {
+                            const map = new Map();
+                            detail.records.forEach(r => {
+                                if (!map.has(r.bookName)) {
+                                    map.set(r.bookName, { bookName: r.bookName, bookType: r.bookType, times: 0, duration: 0, lastDate: r.date });
+                                }
+                                const item = map.get(r.bookName);
+                                item.times += 1;
+                                item.duration += r.duration;
+                                if (r.date > item.lastDate) item.lastDate = r.date;
+                            });
+                            return [...map.values()].sort((a, b) => b.times - a.times);
+                        })();
+                        const completedAggregated = (() => {
+                            const map = new Map();
+                            detail.records.filter(r => r.completed).forEach(r => {
+                                if (!map.has(r.bookName)) {
+                                    map.set(r.bookName, { bookName: r.bookName, bookType: r.bookType, date: r.date, duration: r.duration, times: 1 });
+                                } else {
+                                    const item = map.get(r.bookName);
+                                    item.times += 1;
+                                    if (r.date > item.date) { item.date = r.date; item.duration = r.duration; }
+                                }
+                            });
+                            return [...map.values()].sort((a, b) => b.date.localeCompare(a.date));
+                        })();
+
+                        const panels = [
+                            this.renderStudentMetricPanel({
+                                key: 'duration', label: '阅读时长',
+                                hint: `共 ${s.readDurationMinutes} 分钟，由以下 ${detail.records.length} 次阅读组成：`,
+                                records: detail.records,
+                                columns: [
+                                    { label: '日期', render: r => r.date },
+                                    { label: '开始时间', render: r => r.startTime ? r.startTime.slice(11, 16) : '-' },
+                                    { label: '结束时间', render: r => r.endTime ? r.endTime.slice(11, 16) : '-' },
+                                    { label: '绘本', render: r => r.bookName },
+                                    { label: '类型', render: r => r.bookType },
+                                    { label: '时长', render: r => `<span class="text-blue-300 font-semibold">${r.duration}分钟</span>` }
+                                ]
+                            }),
+                            this.renderStudentMetricPanel({
+                                key: 'times', label: '阅读次数',
+                                hint: `共 ${s.readTimes} 次阅读：`,
+                                records: detail.records,
+                                columns: [
+                                    { label: '序号', render: (_r, i) => i + 1 },
+                                    { label: '日期', render: r => r.date },
+                                    { label: '开始时间', render: r => r.startTime ? r.startTime.slice(11, 16) : '-' },
+                                    { label: '绘本', render: r => r.bookName },
+                                    { label: '类型', render: r => r.bookType },
+                                    { label: '时长', render: r => `${r.duration}分钟` },
+                                    { label: '完整读完', render: r => r.completed ? '<span class="text-emerald-400">是</span>' : '<span class="text-amber-400">否</span>' }
+                                ]
+                            }),
+                            this.renderStudentMetricPanel({
+                                key: 'books', label: '阅读绘本',
+                                hint: `共阅读 ${s.bookCount} 本绘本：`,
+                                records: booksAggregated,
+                                columns: [
+                                    { label: '绘本', render: r => r.bookName },
+                                    { label: '类型', render: r => r.bookType },
+                                    { label: '阅读次数', render: r => `${r.times}次` },
+                                    { label: '累计时长', render: r => `${r.duration}分钟` },
+                                    { label: '最近阅读', render: r => r.lastDate }
+                                ]
+                            }),
+                            this.renderStudentMetricPanel({
+                                key: 'completed', label: '完整读完',
+                                hint: `共完整读完 ${s.completedBooks} 本：`,
+                                records: completedAggregated,
+                                emptyText: '当前时间范围内暂无完整读完记录',
+                                columns: [
+                                    { label: '绘本', render: r => r.bookName },
+                                    { label: '类型', render: r => r.bookType },
+                                    { label: '阅读次数', render: r => `${r.times}次` },
+                                    { label: '完整读完日期', render: r => r.date },
+                                    { label: '最近时长', render: r => `${r.duration}分钟` }
+                                ]
+                            })
+                        ].join('');
+
+                        return `
+                            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">${tabsHtml}</div>
+                            <div id="student-metric-panel-wrapper" class="rounded-xl border border-slate-700/50 bg-slate-900/40 p-4 mt-4 ${activeKey ? '' : 'hidden'}">${panels}</div>
+                        `;
+                    })()}
                 </div>
                 
                 <!-- 阅读类型和能力分布 -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                     <!-- 阅读类型 -->
                     <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
-                        <h3 class="text-sm font-semibold text-slate-200 mb-4">阅读类型</h3>
-                        <div class="text-xs text-amber-400 mb-4">${s.name}最喜爱的绘本类型是"${Object.keys(bookTypeStats)[0] || '日常生活'}"</div>
-                        <div class="flex items-center gap-8">
-                            <div class="w-32 h-32 rounded-full bg-gradient-to-br from-blue-500/30 to-cyan-500/30 flex items-center justify-center border border-blue-500/20">
-                                <div class="text-center">
-                                    <div class="text-lg font-bold text-blue-400">${Object.keys(bookTypeStats).length}</div>
-                                    <div class="text-xs text-slate-400">种类型</div>
-                                </div>
-                            </div>
-                            <div>${bookTypeHtml}</div>
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-sm font-semibold text-slate-200">阅读类型</h3>
+                            <span class="text-[11px] text-slate-500">按筛选周期趋势</span>
                         </div>
+                        <div class="text-xs text-amber-400 mb-3">${s.name}最喜爱的绘本类型是"${Object.keys(bookTypeStats)[0] || '日常生活'}"</div>
+                        <div id="student-booktype-trend-chart" class="w-full" style="min-height:260px;height:260px"></div>
                     </div>
-                    
+
                     <!-- 能力分布 -->
                     <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
-                        <h3 class="text-sm font-semibold text-slate-200 mb-4">能力分布</h3>
-                        <div class="flex flex-wrap justify-center items-center min-h-[150px]">
-                            ${abilityHtml}
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-sm font-semibold text-slate-200">能力分布</h3>
+                            ${hasAbilityTrend && studentPeriodLabel ? `<span class="text-[11px] text-slate-500">展示周期：${studentPeriodLabel}</span>` : ''}
                         </div>
+                        ${hasAbilityTrend
+                            ? '<div id="student-ability-chart" class="w-full" style="min-height:260px;height:260px"></div>'
+                            : '<div class="flex items-center justify-center min-h-[150px]"><span class="text-slate-500 text-sm">暂无能力分布数据</span></div>'}
                     </div>
                 </div>
                 
@@ -2790,18 +6506,22 @@ const App = {
                 
                 <!-- 兴趣书单 -->
                 <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 mb-6">
-                    <h3 class="text-sm font-semibold text-slate-200 mb-2">兴趣书单</h3>
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-sm font-semibold text-slate-200">兴趣书单</h3>
+                        ${this.renderBookListRangeSwitcher(s.id, 'interest', interestRange)}
+                    </div>
                     <p class="text-xs text-slate-400 mb-4">基于 <span class="text-amber-400">${s.name}</span> 的阅读数据分析，发现她/他很喜欢以下类型的书单</p>
-                    <div>${interestBooksHtml}</div>
-                    <p class="text-xs text-slate-500 mt-4 text-center">兴趣书单每周一更新数据！</p>
+                    <div id="student-interest-books-${s.id}">${interestBooksHtml}</div>
                 </div>
-                
+
                 <!-- 建议书单 -->
                 <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
-                    <h3 class="text-sm font-semibold text-slate-200 mb-2">建议书单</h3>
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-sm font-semibold text-slate-200">建议书单</h3>
+                        ${this.renderBookListRangeSwitcher(s.id, 'recommend', recommendRange)}
+                    </div>
                     <p class="text-xs text-slate-400 mb-4">基于 <span class="text-amber-400">${s.name}</span> 在3-6岁年龄段中，接下来应更多关注以下类型书籍</p>
-                    <div>${recommendBooksHtml}</div>
-                    <p class="text-xs text-slate-500 mt-4 text-center">建议书单每周一更新数据！</p>
+                    <div id="student-recommend-books-${s.id}">${recommendBooksHtml}</div>
                 </div>
             </div>
         `;
@@ -2814,8 +6534,271 @@ const App = {
             // 弹窗模式：使用原有弹窗
             this.openModal(content);
         }
+
+        // 渲染完成后初始化阅读类型趋势折线图与能力分布趋势折线图
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                this.renderStudentBookTypeTrendChart(detail.records);
+                if (hasAbilityTrend) {
+                    Charts.safeInit(() => Charts.initClassAbilityLine(abilitySeriesData, 'student-ability-chart'));
+                }
+            });
+        });
+
+        // 记录当前查看的幼儿报告ID，以便时间筛选联动重新渲染
+        this._currentStudentReportId = id;
+        this._currentStudentReportMode = mode;
     },
-    
+
+    renderStudentBookTypeTrendChart(records) {
+        const el = document.getElementById('student-booktype-trend-chart');
+        if (!el || typeof echarts === 'undefined') return;
+        const range = this.getSchoolDateRange();
+        const granularity = this.getOverviewSeriesGranularity(range);
+
+        const startMs = range?.startDate ? new Date(`${range.startDate}T00:00:00`).getTime() : null;
+        const endMs = range?.endDate ? new Date(`${range.endDate}T23:59:59`).getTime() : null;
+
+        // 构建按粒度的桶序列
+        const labels = [];
+        if (startMs !== null && endMs !== null) {
+            const cursor = new Date(startMs); cursor.setHours(0, 0, 0, 0);
+            const endDate = new Date(endMs); endDate.setHours(0, 0, 0, 0);
+            while (cursor.getTime() <= endDate.getTime()) {
+                if (granularity === 'month') {
+                    labels.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`);
+                    cursor.setMonth(cursor.getMonth() + 1);
+                    cursor.setDate(1);
+                } else {
+                    labels.push(`${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`);
+                    cursor.setDate(cursor.getDate() + 1);
+                }
+            }
+        }
+        if (!labels.length) {
+            // 兜底：从 records 自身的日期推断
+            const set = new Set();
+            (records || []).forEach(r => {
+                if (!r.date) return;
+                set.add(granularity === 'month' ? r.date.slice(0, 7) : r.date.slice(5, 10));
+            });
+            labels.push(...[...set].sort());
+        }
+
+        const bucketKeyOf = (dateStr) => granularity === 'month' ? dateStr.slice(0, 7) : dateStr.slice(5, 10);
+
+        // 收集类型，每个类型一条折线（按阅读次数）
+        const allTypes = ['日常生活', '人际交往', '情商品格', '国学文化', '科普百科', '语言学习'];
+        const typeColors = {
+            '日常生活': '#60a5fa',
+            '人际交往': '#34d399',
+            '情商品格': '#f59e0b',
+            '国学文化': '#a78bfa',
+            '科普百科': '#22d3ee',
+            '语言学习': '#f472b6'
+        };
+        const buckets = new Map();
+        allTypes.forEach(t => buckets.set(t, new Map(labels.map(l => [l, 0]))));
+        (records || []).forEach(r => {
+            if (!r.bookType || !r.date) return;
+            const key = bucketKeyOf(r.date);
+            const typeMap = buckets.get(r.bookType);
+            if (typeMap && typeMap.has(key)) typeMap.set(key, typeMap.get(key) + 1);
+        });
+
+        const series = allTypes
+            .filter(t => [...buckets.get(t).values()].some(v => v > 0))
+            .map(t => ({
+                name: t,
+                type: 'line',
+                smooth: true,
+                showSymbol: true,
+                symbol: 'circle',
+                symbolSize: 6,
+                lineStyle: { width: 2 },
+                itemStyle: { color: typeColors[t] || '#60a5fa' },
+                emphasis: { focus: 'series' },
+                data: labels.map(l => buckets.get(t).get(l) || 0)
+            }));
+
+        if (this._studentBookTypeChart) {
+            this._studentBookTypeChart.dispose();
+            this._studentBookTypeChart = null;
+        }
+        const chart = echarts.init(el, (typeof Charts !== 'undefined' && Charts.isWarm && Charts.isWarm()) ? 'warm' : null, { renderer: 'canvas' });
+        const option = {
+            grid: { left: 8, right: 16, top: 78, bottom: 28, containLabel: true },
+            tooltip: {
+                trigger: 'axis',
+                backgroundColor: 'rgba(15,23,42,0.92)',
+                borderColor: 'rgba(148,163,184,0.3)',
+                textStyle: { color: '#e2e8f0', fontSize: 12 },
+                valueFormatter: v => `${v}次`
+            },
+            legend: {
+                top: 6,
+                left: 'center',
+                type: 'scroll',
+                textStyle: { color: '#cbd5e1', fontSize: 11 },
+                itemWidth: 10,
+                itemHeight: 10,
+                itemGap: 12,
+                pageIconColor: '#94a3b8',
+                pageIconInactiveColor: '#475569',
+                pageTextStyle: { color: '#94a3b8', fontSize: 11 }
+            },
+            xAxis: {
+                type: 'category',
+                data: labels,
+                boundaryGap: false,
+                axisLabel: { color: '#94a3b8', fontSize: 11 },
+                axisLine: { lineStyle: { color: 'rgba(148,163,184,0.25)' } }
+            },
+            yAxis: {
+                type: 'value',
+                minInterval: 1,
+                name: '次数',
+                nameTextStyle: { color: '#94a3b8', fontSize: 11 },
+                axisLabel: { color: '#94a3b8', fontSize: 11, formatter: v => `${v}` },
+                splitLine: { lineStyle: { color: 'rgba(148,163,184,0.12)' } }
+            },
+            series: series.length ? series : [{ type: 'line', data: labels.map(() => 0), itemStyle: { color: '#475569' } }]
+        };
+        chart.setOption(option);
+        this._studentBookTypeChart = chart;
+
+        // 弹窗模式下容器从 hidden→flex 切换时，初次布局可能偏小，延迟再 resize 一次
+        const safeResize = () => {
+            if (!document.body.contains(el)) return;
+            chart.resize();
+        };
+        requestAnimationFrame(() => requestAnimationFrame(safeResize));
+        setTimeout(safeResize, 60);
+        setTimeout(safeResize, 200);
+        if (typeof ResizeObserver !== 'undefined') {
+            const ro = new ResizeObserver(() => chart.resize());
+            ro.observe(el);
+            this._studentBookTypeChartRO = ro;
+        }
+        const onResize = () => chart.resize();
+        window.addEventListener('resize', onResize);
+        this._studentBookTypeChartWinHandler = onResize;
+    },
+
+    // 兴趣/建议书单时间快筛器（7天 / 1个月 / 半年）
+    renderBookListRangeSwitcher(studentId, kind, active) {
+        const items = [
+            { key: '7d', label: '7天' },
+            { key: '1m', label: '1个月' },
+            { key: '6m', label: '半年' }
+        ];
+        return `
+            <div class="inline-flex items-center bg-slate-900/60 border border-slate-700/60 rounded-lg p-0.5 text-xs">
+                ${items.map(it => `
+                    <button type="button"
+                        onclick="App.setStudentBookListRange(${studentId}, '${kind}', '${it.key}')"
+                        class="px-3 py-1 rounded-md transition-colors ${active === it.key ? 'bg-blue-500/20 text-blue-300' : 'text-slate-400 hover:text-slate-200'}">
+                        ${it.label}
+                    </button>
+                `).join('')}
+            </div>
+        `;
+    },
+
+    setStudentBookListRange(studentId, kind, rangeKey) {
+        if (!this._studentBookListRanges) this._studentBookListRanges = {};
+        if (!this._studentBookListRanges[studentId]) this._studentBookListRanges[studentId] = { interest: '7d', recommend: '7d' };
+        this._studentBookListRanges[studentId][kind] = rangeKey;
+
+        const detail = MockData.getStudentDetail ? MockData.getStudentDetail(studentId) : null;
+        const student = (MockData.students || []).find(x => x.id === studentId)
+            || (detail && detail.student)
+            || { id: studentId };
+
+        const containerId = kind === 'interest' ? `student-interest-books-${studentId}` : `student-recommend-books-${studentId}`;
+        const container = document.getElementById(containerId);
+        if (container) {
+            container.innerHTML = kind === 'interest'
+                ? this.renderStudentInterestBooks(student, rangeKey)
+                : this.renderStudentRecommendBooks(student, rangeKey);
+        }
+
+        // 同步切换器选中样式
+        const switcherWrapper = container ? container.parentElement.querySelector('.inline-flex') : null;
+        if (switcherWrapper) {
+            switcherWrapper.outerHTML = this.renderBookListRangeSwitcher(studentId, kind, rangeKey);
+        }
+    },
+
+    // 周期映射：返回展示数量
+    _bookListSizeOf(rangeKey) {
+        if (rangeKey === '6m') return 8;
+        if (rangeKey === '1m') return 5;
+        return 3;
+    },
+
+    // 兴趣书单：基于 s.interestBooks 与该幼儿喜爱类型，在书库内补足到目标数量
+    renderStudentInterestBooks(s, rangeKey) {
+        const size = this._bookListSizeOf(rangeKey);
+        const base = Array.isArray(s.interestBooks) ? [...s.interestBooks] : [];
+        const favoriteType = (s.bookTypeStats && Object.keys(s.bookTypeStats)[0]) || null;
+        const allBooks = (MockData.schoolData?.books || []).map(b => b.name);
+        const sameTypeBooks = favoriteType
+            ? (MockData.schoolData?.books || []).filter(b => b.type === favoriteType).map(b => b.name)
+            : [];
+
+        const list = [...base];
+        // 不同维度采用不同补足顺序，做出"周期化"差异
+        const fillOrder = rangeKey === '6m'
+            ? [...sameTypeBooks, ...allBooks]
+            : rangeKey === '1m'
+                ? [...sameTypeBooks.slice().reverse(), ...allBooks]
+                : sameTypeBooks;
+        for (const name of fillOrder) {
+            if (list.length >= size) break;
+            if (!list.includes(name)) list.push(name);
+        }
+        // 若仍不足，从全库再补
+        for (const name of allBooks) {
+            if (list.length >= size) break;
+            if (!list.includes(name)) list.push(name);
+        }
+        const final = list.slice(0, size);
+        if (!final.length) {
+            return `<span class="text-slate-500 text-sm">基于${s.name || ''}的阅读数据分析，发现她/他很喜欢以下类型的书单</span>`;
+        }
+        return final.map(book => `<span class="inline-block px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full text-sm mr-2 mb-2">《${book}》</span>`).join('');
+    },
+
+    // 建议书单：基于 s.recommendBooks，按维度补足
+    renderStudentRecommendBooks(s, rangeKey) {
+        const size = this._bookListSizeOf(rangeKey);
+        const base = Array.isArray(s.recommendBooks) ? [...s.recommendBooks] : [];
+        const readNames = new Set(Array.isArray(s.favoriteBooks) ? s.favoriteBooks : []);
+        const allBooks = (MockData.schoolData?.books || []).map(b => b.name);
+        // 优先推送未读过的
+        const unread = allBooks.filter(n => !readNames.has(n));
+        const fillOrder = rangeKey === '6m'
+            ? unread
+            : rangeKey === '1m'
+                ? unread.slice().reverse()
+                : unread;
+        const list = [...base];
+        for (const name of fillOrder) {
+            if (list.length >= size) break;
+            if (!list.includes(name)) list.push(name);
+        }
+        for (const name of allBooks) {
+            if (list.length >= size) break;
+            if (!list.includes(name)) list.push(name);
+        }
+        const final = list.slice(0, size);
+        if (!final.length) {
+            return `<span class="text-slate-500 text-sm">基于${s.name || ''}在3-6岁年龄段中，接下来应更多关注以下类型书籍</span>`;
+        }
+        return final.map(book => `<span class="inline-block px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-full text-sm mr-2 mb-2">《${book}》</span>`).join('');
+    },
+
     // 打开学生详情子页面（在当前标签页内容区域内）
     openStudentSubpage(html) {
         // 找到当前标签页内容容器
@@ -2860,6 +6843,7 @@ const App = {
         
         // 清理保存的内容
         this._originalStudentTabContent = null;
+        this._currentStudentReportId = null;
     },
 
     // ============================================================
@@ -2916,911 +6900,1180 @@ const App = {
     unbindDevice(id) { this.showToast('设备已解绑', 'warning'); },
 
     // ============================================================
-    // AI分析页面
+    //  移动端支持
     // ============================================================
 
-    // 切换AI分析标签（园长视角）
-    switchAiAnalysisTab(tab) {
-        this.aiAnalysisTab = tab;
-        this.loadPage('aiAnalysis');
+    // 检测是否为移动设备
+    isMobile() {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
     },
 
-    // 园长切换分析班级
-    switchAiClass(classId) {
-        this.aiSelectedClass = classId;
-        this.loadPage('aiAnalysis');
-    },
-
-    // 教师切换分析学生
-    switchAiStudent(studentId) {
-        this.aiSelectedStudent = studentId;
-        this.loadPage('aiAnalysis');
-    },
-
-    // 渲染AI分析页面
-    renderAiAnalysisPage() {
-        this.normalizeAiAnalysisTab();
-        if (this.currentRole === 'principal') {
-            return this.renderPrincipalAiAnalysisPage();
-        } else if (this.currentRole === 'teacher') {
-            return this.renderTeacherAiAnalysisPage();
+    // ============================================================
+    //  手机端 AI 报告查看（班级 / 幼儿）
+    // ============================================================
+    renderMobileAiClassReportPanel(className) {
+        if (!this._aiClassReports) this.loadAiClassReports?.();
+        const list = (this._aiClassReports || {})[className] || [];
+        if (!list.length) {
+            return `
+                <div class="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-base font-semibold text-gray-900">🧠 班级 AI 画像报告</h3>
+                        <span class="text-xs text-gray-400">暂无</span>
+                    </div>
+                    <div class="text-sm text-gray-500 mt-2">该班级暂无已生成的 AI 分析报告</div>
+                </div>
+            `;
         }
-        return '';
-    },
-
-    // 园长AI分析页面
-    renderPrincipalAiAnalysisPage() {
-        const school = MockData.kindergartens[0];
-        const classes = MockData.classes.filter(c => c.kindergartenId === 1).slice(0, 6);
-
+        const latest = list[0];
+        const dateStr = (latest.generatedAt || '').split(' ')[0] || '-';
+        const escName = className.replace(/'/g, "\\'");
         return `
-            <div class="space-y-6">
-                <!-- 页面标题 -->
-                <div class="flex items-center justify-between">
-                    <div>
-                        <h2 class="text-2xl font-bold text-white">AI智能分析</h2>
-                        <p class="text-slate-400 text-sm mt-1">${school.name} - 数据深度分析</p>
-                    </div>
+            <div class="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-base font-semibold text-gray-900">🧠 班级 AI 画像报告</h3>
+                    <span class="px-2 py-0.5 rounded-full text-[11px] bg-indigo-50 text-indigo-600 border border-indigo-200">${list.length} 份</span>
                 </div>
-
-                <!-- 维度切换标签 -->
+                <div class="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-purple-50 p-3 mb-3">
+                    <div class="text-xs text-gray-500 mb-1">最新报告 · ${dateStr}</div>
+                    <div class="text-sm text-gray-800">${latest.rangeLabel || '-'} · ${latest.sampleCount || 0} 次对话样本</div>
+                </div>
                 <div class="flex gap-2">
-                    <button onclick="App.switchAiAnalysisTab('school')"
-                        class="px-4 py-2 rounded-lg text-sm font-medium transition-all ${this.aiAnalysisTab === 'school' ? 'bg-blue-500 text-white' : 'bg-slate-600/50 text-slate-300 hover:bg-slate-500/50'}">
-                        园所分析
-                    </button>
-                    <button onclick="App.switchAiAnalysisTab('class')"
-                        class="px-4 py-2 rounded-lg text-sm font-medium transition-all ${this.aiAnalysisTab === 'class' ? 'bg-blue-500 text-white' : 'bg-slate-600/50 text-slate-300 hover:bg-slate-500/50'}">
-                        班级分析
-                    </button>
-                </div>
-
-                ${this.aiAnalysisTab === 'school' ? this.renderSchoolAiAnalysis() : this.renderClassAiAnalysis(classes)}
-            </div>
-        `;
-    },
-
-    // 园所AI分析内容
-    renderSchoolAiAnalysis() {
-        // 使用数据服务计算真实数据
-        const schoolData = MockData.schoolData.overview;
-        const classes = MockData.classes;
-        const students = MockData.students;
-        const readingRecords = MockData.readingRecords || [];
-        const books = MockData.books || [];
-
-        // 计算能力分布
-        const abilityDistribution = DataService.calculateAbilityDistribution(readingRecords, books);
-
-        // 计算类型分布
-        const typeDistribution = DataService.calculateTypeDistribution(readingRecords, books);
-
-        // 准备AI分析数据
-        const analysisData = DataService.prepareSchoolAnalysisData(schoolData, classes, students, readingRecords, books);
-
-        return `
-            <div class="space-y-6">
-                <!-- 数据概览 -->
-                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    ${this.miniStat('活动总数', analysisData.summary.totalActivities, 'blue')}
-                    ${this.miniStat('参与幼儿', `${analysisData.summary.participatingStudents}/${analysisData.summary.totalStudents}`, 'emerald')}
-                    ${this.miniStat('阅读时长', `${analysisData.summary.totalDuration}h`, 'purple')}
-                    ${this.miniStat('人均时长', `${analysisData.summary.avgDurationPerStudent}分钟`, 'amber')}
-                </div>
-
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <!-- 能力维度分布 -->
-                    ${this.card(`
-                        <div class="flex items-center gap-2 mb-4">
-                            <span class="text-cyan-400 text-xl">🎯</span>
-                            <h3 class="text-lg font-semibold text-white">能力维度分布</h3>
-                        </div>
-                        <div id="ai-ability-chart" style="height: 280px;"></div>
-                    `)}
-                    <!-- 绘本类型分布 -->
-                    ${this.card(`
-                        <div class="flex items-center gap-2 mb-4">
-                            <span class="text-purple-400 text-xl">📚</span>
-                            <h3 class="text-lg font-semibold text-white">绘本类型分布</h3>
-                        </div>
-                        <div id="ai-type-chart" style="height: 280px;"></div>
-                    `)}
-                </div>
-
-                <!-- 班级活动对比 -->
-                ${this.card(`
-                    <div class="flex items-center gap-2 mb-4">
-                        <span class="text-amber-400 text-xl">📊</span>
-                        <h3 class="text-lg font-semibold text-white">班级活动对比</h3>
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm">
-                            <thead>
-                                <tr class="border-b border-slate-500/30">
-                                    <th class="text-left py-3 px-4 text-slate-400 font-medium">班级</th>
-                                    <th class="text-center py-3 px-4 text-slate-400 font-medium">活动次数</th>
-                                    <th class="text-center py-3 px-4 text-slate-400 font-medium">人均时长</th>
-                                    <th class="text-center py-3 px-4 text-slate-400 font-medium">参与率</th>
-                                    <th class="text-center py-3 px-4 text-slate-400 font-medium">状态</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${analysisData.classComparison.map(c => `
-                                    <tr class="border-b border-slate-500/20 hover:bg-slate-500/10">
-                                        <td class="py-3 px-4 text-white font-medium">${c.className}</td>
-                                        <td class="py-3 px-4 text-center text-slate-300">${c.activityCount}</td>
-                                        <td class="py-3 px-4 text-center text-slate-300">${c.avgDuration}分钟</td>
-                                        <td class="py-3 px-4 text-center">
-                                            <span class="${c.participationRate >= 80 ? 'text-emerald-400' : c.participationRate >= 50 ? 'text-amber-400' : 'text-red-400'}">${c.participationRate}%</span>
-                                        </td>
-                                        <td class="py-3 px-4 text-center">
-                                            ${c.activityCount === 0 ? '<span class="px-2 py-1 rounded-full text-xs bg-red-500/20 text-red-400">需关注</span>' :
-                                              c.participationRate >= 80 ? '<span class="px-2 py-1 rounded-full text-xs bg-emerald-500/20 text-emerald-400">良好</span>' :
-                                              '<span class="px-2 py-1 rounded-full text-xs bg-amber-500/20 text-amber-400">一般</span>'}
-                                        </td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                `)}
-
-                <!-- AI分析结果 -->
-                <div id="ai-analysis-result">
-                    ${this.renderAiLoading()}
+                    <button onclick="App.openMobileAiReport('class', '${escName}', '${(latest.generatedAt || '').replace(/'/g, "\\'")}')" class="flex-1 px-3 py-2 rounded-lg bg-indigo-500 text-white text-sm font-medium">查看最新</button>
+                    <button onclick="App.openMobileAiReportList('class', '${escName}')" class="flex-1 px-3 py-2 rounded-lg bg-white border border-indigo-300 text-indigo-600 text-sm font-medium">历史 (${list.length})</button>
                 </div>
             </div>
         `;
     },
 
-    // AI加载中状态
-    renderAiLoading() {
+    renderMobileAiStudentReportPanel(studentName) {
+        if (!this._aiStudentReports) this.loadAiStudentReports?.();
+        const list = (this._aiStudentReports || {})[studentName] || [];
+        if (!list.length) {
+            return `
+                <div class="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-base font-semibold text-gray-900">🧠 AI 兴趣画像报告</h3>
+                        <span class="text-xs text-gray-400">暂无</span>
+                    </div>
+                    <div class="text-sm text-gray-500 mt-2">该幼儿暂无已生成的 AI 分析报告</div>
+                </div>
+            `;
+        }
+        const latest = list[0];
+        const dateStr = (latest.generatedAt || '').split(' ')[0] || '-';
+        const escName = studentName.replace(/'/g, "\\'");
         return `
-            ${this.card(`
-                <div class="flex items-center gap-2 mb-4">
-                    <span class="text-blue-400 text-xl">🤖</span>
-                    <h3 class="text-lg font-semibold text-white">AI智能分析</h3>
+            <div class="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-base font-semibold text-gray-900">🧠 AI 兴趣画像报告</h3>
+                    <span class="px-2 py-0.5 rounded-full text-[11px] bg-indigo-50 text-indigo-600 border border-indigo-200">${list.length} 份</span>
                 </div>
-                <div class="flex items-center justify-center py-8">
-                    <div class="animate-spin w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full mr-3"></div>
-                    <span class="text-slate-400">AI正在分析数据...</span>
+                <div class="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-purple-50 p-3 mb-3">
+                    <div class="text-xs text-gray-500 mb-1">最新报告 · ${dateStr}</div>
+                    <div class="text-sm text-gray-800">${latest.rangeLabel || '-'} · ${latest.sampleCount || 0} 次对话样本</div>
                 </div>
-            `)}
-        `;
-    },
-
-    // 渲染AI分析结果
-    renderAiAnalysisResult(result) {
-        return `
-            ${this.card(`
-                <div class="flex items-center gap-2 mb-4">
-                    <span class="text-blue-400 text-xl">🤖</span>
-                    <h3 class="text-lg font-semibold text-white">AI智能分析</h3>
-                </div>
-
-                <!-- 整体评价 -->
-                <div class="mb-6 p-4 rounded-xl bg-slate-700/30 border border-slate-500/20">
-                    <div class="text-sm text-slate-400 mb-2">📊 整体评价</div>
-                    <p class="text-slate-200">${result.overallAssessment}</p>
-                </div>
-
-                <!-- 发现的问题 -->
-                <div class="mb-6">
-                    <div class="text-sm text-slate-400 mb-3">⚠️ 发现的问题</div>
-                    <div class="space-y-3">
-                        ${result.problems.map((p, i) => `
-                            <div class="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <span class="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-sm">${i + 1}</span>
-                                    <span class="text-white font-medium">${p.title}</span>
-                                </div>
-                                <p class="text-slate-300 text-sm">${p.description}</p>
-                                ${p.dataEvidence ? `<p class="text-slate-500 text-xs mt-2">数据依据：${p.dataEvidence}</p>` : ''}
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-
-                <!-- 改进建议 -->
-                <div>
-                    <div class="text-sm text-slate-400 mb-3">💡 改进建议</div>
-                    <div class="space-y-3">
-                        ${result.suggestions.map((s, i) => `
-                            <div class="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <span class="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-sm">${i + 1}</span>
-                                    <span class="text-white font-medium">${s.content}</span>
-                                </div>
-                                ${s.steps && s.steps.length > 0 ? `
-                                    <div class="mt-2 space-y-1">
-                                        ${s.steps.map(step => `
-                                            <div class="flex items-start gap-2 text-sm">
-                                                <span class="text-blue-400 mt-0.5">▸</span>
-                                                <span class="text-slate-400">${step}</span>
-                                            </div>
-                                        `).join('')}
-                                    </div>
-                                ` : ''}
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            `)}
-        `;
-    },
-
-    // 班级AI分析内容
-    renderClassAiAnalysis(classes) {
-        const selectedClassData = MockData.aiAnalysis.classByPrincipal[this.aiSelectedClass] || MockData.aiAnalysis.classByPrincipal[1];
-        const compMatrix = selectedClassData.comparisonMatrix;
-
-        return `
-            <div class="space-y-6">
-                <!-- 班级选择器 -->
-                <div class="flex flex-wrap gap-2">
-                    ${classes.map(c => `
-                        <button onclick="App.switchAiClass(${c.id})"
-                            class="px-4 py-2 rounded-lg text-sm font-medium transition-all ${this.aiSelectedClass === c.id ? 'bg-blue-500 text-white' : 'bg-slate-600/50 text-slate-300 hover:bg-slate-500/50'}">
-                            ${c.name}
-                        </button>
-                    `).join('')}
-                </div>
-
-                <!-- 班级活动趋势 -->
-                ${this.card(`
-                    ${this.chartTitle('班级活动趋势')}
-                    <div id="ai-class-trend-chart" style="height: 280px;"></div>
-                `)}
-
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <!-- 最佳时间段 -->
-                    ${this.card(`
-                        <div class="flex items-center gap-2 mb-4">
-                            <span class="text-emerald-400 text-xl">⏰</span>
-                            <h3 class="text-lg font-semibold text-white">最佳活动时段</h3>
-                        </div>
-                        <p class="text-slate-400 text-sm mb-4">基于历史活动表现的时段洞察</p>
-                        <div class="space-y-3">
-                            ${MockData.aiAnalysis.teacherClass.lessonInsights.bestTimeSlots.map(t => `
-                                <div class="p-3 rounded-xl bg-slate-500/20 border border-slate-500/20">
-                                    <div class="text-white font-medium">${t.timeSlot}</div>
-                                    <div class="text-slate-400 text-xs">${t.description}</div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    `)}
-                    <!-- 绘本类型效果 -->
-                    ${this.card(`
-                        <div class="flex items-center gap-2 mb-4">
-                            <span class="text-cyan-400 text-xl">📚</span>
-                            <h3 class="text-lg font-semibold text-white">绘本类型效果分析</h3>
-                        </div>
-                        <p class="text-slate-400 text-sm mb-4">不同类型绘本的课堂接受度</p>
-                        <div class="space-y-3">
-                            ${MockData.aiAnalysis.teacherClass.lessonInsights.bookTypeEffectiveness.map(b => `
-                                <div class="p-3 rounded-xl bg-slate-500/20 border border-slate-500/20">
-                                    <div class="text-white text-sm font-medium mb-1">${b.type}</div>
-                                    <p class="text-slate-400 text-xs">${b.suggestion}</p>
-                                </div>
-                            `).join('')}
-                        </div>
-                    `)}
-                </div>
-
-                <!-- 最佳实践 -->
-                ${this.card(`
-                    <div class="flex items-center gap-2 mb-4">
-                        <span class="text-emerald-400 text-xl">⭐</span>
-                        <h3 class="text-lg font-semibold text-white">推荐最佳实践</h3>
-                    </div>
-                    <div class="space-y-3">
-                        ${MockData.aiAnalysis.teacherClass.bestPractices.map((p, i) => `
-                            <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                                <div class="flex items-center gap-2 mb-1">
-                                    <span class="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-medium">${i + 1}</span>
-                                    <span class="text-white font-medium">${p.title}</span>
-                                </div>
-                                <p class="text-slate-300 text-sm">${p.description}</p>
-                            </div>
-                        `).join('')}
-                    </div>
-                `)}
-
-                <!-- 教学改进建议 -->
-                ${this.card(`
-                    <div class="flex items-center gap-2 mb-4">
-                        <span class="text-blue-400 text-xl">📖</span>
-                        <h3 class="text-lg font-semibold text-white">教学改进具体建议</h3>
-                    </div>
-                    <div class="space-y-4">
-                        ${MockData.aiAnalysis.teacherClass.teachingImprovements.map((item, i) => `
-                            <div class="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
-                                <div class="flex items-center gap-3 mb-3">
-                                    <span class="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-medium">${i + 1}</span>
-                                    <div>
-                                        <div class="text-white font-medium">${item.area}</div>
-                                        <span class="px-2 py-0.5 rounded-full text-xs ${item.urgency === 'high' ? 'bg-red-500/20 text-red-400' : item.urgency === 'medium' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}">
-                                            ${item.urgency === 'high' ? '急需改进' : item.urgency === 'medium' ? '建议改进' : '优化建议'}
-                                        </span>
-                                    </div>
-                                </div>
-                                <p class="text-slate-300 text-sm mb-2">${item.currentStatus}</p>
-                                <div class="flex items-start gap-2">
-                                    <span class="text-blue-400 mt-0.5">→</span>
-                                    <span class="text-slate-400 text-sm">${item.suggestion}</span>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                `)}
-            </div>
-        `;
-    },
-
-    // 教师AI分析页面
-    renderTeacherAiAnalysisPage() {
-        const cls = this.selectedClass || MockData.classes[0];
-        const students = MockData.students.filter(s => s.classId === cls.id);
-
-        return `
-            <div class="space-y-6">
-                <!-- 页面标题 -->
-                <div class="flex items-center justify-between">
-                    <div>
-                        <h2 class="text-2xl font-bold text-white">AI智能分析</h2>
-                        <p class="text-slate-400 text-sm mt-1">${cls.name} - 班级与学生分析</p>
-                    </div>
-                </div>
-
-                <!-- 维度切换标签 -->
                 <div class="flex gap-2">
-                    <button onclick="App.switchAiAnalysisTab('teacherClass')"
-                        class="px-4 py-2 rounded-lg text-sm font-medium transition-all ${(this.aiAnalysisTab === 'teacherClass' || this.aiAnalysisTab === 'school') ? 'bg-blue-500 text-white' : 'bg-slate-600/50 text-slate-300 hover:bg-slate-500/50'}">
-                        班级分析
-                    </button>
-                    <button onclick="App.switchAiAnalysisTab('student')"
-                        class="px-4 py-2 rounded-lg text-sm font-medium transition-all ${this.aiAnalysisTab === 'student' ? 'bg-blue-500 text-white' : 'bg-slate-600/50 text-slate-300 hover:bg-slate-500/50'}">
-                        学生分析
-                    </button>
+                    <button onclick="App.openMobileAiReport('student', '${escName}', '${(latest.generatedAt || '').replace(/'/g, "\\'")}')" class="flex-1 px-3 py-2 rounded-lg bg-indigo-500 text-white text-sm font-medium">查看最新</button>
+                    <button onclick="App.openMobileAiReportList('student', '${escName}')" class="flex-1 px-3 py-2 rounded-lg bg-white border border-indigo-300 text-indigo-600 text-sm font-medium">历史 (${list.length})</button>
                 </div>
-
-                ${(this.aiAnalysisTab === 'teacherClass' || this.aiAnalysisTab === 'school') ? this.renderTeacherClassAiAnalysis() : this.renderStudentAiAnalysis(students)}
             </div>
         `;
     },
 
-    // 教师视角班级分析
-    renderTeacherClassAiAnalysis() {
-        const data = MockData.aiAnalysis.teacherClass;
-        const insights = data.lessonInsights;
-
-        return `
-            <div class="space-y-6">
-                <!-- 班级活动趋势 -->
-                ${this.card(`
-                    ${this.chartTitle('班级活动趋势')}
-                    <div id="ai-quality-chart" style="height: 280px;"></div>
-                `)}
-
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <!-- 最佳时间段 -->
-                    ${this.card(`
-                        <div class="flex items-center gap-2 mb-4">
-                            <span class="text-emerald-400 text-xl">⏰</span>
-                            <h3 class="text-lg font-semibold text-white">最佳活动时段</h3>
-                        </div>
-                        <p class="text-slate-400 text-sm mb-4">基于历史活动表现的时段洞察</p>
-                        <div class="space-y-3">
-                            ${insights.bestTimeSlots.map(t => `
-                                <div class="p-3 rounded-xl bg-slate-500/20 border border-slate-500/20">
-                                    <div class="text-white font-medium">${t.timeSlot}</div>
-                                    <div class="text-slate-400 text-xs">${t.description}</div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    `)}
-                    <!-- 绘本类型效果 -->
-                    ${this.card(`
-                        <div class="flex items-center gap-2 mb-4">
-                            <span class="text-cyan-400 text-xl">📚</span>
-                            <h3 class="text-lg font-semibold text-white">绘本类型效果分析</h3>
-                        </div>
-                        <p class="text-slate-400 text-sm mb-4">不同类型绘本的课堂接受度</p>
-                        <div class="space-y-3">
-                            ${insights.bookTypeEffectiveness.map(b => `
-                                <div class="p-3 rounded-xl bg-slate-500/20 border border-slate-500/20">
-                                    <div class="text-white text-sm font-medium mb-1">${b.type}</div>
-                                    <p class="text-slate-400 text-xs">${b.suggestion}</p>
-                                </div>
-                            `).join('')}
-                        </div>
-                    `)}
-                </div>
-
-                <div>
-                    <!-- 最佳实践 -->
-                    ${this.card(`
-                        <div class="flex items-center gap-2 mb-4">
-                            <span class="text-emerald-400 text-xl">⭐</span>
-                            <h3 class="text-lg font-semibold text-white">推荐最佳实践</h3>
-                        </div>
-                        <div class="space-y-3">
-                            ${data.bestPractices.map((p, i) => `
-                                <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                                    <div class="flex items-center gap-2 mb-1">
-                                        <span class="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-medium">${i + 1}</span>
-                                        <span class="text-white font-medium">${p.title}</span>
-                                    </div>
-                                    <p class="text-slate-300 text-sm">${p.description}</p>
-                                </div>
-                            `).join('')}
-                        </div>
-                    `)}
-                </div>
-
-                <!-- 教学改进建议 -->
-                ${this.card(`
-                    <div class="flex items-center gap-2 mb-4">
-                        <span class="text-blue-400 text-xl">📖</span>
-                        <h3 class="text-lg font-semibold text-white">教学改进具体建议</h3>
-                    </div>
-                    <div class="space-y-4">
-                        ${data.teachingImprovements.map((item, i) => `
-                            <div class="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
-                                <div class="flex items-center gap-3 mb-3">
-                                    <span class="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-medium">${i + 1}</span>
-                                    <div>
-                                        <div class="text-white font-medium">${item.area}</div>
-                                        <span class="px-2 py-0.5 rounded-full text-xs ${item.urgency === 'high' ? 'bg-red-500/20 text-red-400' : item.urgency === 'medium' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}">
-                                            ${item.urgency === 'high' ? '急需改进' : item.urgency === 'medium' ? '建议改进' : '优化建议'}
-                                        </span>
-                                    </div>
-                                </div>
-                                <p class="text-slate-300 text-sm mb-2">${item.currentStatus}</p>
-                                <div class="flex items-start gap-2">
-                                    <span class="text-blue-400 mt-0.5">→</span>
-                                    <span class="text-slate-400 text-sm">${item.suggestion}</span>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                `)}
-            </div>
-        `;
+    _mobileAiList: function(type, key) {
+        const store = type === 'class' ? (this._aiClassReports || {}) : (this._aiStudentReports || {});
+        return store[key] || [];
     },
 
-    // 学生AI分析内容
-    renderStudentAiAnalysis(students) {
-        // 使用真实数据
-        const student = students.find(s => s.id === this.aiSelectedStudent) || students[0];
-        const cls = this.selectedClass || MockData.classes[0];
-        const readingRecords = MockData.readingRecords || [];
-        const books = MockData.books || [];
+    openMobileAiReportList(type, key) {
+        const list = this._mobileAiList(type, key);
+        const titleName = key;
+        const escKey = key.replace(/'/g, "\\'");
+        const items = list.map(r => {
+            const dateStr = (r.generatedAt || '').split(' ')[0] || '-';
+            return `
+                <div onclick="App.openMobileAiReport('${type}', '${escKey}', '${(r.generatedAt || '').replace(/'/g, "\\'")}')" class="flex items-center justify-between px-4 py-3 border-b border-gray-100 active:bg-gray-50">
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm font-medium text-gray-900">${dateStr}</div>
+                        <div class="text-xs text-gray-500 mt-0.5">${r.rangeLabel || '-'} · ${r.sampleCount || 0} 次对话</div>
+                    </div>
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </div>
+            `;
+        }).join('');
+        const html = `
+            <div class="min-h-screen bg-gray-50">
+                <div class="sticky top-0 z-50 bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
+                    <button onclick="window.history.back()" class="p-2 -ml-2">
+                        <svg class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                    </button>
+                    <h1 class="text-lg font-semibold text-gray-900 flex-1">${type === 'class' ? '班级' : '幼儿'} AI 报告 · ${titleName}</h1>
+                </div>
+                <div class="bg-white mt-3 mx-3 rounded-xl border border-gray-200 overflow-hidden">
+                    ${items || '<div class="px-4 py-8 text-center text-sm text-gray-400">暂无报告</div>'}
+                </div>
+            </div>
+        `;
+        this._renderMobileOverlay(html);
+    },
 
-        // 获取该学生的阅读记录
-        const studentRecords = readingRecords.filter(r => r.studentId === this.aiSelectedStudent);
+    openMobileAiReport(type, key, generatedAt) {
+        const list = this._mobileAiList(type, key);
+        const r = list.find(x => x.generatedAt === generatedAt) || list[0];
+        if (!r) return;
+        const titleMap = {
+            class: `${r.className || key} · 班级 AI 画像`,
+            student: `${r.student || key} · AI 兴趣画像`
+        };
+        const top = (r.topQuestions || []).map((t, i) => `
+            <div class="flex items-center gap-2 py-2 border-b border-gray-100 last:border-0">
+                <span class="shrink-0 w-6 h-6 rounded-full ${i < 3 ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600'} text-xs flex items-center justify-center font-medium">${i + 1}</span>
+                <span class="flex-1 text-sm text-gray-800">${t.q}</span>
+                <span class="text-xs text-gray-400">${t.count} 次</span>
+            </div>
+        `).join('');
+        const analysisHtml = this.simpleMarkdown(this.stripClusterJson(r.analysis || ''));
+        const html = `
+            <div class="min-h-screen bg-gray-50 pb-8">
+                <div class="sticky top-0 z-50 bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
+                    <button onclick="window.history.back()" class="p-2 -ml-2">
+                        <svg class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                    </button>
+                    <h1 class="text-base font-semibold text-gray-900 flex-1 truncate">${titleMap[type] || 'AI 报告'}</h1>
+                </div>
+                <div class="px-4 pt-4">
+                    <div class="bg-white rounded-xl border border-gray-200 p-4 mb-3">
+                        <div class="grid grid-cols-2 gap-3 text-xs">
+                            <div><span class="text-gray-500">生成时间</span><div class="text-gray-900 font-medium">${r.generatedAt || '-'}</div></div>
+                            <div><span class="text-gray-500">范围</span><div class="text-gray-900 font-medium">${r.rangeLabel || '-'}</div></div>
+                            <div><span class="text-gray-500">对话样本</span><div class="text-indigo-600 font-semibold">${r.sampleCount || 0} 次</div></div>
+                            ${type === 'class' ? `<div><span class="text-gray-500">幼儿/绘本</span><div class="text-gray-900 font-medium">${r.studentCount || 0} 人 · ${r.bookCount || 0} 本</div></div>` : ''}
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl border border-gray-200 p-4 mb-3">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-2">🔥 ${type === 'class' ? '核心关注主题' : '核心关注主题'} TOP${Math.min(10, (r.topQuestions || []).length)}</h3>
+                        ${top || '<div class="text-sm text-gray-400 py-2">暂无</div>'}
+                    </div>
+                    <div class="bg-white rounded-xl border border-gray-200 p-4">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-2">🧠 AI 分析</h3>
+                        <div class="mobile-ai-md text-sm leading-relaxed text-gray-800">${analysisHtml || '<div class="text-gray-400">暂无</div>'}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+        this._renderMobileOverlay(html);
+    },
 
-        // 计算能力覆盖
-        const abilityCoverage = DataService.calculateAbilityDistribution(studentRecords, books, [this.aiSelectedStudent]);
-
-        // 计算偏好类型
-        const preferenceType = DataService.calculateTypeDistribution(studentRecords, books, [this.aiSelectedStudent]);
-
-        // 最近阅读
-        const recentBooks = studentRecords
-            .sort((a, b) => new Date(b.date) - new Date(a.date))
-            .slice(0, 5)
-            .map(r => {
-                const book = books.find(b => b.id === r.bookId);
-                return { ...r, bookName: book ? book.name : '未知', bookType: book ? book.type : '未知' };
+    _renderMobileOverlay(html) {
+        let host = document.getElementById('mobile-overlay');
+        if (!host) {
+            host = document.createElement('div');
+            host.id = 'mobile-overlay';
+            host.style.cssText = 'position:fixed;inset:0;z-index:200;background:#fff;overflow-y:auto;-webkit-overflow-scrolling:touch;';
+            document.body.appendChild(host);
+            // 拦截返回
+            history.pushState({ mobileOverlay: 1 }, '');
+            window.addEventListener('popstate', this._mobileOverlayPopstate = () => {
+                if (host && host.parentNode) host.parentNode.removeChild(host);
+                window.removeEventListener('popstate', this._mobileOverlayPopstate);
             });
+        }
+        host.innerHTML = html;
+        host.scrollTop = 0;
+    },
 
-        return `
-            <div class="space-y-6">
-                <!-- 学生选择器 -->
-                <div class="flex flex-wrap gap-2">
-                    ${students.map(s => `
-                        <button onclick="App.switchAiStudent(${s.id})"
-                            class="px-4 py-2 rounded-lg text-sm font-medium transition-all ${this.aiSelectedStudent === s.id ? 'bg-blue-500 text-white' : 'bg-slate-600/50 text-slate-300 hover:bg-slate-500/50'}">
-                            ${s.name}
-                        </button>
-                    `).join('')}
+    // 渲染移动端班级阅读报告（图3）
+    renderMobileClassReport(classId, timeRange = '7d') {
+        const cls = MockData.classes.find(c => c.id === classId);
+        if (!cls) return;
+
+        // 保存当前时间范围
+        if (!this._mobileTimeRanges) this._mobileTimeRanges = {};
+        this._mobileTimeRanges[`class_${classId}`] = timeRange;
+
+        const students = MockData.students.filter(s => s.classId === classId);
+
+        // 计算班级统计数据
+        const totalActivityCount = students.reduce((sum, s) => sum + (s.activityCount || 0), 0);
+        const totalDuration = students.reduce((sum, s) => {
+            const duration = s.activityDuration || '0小时';
+            const hours = parseFloat(duration);
+            return sum + (isNaN(hours) ? 0 : hours);
+        }, 0);
+        const avgParticipants = students.length > 0 ? Math.round(students.length * 0.95) : 0;
+
+        // 获取绘本类型趋势数据（折线图）
+        const bookTypeTrendData = this.getClassBookTypeTrend(classId, timeRange);
+        const bookTypeColors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2'];
+
+        // 获取班级能力分布趋势数据（折线图）
+        const abilityTrendData = this.getClassAbilityTrend(classId, timeRange);
+        const abilityColors = {
+            '社交': '#FF6B6B',
+            '创造': '#4ECDC4',
+            '科学': '#45B7D1',
+            '语言': '#FFA07A',
+            '艺术': '#98D8C8',
+            '运动': '#F7DC6F',
+            '逻辑': '#BB8FCE',
+            '自然': '#85C1E2',
+            '音乐': '#F06292'
+        };
+
+        // 时间范围标签
+        const timeRangeLabels = {
+            '7d': '近7天',
+            '30d': '近30天',
+            '90d': '近90天',
+            'all': '全部'
+        };
+
+        const content = `
+            <div class="min-h-screen bg-white">
+                <!-- 头部 -->
+                <div class="sticky top-0 z-50 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+                    <button onclick="window.history.back()" class="p-2 -ml-2">
+                        <svg class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                        </svg>
+                    </button>
+                    <h1 class="text-lg font-semibold text-gray-900">绘本阅读报告</h1>
+                    <button class="p-2 -mr-2">
+                        <svg class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
+                        </svg>
+                    </button>
                 </div>
 
-                <!-- 学生基本信息 -->
-                ${this.card(`
-                    <div class="flex flex-col lg:flex-row items-start lg:items-center gap-6">
-                        <div class="w-20 h-20 bg-gradient-to-br from-purple-500/30 to-pink-500/30 rounded-2xl flex items-center justify-center text-3xl border border-purple-500/20">
-                            👦
-                        </div>
-                        <div class="flex-1">
-                            <div class="flex items-center gap-3 mb-2">
-                                <h3 class="text-xl font-bold text-white">${student.name}</h3>
-                                <span class="text-slate-500 text-sm">${student.code || ''}</span>
-                            </div>
-                            <div class="text-slate-400 text-sm">${cls.name}</div>
-                            <div class="mt-2 flex flex-wrap gap-2">
-                                <span class="text-slate-400 text-sm">阅读${studentRecords.length}本绘本</span>
-                                <span class="text-slate-500">|</span>
-                                <span class="text-slate-400 text-sm">总时长${Math.round(studentRecords.reduce((s, r) => s + r.duration, 0) / 60 * 10) / 10}小时</span>
-                            </div>
+                <!-- 班级名称 -->
+                <div class="px-4 py-6 text-center">
+                    <div class="inline-block px-6 py-2 bg-blue-50 border border-blue-200 rounded-full">
+                        <span class="text-blue-600 font-medium">${cls.name}</span>
+                    </div>
+                </div>
+
+                <!-- 时间筛选栏 -->
+                <div class="px-4 pb-4">
+                    <div class="bg-gray-50 rounded-xl p-3">
+                        <div class="grid grid-cols-4 gap-2">
+                            ${Object.entries(timeRangeLabels).map(([key, label]) => `
+                                <button onclick="App.renderMobileClassReport(${classId}, '${key}')"
+                                        class="px-3 py-2 rounded-lg text-sm font-medium transition-colors ${timeRange === key ? 'bg-blue-500 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'}">
+                                    ${label}
+                                </button>
+                            `).join('')}
                         </div>
                     </div>
-                `)}
+                </div>
 
-                <!-- 能力分布 + 阅读记录 -->
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    ${this.card(`
-                        <div class="flex items-center gap-2 mb-4">
-                            <span class="text-cyan-400 text-xl">🎯</span>
-                            <h3 class="text-lg font-semibold text-white">能力维度发展</h3>
+                <!-- 统计卡片 -->
+                <div class="px-4 pb-4">
+                    <div class="grid grid-cols-3 gap-3">
+                        <div class="bg-blue-50 rounded-xl p-4 text-center">
+                            <div class="text-xs text-blue-600 mb-1">绘本活动总次数</div>
+                            <div class="text-2xl font-bold text-blue-600">${totalActivityCount}次</div>
                         </div>
-                        <div id="ai-student-ability-chart" style="height: 280px;"></div>
-                    `)}
-                    ${this.card(`
-                        <div class="flex items-center gap-2 mb-4">
-                            <span class="text-amber-400 text-xl">📚</span>
-                            <h3 class="text-lg font-semibold text-white">最近阅读记录</h3>
+                        <div class="bg-green-50 rounded-xl p-4 text-center">
+                            <div class="text-xs text-green-600 mb-1">绘本活动总时长</div>
+                            <div class="text-2xl font-bold text-green-600">${totalDuration.toFixed(1)}小时</div>
                         </div>
-                        <div class="space-y-3">
-                            ${recentBooks.length > 0 ? recentBooks.map(b => `
-                                <div class="flex items-center gap-3 p-3 rounded-xl bg-slate-500/20 border border-slate-500/20">
-                                    <div class="w-10 h-14 bg-gradient-to-br from-amber-500/20 to-orange-500/20 rounded-lg flex items-center justify-center text-lg border border-amber-500/20">
-                                        📖
+                        <div class="bg-purple-50 rounded-xl p-4 text-center">
+                            <div class="text-xs text-purple-600 mb-1">班本数据总人次</div>
+                            <div class="text-2xl font-bold text-purple-600">${avgParticipants}人</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 阅读绘本类型占比 -->
+                <div class="px-4 pb-6">
+                    <div class="bg-white rounded-xl border border-gray-200 p-4">
+                        <h3 class="text-base font-semibold text-gray-900 mb-3">阅读绘本类型占比</h3>
+                        <div id="mobile-class-book-type-chart" style="height: 280px;"></div>
+                        <div class="mt-4 grid grid-cols-2 gap-2">
+                            ${bookTypeTrendData.types.map((type, idx) => `
+                                <div class="flex items-center gap-2">
+                                    <span class="w-3 h-3 rounded-full" style="background-color: ${bookTypeColors[idx % bookTypeColors.length]}"></span>
+                                    <span class="text-sm text-gray-600">${type}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div class="mt-4 text-center text-xs text-amber-500">
+                            ${timeRangeLabels[timeRange]}阅读最多的类型是"${bookTypeTrendData.types[0] || ''}"，建议多样化！
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 班级能力分布 -->
+                <div class="px-4 pb-6">
+                    <div class="bg-white rounded-xl border border-gray-200 p-4">
+                        <h3 class="text-base font-semibold text-gray-900 mb-3">班级能力分布</h3>
+                        <div id="mobile-class-ability-chart" style="height: 280px;"></div>
+                        <div class="mt-4 grid grid-cols-3 gap-2">
+                            ${abilityTrendData.abilities.map((ability, idx) => {
+                                const palette = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2', '#F06292'];
+                                const color = palette[idx % palette.length];
+                                return `
+                                    <div class="flex items-center gap-2">
+                                        <span class="w-3 h-3 rounded-full" style="background-color: ${color}"></span>
+                                        <span class="text-sm text-gray-600">${ability}</span>
                                     </div>
-                                    <div class="flex-1">
-                                        <div class="text-white font-medium">${b.bookName}</div>
-                                        <div class="flex items-center gap-2 text-xs text-slate-400">
-                                            <span class="px-2 py-0.5 rounded-full bg-slate-500/30">${b.bookType}</span>
-                                            <span>${b.date}</span>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 幼儿列表 -->
+                <div class="px-4 pb-6">
+                    ${this.renderMobileAiClassReportPanel(cls.name)}
+                    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                        <div class="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                            <h3 class="text-base font-semibold text-gray-900">幼儿列表（${students.length}人）</h3>
+                        </div>
+                        <div class="divide-y divide-gray-200">
+                            ${students.map(s => `
+                                <div class="px-4 py-3 flex items-center justify-between hover:bg-gray-50 active:bg-gray-100"
+                                     onclick="App.renderMobileStudentReport(${s.id})">
+                                    <div class="flex items-center gap-3 flex-1">
+                                        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-medium">
+                                            ${s.name.charAt(0)}
+                                        </div>
+                                        <div class="flex-1">
+                                            <div class="text-sm font-medium text-gray-900">${s.name}</div>
+                                            <div class="text-xs text-gray-500">${s.code}</div>
                                         </div>
                                     </div>
-                                    <div class="text-slate-400 text-sm">${b.duration}分钟</div>
+                                    <button class="px-4 py-1.5 bg-blue-500 text-white text-sm rounded-full hover:bg-blue-600">
+                                        查看报告
+                                    </button>
                                 </div>
-                            `).join('') : '<div class="text-slate-400 text-center py-4">暂无阅读记录</div>'}
+                            `).join('')}
                         </div>
-                    `)}
-                </div>
-
-                <!-- AI分析结果 -->
-                <div id="ai-student-analysis-result">
-                    ${this.renderStudentAiLoading()}
+                    </div>
                 </div>
             </div>
         `;
+
+        document.body.innerHTML = content;
+
+        // 渲染折线图
+        requestAnimationFrame(() => {
+            // 渲染绘本类型折线图
+            const chartDom = document.getElementById('mobile-class-book-type-chart');
+            if (chartDom && bookTypeTrendData.dates.length > 0) {
+                const chart = echarts.init(chartDom, (typeof Charts !== "undefined" && Charts.isWarm && Charts.isWarm()) ? "warm" : null);
+                chart.setOption({
+                    tooltip: {
+                        trigger: 'axis',
+                        axisPointer: { type: 'cross' }
+                    },
+                    legend: {
+                        data: bookTypeTrendData.types,
+                        bottom: 0,
+                        textStyle: { fontSize: 10 }
+                    },
+                    grid: {
+                        left: '3%',
+                        right: '4%',
+                        bottom: '15%',
+                        top: '5%',
+                        containLabel: true
+                    },
+                    xAxis: {
+                        type: 'category',
+                        boundaryGap: false,
+                        data: bookTypeTrendData.dates,
+                        axisLabel: { fontSize: 10 }
+                    },
+                    yAxis: {
+                        type: 'value',
+                        name: '阅读次数',
+                        nameTextStyle: { fontSize: 10 },
+                        axisLabel: { fontSize: 10 }
+                    },
+                    series: bookTypeTrendData.types.map((type, idx) => ({
+                        name: type,
+                        type: 'line',
+                        smooth: true,
+                        data: bookTypeTrendData.series[type],
+                        itemStyle: { color: bookTypeColors[idx % bookTypeColors.length] },
+                        lineStyle: { width: 2 },
+                        symbol: 'circle',
+                        symbolSize: 6
+                    }))
+                });
+            }
+
+            // 渲染能力分布折线图
+            const abilityChartDom = document.getElementById('mobile-class-ability-chart');
+            if (abilityChartDom && abilityTrendData.dates.length > 0) {
+                const abilityChart = echarts.init(abilityChartDom, (typeof Charts !== "undefined" && Charts.isWarm && Charts.isWarm()) ? "warm" : null);
+                const abilityPalette = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2', '#F06292'];
+                abilityChart.setOption({
+                    tooltip: {
+                        trigger: 'axis',
+                        axisPointer: { type: 'cross' }
+                    },
+                    legend: {
+                        data: abilityTrendData.abilities,
+                        bottom: 0,
+                        textStyle: { fontSize: 10 }
+                    },
+                    grid: {
+                        left: '3%',
+                        right: '4%',
+                        bottom: '15%',
+                        top: '5%',
+                        containLabel: true
+                    },
+                    xAxis: {
+                        type: 'category',
+                        boundaryGap: false,
+                        data: abilityTrendData.dates,
+                        axisLabel: { fontSize: 10 }
+                    },
+                    yAxis: {
+                        type: 'value',
+                        name: '能力值',
+                        nameTextStyle: { fontSize: 10 },
+                        axisLabel: { fontSize: 10 }
+                    },
+                    series: abilityTrendData.abilities.map((ability, idx) => {
+                        const color = abilityPalette[idx % abilityPalette.length];
+                        return {
+                            name: ability,
+                            type: 'line',
+                            smooth: true,
+                            data: abilityTrendData.series[ability],
+                            itemStyle: { color },
+                            lineStyle: { width: 2, color },
+                            symbol: 'circle',
+                            symbolSize: 6
+                        };
+                    })
+                });
+            }
+        });
     },
 
-    // 学生AI加载中状态
-    renderStudentAiLoading() {
-        return `
-            ${this.card(`
-                <div class="flex items-center gap-2 mb-4">
-                    <span class="text-blue-400 text-xl">🤖</span>
-                    <h3 class="text-lg font-semibold text-white">AI智能分析</h3>
-                </div>
-                <div class="flex items-center justify-center py-8">
-                    <div class="animate-spin w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full mr-3"></div>
-                    <span class="text-slate-400">AI正在生成个性化分析...</span>
-                </div>
-            `)}
-        `;
+    // 切换移动端时间筛选器
+    toggleMobileTimeFilter(type, id) {
+        const filterIdMap = {
+            'class': 'mobile-class-time-filter',
+            'class-ability': 'mobile-class-ability-time-filter',
+            'student': 'mobile-student-time-filter'
+        };
+        const filterId = filterIdMap[type];
+        const filterEl = document.getElementById(filterId);
+        if (filterEl) {
+            filterEl.classList.toggle('hidden');
+        }
     },
 
-    // 渲染学生AI分析结果
-    renderStudentAiAnalysisResult(result) {
-        return `
-            ${this.card(`
-                <div class="flex items-center gap-2 mb-4">
-                    <span class="text-blue-400 text-xl">🤖</span>
-                    <h3 class="text-lg font-semibold text-white">AI智能分析</h3>
+    // 渲染移动端学生阅读报告（图2）
+    renderMobileStudentReport(studentId, timeRange = '7d') {
+        const sOriginal = MockData.students.find(s => s.id === studentId);
+        if (!sOriginal) return;
+
+        // 保存当前时间范围
+        if (!this._mobileTimeRanges) this._mobileTimeRanges = {};
+        this._mobileTimeRanges[`student_${studentId}`] = timeRange;
+
+        const detail = this.getStudentReadingDetail(sOriginal);
+        const s = {
+            ...sOriginal,
+            readDurationMinutes: detail.summary.duration,
+            readTimes: detail.summary.times,
+            bookCount: detail.summary.books,
+            completedBooks: detail.summary.completed
+        };
+
+        // 获取阅读类型趋势数据（折线图）
+        const bookTypeTrendData = this.getStudentBookTypeTrend(studentId, timeRange);
+        const bookTypeColors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2'];
+
+        // 获取能力分布趋势数据（折线图）
+        const abilityTrendData = this.getStudentAbilityTrend(studentId, timeRange);
+        const abilityColors = {
+            '社交': '#FF6B6B',
+            '创造': '#4ECDC4',
+            '科学': '#45B7D1',
+            '语言': '#FFA07A',
+            '艺术': '#98D8C8',
+            '运动': '#F7DC6F',
+            '逻辑': '#BB8FCE',
+            '自然': '#85C1E2',
+            '音乐': '#F06292'
+        };
+
+        // 爱读榜数据
+        const favoriteBooks = s.favoriteBooks || [];
+
+        // 获取兴趣书单和建议书单
+        const interestBooks = this.getStudentInterestBooks(studentId, timeRange);
+        const recommendBooks = this.getStudentRecommendBooks(studentId, timeRange);
+
+        // 时间范围标签
+        const timeRangeLabels = {
+            '7d': '近7天',
+            '30d': '近30天',
+            '90d': '近90天',
+            'all': '全部'
+        };
+
+        const content = `
+            <div class="min-h-screen bg-white">
+                <!-- 头部 -->
+                <div class="sticky top-0 z-50 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+                    <button onclick="App.renderMobileClassReport(${s.classId})" class="p-2 -ml-2">
+                        <svg class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                        </svg>
+                    </button>
+                    <h1 class="text-lg font-semibold text-gray-900">绘本阅读报告</h1>
+                    <button class="p-2 -mr-2">
+                        <svg class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
+                        </svg>
+                    </button>
                 </div>
 
-                <!-- 学生画像 -->
-                <div class="mb-6 p-4 rounded-xl bg-slate-700/30 border border-slate-500/20">
-                    <div class="text-sm text-slate-400 mb-2">👤 学生画像</div>
-                    <p class="text-slate-200">${result.portrait}</p>
+                <!-- 学生信息 -->
+                <div class="px-4 py-6 text-center">
+                    <div class="w-20 h-20 mx-auto mb-3 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center">
+                        <div class="w-16 h-16 rounded-full bg-white flex items-center justify-center">
+                            <span class="text-2xl">👦</span>
+                        </div>
+                    </div>
+                    <h2 class="text-lg font-semibold text-gray-900 mb-1">${s.name}（编号${s.code.slice(-2)}）的阅读报告</h2>
                 </div>
 
-                <!-- 优势与不足 -->
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-                    <div class="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                        <div class="text-sm text-slate-400 mb-3">✅ 优势能力</div>
-                        <div class="space-y-2">
-                            ${result.strengths.map(s => `
+                <!-- 时间筛选栏 -->
+                <div class="px-4 pb-4">
+                    <div class="bg-gray-50 rounded-xl p-3">
+                        <div class="grid grid-cols-4 gap-2">
+                            ${Object.entries(timeRangeLabels).map(([key, label]) => `
+                                <button onclick="App.renderMobileStudentReport(${studentId}, '${key}')"
+                                        class="px-3 py-2 rounded-lg text-sm font-medium transition-colors ${timeRange === key ? 'bg-blue-500 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'}">
+                                    ${label}
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 阅读统计 -->
+                <div class="px-4 pb-4">
+                    <div class="bg-white rounded-xl border border-gray-200 p-4">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-3">阅读统计</h3>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-blue-50 rounded-lg p-3 text-center">
+                                <div class="text-xs text-blue-600 mb-1">阅读时长</div>
+                                <div class="text-xl font-bold text-blue-600">${s.readDurationMinutes}分钟</div>
+                            </div>
+                            <div class="bg-green-50 rounded-lg p-3 text-center">
+                                <div class="text-xs text-green-600 mb-1">阅读次数</div>
+                                <div class="text-xl font-bold text-green-600">${s.readTimes}次</div>
+                            </div>
+                            <div class="bg-purple-50 rounded-lg p-3 text-center">
+                                <div class="text-xs text-purple-600 mb-1">阅读绘本</div>
+                                <div class="text-xl font-bold text-purple-600">${s.bookCount}本</div>
+                            </div>
+                            <div class="bg-pink-50 rounded-lg p-3 text-center">
+                                <div class="text-xs text-pink-600 mb-1">完整读完</div>
+                                <div class="text-xl font-bold text-pink-600">${s.completedBooks}本</div>
+                            </div>
+                        </div>
+                        <div class="mt-3 text-center text-xs text-amber-500">
+                            ${timeRangeLabels[timeRange]}共${s.readTimes}次阅读，建议每周阅读3次！
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 阅读类型 -->
+                <div class="px-4 pb-4">
+                    <div class="bg-white rounded-xl border border-gray-200 p-4">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-3">阅读类型</h3>
+                        <div id="mobile-student-book-type-chart" style="height: 240px;"></div>
+                        <div class="mt-3 grid grid-cols-2 gap-2">
+                            ${bookTypeTrendData.types.map((type, idx) => `
                                 <div class="flex items-center gap-2">
-                                    <span class="text-emerald-400">•</span>
-                                    <span class="text-slate-200 text-sm">${s}</span>
+                                    <span class="w-3 h-3 rounded-full" style="background-color: ${bookTypeColors[idx % bookTypeColors.length]}"></span>
+                                    <span class="text-xs text-gray-600">${type}</span>
                                 </div>
                             `).join('')}
                         </div>
                     </div>
-                    <div class="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
-                        <div class="text-sm text-slate-400 mb-3">📈 待提升能力</div>
+                </div>
+
+                <!-- 能力分布 -->
+                <div class="px-4 pb-4">
+                    <div class="bg-white rounded-xl border border-gray-200 p-4">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-3">能力分布</h3>
+                        <div id="mobile-student-ability-chart" style="height: 240px;"></div>
+                        <div class="mt-3 grid grid-cols-3 gap-2">
+                            ${abilityTrendData.abilities.map((ability, idx) => {
+                                const palette = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2', '#F06292'];
+                                const color = palette[idx % palette.length];
+                                return `
+                                    <div class="flex items-center gap-2">
+                                        <span class="w-3 h-3 rounded-full" style="background-color: ${color}"></span>
+                                        <span class="text-xs text-gray-600">${ability}</span>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 爱读榜 -->
+                <div class="px-4 pb-4">
+                    ${this.renderMobileAiStudentReportPanel(sOriginal.name)}
+                    <div class="bg-white rounded-xl border border-gray-200 p-4">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-3">爱读榜</h3>
                         <div class="space-y-2">
-                            ${result.weaknesses.map(w => `
-                                <div class="flex items-center gap-2">
-                                    <span class="text-amber-400">•</span>
-                                    <span class="text-slate-200 text-sm">${w}</span>
+                            ${favoriteBooks.slice(0, 4).map((book, idx) => `
+                                <div class="flex items-center gap-3 p-2 bg-gray-50 rounded-lg">
+                                    <div class="text-lg">${['🌸', '🌺', '🌻', '🌼'][idx]}</div>
+                                    <div class="flex-1 text-sm text-gray-700">${book}</div>
+                                    <div class="text-xs text-gray-500">${4 - idx}次</div>
                                 </div>
                             `).join('')}
                         </div>
                     </div>
                 </div>
 
-                <!-- 短期培养建议 -->
-                <div class="mb-6">
-                    <div class="text-sm text-slate-400 mb-3">📚 短期培养建议</div>
-                    <div class="space-y-3">
-                        ${result.suggestions.map((s, i) => `
-                            <div class="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
-                                <div class="flex items-center gap-2 mb-1">
-                                    <span class="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-sm">${i + 1}</span>
-                                    <span class="text-white font-medium text-sm">${s.content}</span>
+                <!-- 兴趣书单 -->
+                <div class="px-4 pb-4">
+                    <div class="bg-white rounded-xl border border-gray-200 p-4">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-2">兴趣书单</h3>
+                        <p class="text-xs text-gray-500 mb-3">基于 <span class="text-amber-500">${s.name}</span> 的阅读数据分析，发现TA很喜欢以下类型的书单</p>
+                        <div class="space-y-2">
+                            ${interestBooks.map((book, idx) => `
+                                <div class="flex items-center gap-3 p-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-100">
+                                    <div class="w-8 h-8 bg-blue-500 text-white rounded-lg flex items-center justify-center text-sm font-bold">${idx + 1}</div>
+                                    <div class="flex-1">
+                                        <div class="text-sm font-medium text-gray-900">${book.name}</div>
+                                        <div class="text-xs text-gray-500">${book.type}</div>
+                                    </div>
                                 </div>
-                                ${s.recommendedType ? `<span class="text-slate-500 text-xs ml-8">推荐类型：${s.recommendedType}</span>` : ''}
-                            </div>
-                        `).join('')}
+                            `).join('')}
+                        </div>
                     </div>
                 </div>
 
-                <!-- 家园共育建议 -->
-                <div>
-                    <div class="text-sm text-slate-400 mb-3">🏠 家园共育建议</div>
-                    <div class="space-y-2">
-                        ${result.homeCollaboration.map(h => `
-                            <div class="flex items-start gap-2 p-3 rounded-lg bg-slate-500/20">
-                                <span class="text-cyan-400 mt-0.5">•</span>
-                                <span class="text-slate-300 text-sm">${h}</span>
-                            </div>
-                        `).join('')}
+                <!-- 建议书单 -->
+                <div class="px-4 pb-6">
+                    <div class="bg-white rounded-xl border border-gray-200 p-4">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-2">建议书单</h3>
+                        <p class="text-xs text-gray-500 mb-3">根据 <span class="text-amber-500">${s.name}</span> 的阅读偏好，推荐以下绘本</p>
+                        <div class="space-y-2">
+                            ${recommendBooks.map((book, idx) => `
+                                <div class="flex items-center gap-3 p-3 bg-gradient-to-r from-green-50 to-teal-50 rounded-lg border border-green-100">
+                                    <div class="w-8 h-8 bg-green-500 text-white rounded-lg flex items-center justify-center text-sm font-bold">${idx + 1}</div>
+                                    <div class="flex-1">
+                                        <div class="text-sm font-medium text-gray-900">${book.name}</div>
+                                        <div class="text-xs text-gray-500">${book.type}</div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
                     </div>
                 </div>
-            `)}
+
+                <!-- AI对话记录 -->
+                <div class="px-4 pb-6">
+                    <div class="bg-white rounded-xl border border-gray-200 p-4">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-1">AI对话记录</h3>
+                        <p class="text-xs text-gray-500 mb-3">查看 <span class="text-amber-500">${s.name}</span> 在绘本阅读中的 AI 对话详情</p>
+                        ${(() => {
+                            const chatRecords = App.getStudentChatRecords(studentId, timeRange);
+                            if (!chatRecords.length) {
+                                return '<div class="text-center py-6 text-gray-400 text-xs">暂无对话记录</div>';
+                            }
+                            let totalConvs = 0, totalTurns = 0;
+                            chatRecords.forEach(a => a.books.forEach(b => b.conversations.forEach(c => {
+                                totalConvs++;
+                                totalTurns += c.turns.length;
+                            })));
+                            return `
+                                <div class="flex gap-3 mb-3">
+                                    <div class="flex-1 bg-indigo-50 rounded-lg p-2 text-center">
+                                        <div class="text-lg font-bold text-indigo-600">${chatRecords.length}</div>
+                                        <div class="text-xs text-indigo-400">绘本活动</div>
+                                    </div>
+                                    <div class="flex-1 bg-purple-50 rounded-lg p-2 text-center">
+                                        <div class="text-lg font-bold text-purple-600">${totalConvs}</div>
+                                        <div class="text-xs text-purple-400">对话次数</div>
+                                    </div>
+                                    <div class="flex-1 bg-pink-50 rounded-lg p-2 text-center">
+                                        <div class="text-lg font-bold text-pink-600">${totalTurns}</div>
+                                        <div class="text-xs text-pink-400">对话轮次</div>
+                                    </div>
+                                </div>
+                                <div class="space-y-3">
+                                    ${chatRecords.map((activity) => {
+                                        const actConvs = activity.books.reduce((s, b) => s + b.conversations.length, 0);
+                                        const actTurns = activity.books.reduce((s, b) => s + b.conversations.reduce((s2, c) => s2 + c.turns.length, 0), 0);
+                                        return `
+                                            <div class="border border-gray-100 rounded-lg overflow-hidden">
+                                                <div class="bg-gradient-to-r from-indigo-50 to-purple-50 px-3 py-2 cursor-pointer flex items-center justify-between" onclick="App.toggleChatBooks(this)">
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="chat-arrow inline-block transition-transform text-gray-400" style="font-size:10px;transform:rotate(90deg)">&#9654;</span>
+                                                        <span class="text-xs font-semibold text-indigo-700">${activity.activityLabel}</span>
+                                                        <span class="text-xs text-gray-400">${activity.date}</span>
+                                                    </div>
+                                                    <div class="flex gap-2 text-xs text-gray-400">
+                                                        <span>${activity.books.length}本绘本</span>
+                                                        <span>${actConvs}次对话</span>
+                                                        <span>${actTurns}轮</span>
+                                                    </div>
+                                                </div>
+                                                <div class="chat-books-content" style="display:block">
+                                                    ${activity.books.map((book) => {
+                                                        const bookConvs = book.conversations.length;
+                                                        const bookTurns = book.conversations.reduce((s, c) => s + c.turns.length, 0);
+                                                        return `
+                                                            <div class="border-t border-gray-50">
+                                                                <div class="px-3 py-2 bg-gray-50/50">
+                                                                    <div class="flex items-center justify-between">
+                                                                        <div class="flex items-center gap-2">
+                                                                            <span class="text-base">&#128214;</span>
+                                                                            <span class="text-xs font-medium text-gray-800">${book.bookName}</span>
+                                                                            <span class="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded">${book.bookType}</span>
+                                                                        </div>
+                                                                        <div class="text-xs text-gray-400">${bookConvs}次对话 · ${bookTurns}轮</div>
+                                                                    </div>
+                                                                </div>
+                                                                ${book.conversations.map((conv) => `
+                                                                    <div class="border-t border-gray-50">
+                                                                        <div class="px-3 py-2 cursor-pointer flex items-center gap-2 hover:bg-gray-50" onclick="App.toggleChatConv(this)">
+                                                                            <span class="chat-arrow inline-block transition-transform text-gray-400" style="font-size:9px;transform:rotate(90deg)">&#9654;</span>
+                                                                            <span class="text-xs font-medium text-gray-600">第${conv.convIndex}次对话</span>
+                                                                            <span class="text-xs text-gray-400">${conv.page}</span>
+                                                                            <span class="text-xs text-gray-300">${conv.time}</span>
+                                                                            <span class="text-xs text-gray-300 ml-auto">${conv.turns.length}轮</span>
+                                                                        </div>
+                                                                        <div class="chat-conv-turns" style="display:block">
+                                                                            ${conv.turns.map((turn, tIdx) => `
+                                                                                <div class="px-3 pb-2">
+                                                                                    <div class="flex gap-2 mb-1">
+                                                                                        <span class="shrink-0 w-5 h-5 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-xs font-bold">${tIdx + 1}</span>
+                                                                                        <div class="flex-1 bg-amber-50 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 leading-relaxed">${turn.q}</div>
+                                                                                    </div>
+                                                                                    <div class="flex gap-2">
+                                                                                        <span class="shrink-0 w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs">AI</span>
+                                                                                        <div class="flex-1 bg-indigo-50 rounded-lg px-2.5 py-1.5 text-xs text-gray-600 leading-relaxed">${turn.a}</div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            `).join('')}
+                                                                        </div>
+                                                                    </div>
+                                                                `).join('')}
+                                                            </div>
+                                                        `;
+                                                    }).join('')}
+                                                </div>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            `;
+                        })()}
+                    </div>
+                </div>
+            </div>
         `;
-    },
 
-    // 加载学生AI分析
-    async loadStudentAiAnalysis() {
-        const students = MockData.students.filter(s => s.classId === (this.selectedClass?.id || 1));
-        const student = students.find(s => s.id === this.aiSelectedStudent) || students[0];
-        const readingRecords = MockData.readingRecords || [];
-        const books = MockData.books || [];
+        document.body.innerHTML = content;
 
-        // 准备分析数据
-        const analysisData = DataService.prepareStudentAnalysisData(student, readingRecords, books, {
-            activityLevel: 100,
-            durationLevel: 100,
-            rank: 1
-        });
-
-        // 调用AI服务（使用降级方案）
-        const result = await AiService.analyzeStudent(analysisData);
-
-        // 渲染结果
-        const container = document.getElementById('ai-student-analysis-result');
-        if (container) {
-            container.innerHTML = this.renderStudentAiAnalysisResult(result);
-        }
-    },
-
-    // 初始化AI分析页面图表
-    initAiAnalysisPage() {
-        if (this.currentRole === 'principal') {
-            if (this.aiAnalysisTab === 'school') {
-                this.initSchoolAiCharts();
-                // 异步调用AI分析
-                this.loadSchoolAiAnalysis();
-            } else {
-                this.initClassAiCharts();
-            }
-        } else if (this.currentRole === 'teacher') {
-            if (this.aiAnalysisTab === 'student') {
-                this.initStudentAiCharts();
-                // 异步调用AI分析
-                this.loadStudentAiAnalysis();
-            } else {
-                this.initTeacherClassAiCharts();
-            }
-        }
-    },
-
-    // 加载园所AI分析
-    async loadSchoolAiAnalysis() {
-        const schoolData = MockData.schoolData.overview;
-        const classes = MockData.classes;
-        const students = MockData.students;
-        const readingRecords = MockData.readingRecords || [];
-        const books = MockData.books || [];
-
-        // 准备分析数据
-        const analysisData = DataService.prepareSchoolAnalysisData(schoolData, classes, students, readingRecords, books);
-
-        // 调用AI服务（使用降级方案）
-        const result = await AiService.analyzeSchool(analysisData);
-
-        // 渲染结果
-        const container = document.getElementById('ai-analysis-result');
-        if (container) {
-            container.innerHTML = this.renderAiAnalysisResult(result);
-        }
-    },
-
-    // 初始化园所分析图表
-    initSchoolAiCharts() {
-        const readingRecords = MockData.readingRecords || [];
-        const books = MockData.books || [];
-
-        // 计算能力分布
-        const abilityDistribution = DataService.calculateAbilityDistribution(readingRecords, books);
-
-        // 计算类型分布
-        const typeDistribution = DataService.calculateTypeDistribution(readingRecords, books);
-
-        // 能力维度分布图表
-        const abilityEl = document.getElementById('ai-ability-chart');
-        if (abilityEl && abilityDistribution.length > 0) {
-            const chart = echarts.init(abilityEl);
-            chart.setOption({
-                tooltip: { trigger: 'item', formatter: '{b}: {c}分钟 ({d}%)' },
-                legend: { bottom: 0, textStyle: { color: '#94a3b8', fontSize: 11 } },
-                color: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'],
-                series: [{
-                    type: 'pie',
-                    radius: ['35%', '60%'],
-                    center: ['50%', '45%'],
-                    itemStyle: { borderRadius: 4, borderColor: 'rgba(120,160,220,0.35)', borderWidth: 2 },
-                    label: { show: true, formatter: '{b}\n{d}%', fontSize: 10, color: '#94a3b8' },
-                    data: abilityDistribution.map(a => ({ name: a.name, value: a.duration }))
-                }]
-            });
-            Charts.instances.push(chart);
-        }
-
-        // 绘本类型分布图表
-        const typeEl = document.getElementById('ai-type-chart');
-        if (typeEl && typeDistribution.length > 0) {
-            const chart = echarts.init(typeEl);
-            chart.setOption({
-                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-                grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-                xAxis: { type: 'value', axisLine: { lineStyle: { color: '#475569' } }, axisLabel: { color: '#94a3b8' }, splitLine: { lineStyle: { color: '#334155' } } },
-                yAxis: { type: 'category', data: typeDistribution.map(t => t.type).reverse(), axisLine: { lineStyle: { color: '#475569' } }, axisLabel: { color: '#94a3b8' } },
-                series: [{
-                    type: 'bar',
-                    data: typeDistribution.map(t => t.duration).reverse(),
-                    itemStyle: {
-                        borderRadius: [0, 4, 4, 0],
-                        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-                            { offset: 0, color: '#8b5cf6' },
-                            { offset: 1, color: '#a78bfa' }
-                        ])
+        // 渲染折线图
+        requestAnimationFrame(() => {
+            // 渲染阅读类型折线图
+            const chartDom = document.getElementById('mobile-student-book-type-chart');
+            if (chartDom && bookTypeTrendData.dates.length > 0) {
+                const chart = echarts.init(chartDom, (typeof Charts !== "undefined" && Charts.isWarm && Charts.isWarm()) ? "warm" : null);
+                chart.setOption({
+                    tooltip: {
+                        trigger: 'axis',
+                        axisPointer: { type: 'cross' }
                     },
-                    label: { show: true, position: 'right', color: '#94a3b8', fontSize: 11, formatter: '{c}分钟' }
-                }]
-            });
-            Charts.instances.push(chart);
-        }
-    },
-
-    // 初始化班级分析图表（园长）
-    initClassAiCharts() {
-        // 班级活动趋势图
-        const cls = MockData.classes.find(c => c.id === this.aiSelectedClass) || MockData.classes[0];
-        const activities = this.getFilteredActivitiesByDateRange('dataOverview').filter(a => a.className === cls.name);
-        const dailyData = {};
-        activities.forEach(a => {
-            const day = a.endTime.slice(0, 10);
-            dailyData[day] = (dailyData[day] || 0) + 1;
-        });
-        const dates = Object.keys(dailyData).sort().slice(-7);
-        const values = dates.map(d => dailyData[d]);
-
-        const trendEl = document.getElementById('ai-class-trend-chart');
-        if (trendEl) {
-            const chart = echarts.init(trendEl);
-            chart.setOption({
-                tooltip: { trigger: 'axis' },
-                grid: { left: '3%', right: '4%', bottom: '10%', containLabel: true },
-                xAxis: {
-                    type: 'category',
-                    data: dates.length > 0 ? dates.map(d => d.slice(5)) : ['暂无数据'],
-                    axisLine: { lineStyle: { color: '#475569' } },
-                    axisLabel: { color: '#94a3b8' }
-                },
-                yAxis: {
-                    type: 'value',
-                    axisLine: { lineStyle: { color: '#475569' } },
-                    axisLabel: { color: '#94a3b8' },
-                    splitLine: { lineStyle: { color: '#334155' } }
-                },
-                series: [{
-                    type: 'bar',
-                    data: values.length > 0 ? values : [0],
-                    itemStyle: {
-                        borderRadius: [4, 4, 0, 0],
-                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                            { offset: 0, color: '#3b82f6' },
-                            { offset: 1, color: '#60a5fa' }
-                        ])
+                    legend: {
+                        data: bookTypeTrendData.types,
+                        bottom: 0,
+                        textStyle: { fontSize: 10 }
                     },
-                    barWidth: '50%'
-                }]
-            });
-            Charts.instances.push(chart);
-        }
-    },
+                    grid: {
+                        left: '3%',
+                        right: '4%',
+                        bottom: '15%',
+                        top: '5%',
+                        containLabel: true
+                    },
+                    xAxis: {
+                        type: 'category',
+                        boundaryGap: false,
+                        data: bookTypeTrendData.dates,
+                        axisLabel: { fontSize: 10 }
+                    },
+                    yAxis: {
+                        type: 'value',
+                        name: '阅读次数',
+                        nameTextStyle: { fontSize: 10 },
+                        axisLabel: { fontSize: 10 }
+                    },
+                    series: bookTypeTrendData.types.map((type, idx) => ({
+                        name: type,
+                        type: 'line',
+                        smooth: true,
+                        data: bookTypeTrendData.series[type],
+                        itemStyle: { color: bookTypeColors[idx % bookTypeColors.length] },
+                        lineStyle: { width: 2 },
+                        symbol: 'circle',
+                        symbolSize: 6
+                    }))
+                });
+            }
 
-    // 初始化教师班级分析图表
-    initTeacherClassAiCharts() {
-        const cls = this.selectedClass || MockData.classes[0];
-        const activities = this.getFilteredActivitiesByDateRange('dataOverview').filter(a => a.className === cls.name);
-        
-        // 计算每日活动趋势
-        const dailyData = {};
-        activities.forEach(a => {
-            const day = a.endTime.slice(0, 10);
-            dailyData[day] = (dailyData[day] || 0) + 1;
+            // 渲染能力分布折线图
+            const abilityChartDom = document.getElementById('mobile-student-ability-chart');
+            if (abilityChartDom && abilityTrendData.dates.length > 0) {
+                const abilityChart = echarts.init(abilityChartDom, (typeof Charts !== "undefined" && Charts.isWarm && Charts.isWarm()) ? "warm" : null);
+                const abilityPalette = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2', '#F06292'];
+                abilityChart.setOption({
+                    tooltip: {
+                        trigger: 'axis',
+                        axisPointer: { type: 'cross' }
+                    },
+                    legend: {
+                        data: abilityTrendData.abilities,
+                        bottom: 0,
+                        textStyle: { fontSize: 10 }
+                    },
+                    grid: {
+                        left: '3%',
+                        right: '4%',
+                        bottom: '15%',
+                        top: '5%',
+                        containLabel: true
+                    },
+                    xAxis: {
+                        type: 'category',
+                        boundaryGap: false,
+                        data: abilityTrendData.dates,
+                        axisLabel: { fontSize: 10 }
+                    },
+                    yAxis: {
+                        type: 'value',
+                        name: '能力值',
+                        nameTextStyle: { fontSize: 10 },
+                        axisLabel: { fontSize: 10 }
+                    },
+                    series: abilityTrendData.abilities.map((ability, idx) => {
+                        const color = abilityPalette[idx % abilityPalette.length];
+                        return {
+                            name: ability,
+                            type: 'line',
+                            smooth: true,
+                            data: abilityTrendData.series[ability],
+                            itemStyle: { color },
+                            lineStyle: { width: 2, color },
+                            symbol: 'circle',
+                            symbolSize: 6
+                        };
+                    })
+                });
+            }
         });
-        const dates = Object.keys(dailyData).sort().slice(-7);
-        const values = dates.map(d => dailyData[d]);
-
-        // 班级活动趋势图
-        const trendEl = document.getElementById('ai-quality-chart');
-        if (trendEl) {
-            const chart = echarts.init(trendEl);
-            chart.setOption({
-                tooltip: { trigger: 'axis' },
-                grid: { left: '3%', right: '4%', bottom: '10%', containLabel: true },
-                xAxis: { 
-                    type: 'category', 
-                    data: dates.length > 0 ? dates.map(d => d.slice(5)) : ['暂无数据'],
-                    axisLine: { lineStyle: { color: '#475569' } }, 
-                    axisLabel: { color: '#94a3b8' } 
-                },
-                yAxis: { 
-                    type: 'value', 
-                    axisLine: { lineStyle: { color: '#475569' } }, 
-                    axisLabel: { color: '#94a3b8' }, 
-                    splitLine: { lineStyle: { color: '#334155' } } 
-                },
-                series: [{
-                    type: 'bar',
-                    data: values.length > 0 ? values : [0],
-                    itemStyle: { color: '#3b82f6', borderRadius: [4, 4, 0, 0] },
-                    barWidth: '50%'
-                }]
-            });
-            Charts.instances.push(chart);
-        }
-
     },
 
-    // 初始化学生分析图表
-    initStudentAiCharts() {
-        const readingRecords = MockData.readingRecords || [];
-        const books = MockData.books || [];
+    // 获取班级绘本类型数据
+    getClassBookTypeData(classId) {
+        const students = MockData.students.filter(s => s.classId === classId);
+        const typeCount = {};
 
-        // 计算学生能力分布
-        const abilityDistribution = DataService.calculateAbilityDistribution(readingRecords, books, [this.aiSelectedStudent]);
-
-        // 能力维度发展图表
-        const abilityEl = document.getElementById('ai-student-ability-chart');
-        if (abilityEl && abilityDistribution.length > 0) {
-            const chart = echarts.init(abilityEl);
-            chart.setOption({
-                tooltip: { trigger: 'item', formatter: '{b}: {c}分钟 ({d}%)' },
-                legend: { bottom: 0, textStyle: { color: '#94a3b8', fontSize: 11 } },
-                color: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'],
-                series: [{
-                    type: 'pie',
-                    radius: ['35%', '60%'],
-                    center: ['50%', '45%'],
-                    itemStyle: { borderRadius: 4, borderColor: 'rgba(120,160,220,0.35)', borderWidth: 2 },
-                    label: { show: true, formatter: '{b}\n{d}%', fontSize: 10, color: '#94a3b8' },
-                    data: abilityDistribution.map(a => ({ name: a.name, value: a.duration }))
-                }]
+        students.forEach(s => {
+            const stats = s.bookTypeStats || {};
+            Object.entries(stats).forEach(([type, count]) => {
+                typeCount[type] = (typeCount[type] || 0) + count;
             });
-            Charts.instances.push(chart);
+        });
+
+        return Object.entries(typeCount)
+            .map(([name, value]) => ({ name, value }))
+            .sort((a, b) => b.value - a.value);
+    },
+
+    // 获取班级能力分布数据
+    getClassAbilityData(classId) {
+        const students = MockData.students.filter(s => s.classId === classId);
+        const abilitySum = {};
+
+        students.forEach(s => {
+            const stats = s.abilityStats || {};
+            Object.entries(stats).forEach(([ability, value]) => {
+                abilitySum[ability] = (abilitySum[ability] || 0) + value;
+            });
+        });
+
+        const total = Object.values(abilitySum).reduce((sum, val) => sum + val, 0);
+
+        return Object.entries(abilitySum)
+            .map(([name, sum]) => ({
+                name,
+                value: total > 0 ? Math.round((sum / total) * 100) : 0
+            }))
+            .sort((a, b) => b.value - a.value);
+    },
+
+    // 获取班级绘本类型趋势数据（折线图）
+    getClassBookTypeTrend(classId, timeRange) {
+        const students = MockData.students.filter(s => s.classId === classId);
+
+        // 根据时间范围生成日期数组
+        const dates = this.generateDateRange(timeRange);
+
+        // 收集所有类型
+        const allTypes = new Set();
+        students.forEach(s => {
+            const stats = s.bookTypeStats || {};
+            Object.keys(stats).forEach(type => allTypes.add(type));
+        });
+
+        const types = Array.from(allTypes).sort();
+
+        // 为每个类型生成趋势数据
+        const series = {};
+        types.forEach(type => {
+            series[type] = dates.map(() => {
+                // 模拟趋势数据：基础值 + 随机波动
+                const baseValue = Math.floor(Math.random() * 15) + 5;
+                const fluctuation = Math.floor(Math.random() * 8) - 4;
+                return Math.max(0, baseValue + fluctuation);
+            });
+        });
+
+        return { dates, types, series };
+    },
+
+    // 获取班级能力分布趋势数据（折线图）
+    getClassAbilityTrend(classId, timeRange) {
+        const students = MockData.students.filter(s => s.classId === classId);
+
+        // 根据时间范围生成日期数组
+        const dates = this.generateDateRange(timeRange);
+
+        // 收集所有能力
+        const allAbilities = new Set();
+        students.forEach(s => {
+            const stats = s.abilityStats || {};
+            Object.keys(stats).forEach(ability => allAbilities.add(ability));
+        });
+
+        const abilities = Array.from(allAbilities).sort();
+
+        // 为每个能力生成趋势数据
+        const series = {};
+        abilities.forEach(ability => {
+            series[ability] = dates.map(() => {
+                // 模拟趋势数据：基础值 + 随机波动
+                const baseValue = Math.floor(Math.random() * 30) + 40;
+                const fluctuation = Math.floor(Math.random() * 15) - 7;
+                return Math.max(20, Math.min(100, baseValue + fluctuation));
+            });
+        });
+
+        return { dates, abilities, series };
+    },
+
+    // 获取学生绘本类型趋势数据（折线图）
+    getStudentBookTypeTrend(studentId, timeRange) {
+        const student = MockData.students.find(s => s.id === studentId);
+        if (!student) return { dates: [], types: [], series: {} };
+
+        // 根据时间范围生成日期数组
+        const dates = this.generateDateRange(timeRange);
+
+        // 获取学生的阅读类型
+        const bookTypeStats = student.bookTypeStats || {};
+        const types = Object.keys(bookTypeStats).sort();
+
+        // 为每个类型生成趋势数据
+        const series = {};
+        types.forEach(type => {
+            series[type] = dates.map(() => {
+                // 模拟趋势数据：基础值 + 随机波动
+                const baseValue = Math.floor(Math.random() * 8) + 2;
+                const fluctuation = Math.floor(Math.random() * 5) - 2;
+                return Math.max(0, baseValue + fluctuation);
+            });
+        });
+
+        return { dates, types, series };
+    },
+
+    // 获取学生能力分布趋势数据（折线图）
+    getStudentAbilityTrend(studentId, timeRange) {
+        const student = MockData.students.find(s => s.id === studentId);
+        if (!student) return { dates: [], abilities: [], series: {} };
+
+        // 根据时间范围生成日期数组
+        const dates = this.generateDateRange(timeRange);
+
+        // 获取学生的能力
+        const abilityStats = student.abilityStats || {};
+        const abilities = Object.keys(abilityStats).sort();
+
+        // 为每个能力生成趋势数据
+        const series = {};
+        abilities.forEach(ability => {
+            series[ability] = dates.map(() => {
+                // 模拟趋势数据：基础值 + 随机波动
+                const baseValue = Math.floor(Math.random() * 30) + 40;
+                const fluctuation = Math.floor(Math.random() * 15) - 7;
+                return Math.max(20, Math.min(100, baseValue + fluctuation));
+            });
+        });
+
+        return { dates, abilities, series };
+    },
+
+    // 获取学生兴趣书单
+    getStudentInterestBooks(studentId, timeRange) {
+        const bookPool = [
+            { name: '小熊维尼', type: '童话故事' },
+            { name: '好饿的毛毛虫', type: '科普绘本' },
+            { name: '猜猜我有多爱你', type: '情感绘本' },
+            { name: '爷爷一定有办法', type: '生活故事' },
+            { name: '逃家小兔', type: '情感绘本' },
+            { name: '花婆婆', type: '人生哲理' },
+            { name: '我爸爸', type: '家庭绘本' },
+            { name: '我妈妈', type: '家庭绘本' },
+            { name: '大卫不可以', type: '行为习惯' },
+            { name: '鳄鱼怕怕牙医怕怕', type: '生活故事' }
+        ];
+
+        let count = 3; // 默认7天推荐3本
+        if (timeRange === '30d') count = 5;
+        else if (timeRange === '90d' || timeRange === 'all') count = 7;
+
+        // 随机选择书籍
+        const shuffled = [...bookPool].sort(() => Math.random() - 0.5);
+        return shuffled.slice(0, count);
+    },
+
+    // 获取学生建议书单
+    getStudentRecommendBooks(studentId, timeRange) {
+        const bookPool = [
+            { name: '月亮的味道', type: '想象力绘本' },
+            { name: '彩虹色的花', type: '友谊绘本' },
+            { name: '活了100万次的猫', type: '生命教育' },
+            { name: '母鸡萝丝去散步', type: '幽默绘本' },
+            { name: '小蓝和小黄', type: '友谊绘本' },
+            { name: '要是你给老鼠吃饼干', type: '因果关系' },
+            { name: '小黑鱼', type: '勇气绘本' },
+            { name: '小房子', type: '环保绘本' },
+            { name: '石头汤', type: '分享绘本' },
+            { name: '爱心树', type: '情感绘本' }
+        ];
+
+        let count = 3; // 默认7天推荐3本
+        if (timeRange === '30d') count = 5;
+        else if (timeRange === '90d' || timeRange === 'all') count = 7;
+
+        // 随机选择书籍
+        const shuffled = [...bookPool].sort(() => Math.random() - 0.5);
+        return shuffled.slice(0, count);
+    },
+
+    // 生成日期范围
+    generateDateRange(timeRange) {
+        const dates = [];
+        let days = 7;
+
+        switch(timeRange) {
+            case '7d': days = 7; break;
+            case '30d': days = 30; break;
+            case '90d': days = 90; break;
+            case 'all': days = 90; break;
+        }
+
+        const today = new Date();
+
+        // 根据天数决定日期格式和间隔
+        if (days <= 7) {
+            // 7天：显示每天
+            for (let i = days - 1; i >= 0; i--) {
+                const date = new Date(today);
+                date.setDate(date.getDate() - i);
+                dates.push(`${date.getMonth() + 1}/${date.getDate()}`);
+            }
+        } else if (days <= 30) {
+            // 30天：每3天一个点
+            for (let i = days - 1; i >= 0; i -= 3) {
+                const date = new Date(today);
+                date.setDate(date.getDate() - i);
+                dates.push(`${date.getMonth() + 1}/${date.getDate()}`);
+            }
+        } else {
+            // 90天：每7天一个点
+            for (let i = days - 1; i >= 0; i -= 7) {
+                const date = new Date(today);
+                date.setDate(date.getDate() - i);
+                dates.push(`${date.getMonth() + 1}/${date.getDate()}`);
+            }
+        }
+
+        return dates;
+    },
+
+    // 获取学生AI对话记录
+    getStudentChatRecords(studentId, timeRange = '7d') {
+        const allRecords = MockData.studentChatRecords[studentId] || [];
+        if (!allRecords.length) return [];
+
+        // 按时间范围过滤
+        const now = new Date();
+        let cutoff = null;
+        switch(timeRange) {
+            case '7d': cutoff = new Date(now.getTime() - 7 * 86400000); break;
+            case '30d': cutoff = new Date(now.getTime() - 30 * 86400000); break;
+            case '90d': cutoff = new Date(now.getTime() - 90 * 86400000); break;
+            case 'all': cutoff = null; break;
+        }
+
+        const filtered = cutoff
+            ? allRecords.filter(a => new Date(a.date) >= cutoff)
+            : allRecords;
+
+        // 按日期降序排列
+        return filtered.sort((a, b) => b.date.localeCompare(a.date));
+    },
+
+    // 切换对话记录展开/折叠
+    toggleChatConv(el) {
+        const turnsEl = el.nextElementSibling;
+        const arrowEl = el.querySelector('.chat-arrow');
+        if (turnsEl.style.display === 'none') {
+            turnsEl.style.display = 'block';
+            arrowEl.style.transform = 'rotate(90deg)';
+        } else {
+            turnsEl.style.display = 'none';
+            arrowEl.style.transform = 'rotate(0deg)';
+        }
+    },
+
+    // 切换活动下绘本列表展开/折叠
+    toggleChatBooks(el) {
+        const booksEl = el.nextElementSibling;
+        const arrowEl = el.querySelector('.chat-arrow');
+        if (booksEl.style.display === 'none') {
+            booksEl.style.display = 'block';
+            arrowEl.style.transform = 'rotate(90deg)';
+        } else {
+            booksEl.style.display = 'none';
+            arrowEl.style.transform = 'rotate(0deg)';
         }
     }
 };

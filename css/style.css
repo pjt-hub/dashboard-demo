@@ -489,3 +489,491 @@ button:disabled {
     0%, 100% { transform: scale(1); }
     50% { transform: scale(1.05); }
 }
+
+/* ============================================================
+   暖白主题（warm-white）覆盖层
+   通过 <body class="theme-warm"> 启用，覆盖常用 slate / 暗色工具类。
+   颜色基调：奶油白底 + 暖琥珀强调 + 深咖文字
+   ============================================================ */
+body.theme-warm {
+    /* 纯白紫调风：参考课例报告页 */
+    --warm-bg: #F7F8FC;
+    --warm-bg-soft: #EEF1FA;
+    --warm-card: #FFFFFF;
+    --warm-card-soft: #FAFBFE;
+    --warm-border: #ECECF2;
+    --warm-border-strong: #D8DAE5;
+    --warm-text: #14151F;
+    --warm-text-soft: #2D2F3D;
+    --warm-text-mute: #4A4D5E;
+    --warm-primary: #6366F1;   /* 蓝紫主色 */
+    --warm-accent: #8B5CF6;    /* 紫色强调 */
+
+    background: linear-gradient(135deg, #F7F8FC 0%, #EEF1FA 60%, #F7F8FC 100%) !important;
+    color: var(--warm-text) !important;
+}
+
+/* —— 背景类覆盖（用属性选择器一网打尽所有透明度变体）—— */
+body.theme-warm [class*="bg-slate-900"],
+body.theme-warm [class*="bg-slate-800"] { background-color: var(--warm-card) !important; }
+
+body.theme-warm [class*="bg-slate-700"],
+body.theme-warm [class*="bg-slate-600"],
+body.theme-warm [class*="bg-slate-500"] { background-color: var(--warm-card-soft) !important; }
+
+body.theme-warm #modal-overlay { background: rgba(74, 63, 53, 0.35) !important; }
+body.theme-warm #modal-content { background: var(--warm-card) !important; }
+
+/* —— 文字颜色覆盖 —— */
+body.theme-warm .text-white { color: var(--warm-text) !important; }
+body.theme-warm .text-slate-200,
+body.theme-warm .text-slate-300 { color: var(--warm-text) !important; }
+body.theme-warm .text-slate-400,
+body.theme-warm .text-slate-500,
+body.theme-warm .text-slate-600 { color: var(--warm-text-soft) !important; }
+body.theme-warm .text-gray-900 { color: var(--warm-text) !important; }
+body.theme-warm .text-gray-700,
+body.theme-warm .text-gray-600,
+body.theme-warm .text-gray-500 { color: var(--warm-text-soft) !important; }
+
+/* 强调色统一靠向暖色 —— 用 box-shadow + filter 不会破坏图表 */
+body.theme-warm .text-cyan-300,
+body.theme-warm .text-cyan-400,
+body.theme-warm .text-blue-300,
+body.theme-warm .text-blue-400 { color: #4F46E5 !important; font-weight: 500; }
+body.theme-warm .text-emerald-300,
+body.theme-warm .text-emerald-400 { color: #0EA5E9 !important; font-weight: 500; }
+body.theme-warm .text-amber-200,
+body.theme-warm .text-amber-300,
+body.theme-warm .text-amber-400 { color: #7C3AED !important; font-weight: 600; }
+body.theme-warm .text-violet-300 { color: #7C3AED !important; }
+body.theme-warm .text-red-300 { color: #DC2626 !important; }
+
+/* —— 边框颜色覆盖 —— */
+body.theme-warm [class*="border-slate-"] { border-color: var(--warm-border) !important; }
+body.theme-warm .border-gray-200 { border-color: var(--warm-border) !important; }
+body.theme-warm .border-cyan-400\/30,
+body.theme-warm .border-cyan-400\/25,
+body.theme-warm .border-blue-400\/30,
+body.theme-warm .border-amber-400\/30,
+body.theme-warm .border-amber-400\/60,
+body.theme-warm .border-emerald-400\/30,
+body.theme-warm .border-violet-400\/30,
+body.theme-warm .border-red-400\/30 { border-color: var(--warm-border-strong) !important; }
+
+/* —— 渐变文字（标题）改成蓝紫渐变 —— */
+body.theme-warm .bg-gradient-to-r.from-blue-400.to-cyan-300,
+body.theme-warm .bg-gradient-to-r.from-amber-300.to-cyan-300,
+body.theme-warm .bg-gradient-to-r.from-amber-400.to-orange-400,
+body.theme-warm .bg-gradient-to-r.from-amber-500.to-orange-500 {
+    background-image: linear-gradient(90deg, #6366F1, #8B5CF6) !important;
+}
+
+/* —— body 背景渐变覆盖 —— */
+body.theme-warm.bg-gradient-to-br { background-image: none !important; }
+
+/* —— 侧边栏 —— */
+body.theme-warm #sidebar {
+    background: linear-gradient(180deg, #FFFFFF 0%, #F7F8FC 100%) !important;
+    border-right: 1px solid var(--warm-border) !important;
+}
+body.theme-warm #sidebar h1,
+body.theme-warm #sidebar .text-white { color: var(--warm-text) !important; }
+body.theme-warm #sidebar .text-slate-400,
+body.theme-warm #sidebar .text-slate-500 { color: var(--warm-text-soft) !important; }
+body.theme-warm #sidebar .border-slate-700 { border-color: var(--warm-border) !important; }
+body.theme-warm .sidebar-nav-item { color: var(--warm-text-soft) !important; }
+body.theme-warm .sidebar-nav-item:hover { background: rgba(99, 102, 241, 0.06) !important; color: var(--warm-text) !important; }
+body.theme-warm .sidebar-nav-item.active {
+    background: linear-gradient(90deg, rgba(99, 102, 241, 0.12) 0%, rgba(139, 92, 246, 0.06) 100%) !important;
+    color: var(--warm-primary) !important;
+    border-left: 3px solid var(--warm-primary) !important;
+}
+body.theme-warm .sidebar-nav-item.active svg { color: var(--warm-primary) !important; }
+body.theme-warm .sidebar-group-title { color: var(--warm-text-mute) !important; }
+
+/* —— 顶部栏 —— */
+body.theme-warm header {
+    background: rgba(255, 255, 255, 0.95) !important;
+    border-bottom: 1px solid var(--warm-border) !important;
+}
+body.theme-warm header * { color: var(--warm-text) !important; }
+body.theme-warm header #breadcrumb,
+body.theme-warm header #current-time { color: var(--warm-text-soft) !important; }
+
+/* —— 低透明度的浅色文字（蓝/sky/teal 系）在暖底上会发白发灰，统一改成深咖 —— */
+body.theme-warm [class*="text-sky-"],
+body.theme-warm [class*="text-blue-100"],
+body.theme-warm [class*="text-blue-200"],
+body.theme-warm [class*="text-cyan-100"],
+body.theme-warm [class*="text-cyan-200"],
+body.theme-warm [class*="text-teal-"],
+body.theme-warm [class*="text-indigo-"],
+body.theme-warm [class*="text-violet-100"],
+body.theme-warm [class*="text-violet-200"],
+body.theme-warm [class*="text-violet-300"],
+body.theme-warm [class*="text-purple-100"],
+body.theme-warm [class*="text-purple-200"],
+body.theme-warm [class*="text-purple-300"],
+body.theme-warm [class*="text-pink-100"],
+body.theme-warm [class*="text-pink-200"],
+body.theme-warm [class*="text-rose-100"],
+body.theme-warm [class*="text-rose-200"],
+body.theme-warm [class*="text-fuchsia-"],
+body.theme-warm [class*="text-emerald-100"],
+body.theme-warm [class*="text-emerald-200"],
+body.theme-warm [class*="text-amber-100"],
+body.theme-warm [class*="text-amber-200"] { color: var(--warm-text) !important; }
+
+/* 渐变文字（from-violet-X to-rose-X / from-purple-X to-pink-X 之类）改为蓝紫渐变 */
+body.theme-warm [class*="bg-clip-text"][class*="bg-gradient-to-"] {
+    background-image: linear-gradient(90deg, #4F46E5, #7C3AED) !important;
+    color: transparent !important;
+    -webkit-text-fill-color: transparent !important;
+    font-weight: 700 !important;
+}
+
+/* 单独写一遍 bg-gradient-to-r/b/br 击中渐变 banner 中 bg-clip-text 标题 */
+body.theme-warm .bg-gradient-to-r[class*="from-violet-"],
+body.theme-warm .bg-gradient-to-r[class*="from-purple-"],
+body.theme-warm .bg-gradient-to-r[class*="from-pink-"],
+body.theme-warm .bg-gradient-to-r[class*="from-rose-"] {
+    background-image: linear-gradient(90deg, #4F46E5, #7C3AED) !important;
+}
+
+/* —— 模态框 / AI 分析 markdown 标题强制加深加粗 —— */
+body.theme-warm h1, body.theme-warm h2, body.theme-warm h3,
+body.theme-warm h4, body.theme-warm h5, body.theme-warm h6 {
+    color: var(--warm-text) !important;
+}
+body.theme-warm h1.text-white, body.theme-warm h2.text-white,
+body.theme-warm h3.text-white, body.theme-warm h4.text-white,
+body.theme-warm h5.text-white, body.theme-warm h6.text-white,
+body.theme-warm .text-white {
+    color: #0F1020 !important;
+    -webkit-text-fill-color: #0F1020 !important;
+    background: none !important;
+    background-image: none !important;
+    font-weight: 700 !important;
+}
+
+/* modal 主标题（《XXX》AI 热点问题分析）位于 #modal-content 内的 h3 —— */
+body.theme-warm #modal-content h3,
+body.theme-warm #modal-content h3.text-lg,
+body.theme-warm #modal-content h3.font-bold {
+    color: #0F1020 !important;
+    -webkit-text-fill-color: #0F1020 !important;
+    background: none !important;
+    background-image: none !important;
+    font-weight: 700 !important;
+}
+
+/* AI 分析输出区里的二级/三级标题原本是 amber-300 / cyan-300，确保可读 */
+body.theme-warm #ai-analysis-stream h1,
+body.theme-warm #ai-analysis-stream h2,
+body.theme-warm #ai-analysis-stream h3,
+body.theme-warm #ai-analysis-stream h4,
+body.theme-warm #ai-analysis-stream h5,
+body.theme-warm #ai-analysis-stream h6,
+body.theme-warm #ai-analysis-stream .text-amber-300,
+body.theme-warm h2.text-amber-300,
+body.theme-warm h3.text-amber-300,
+body.theme-warm h4.text-amber-300,
+body.theme-warm .text-amber-300 {
+    color: #4338CA !important;
+    -webkit-text-fill-color: #4338CA !important;
+    background: none !important;
+    background-image: none !important;
+    font-weight: 700 !important;
+}
+body.theme-warm #ai-analysis-stream h3,
+body.theme-warm h2.text-cyan-300,
+body.theme-warm h3.text-cyan-300,
+body.theme-warm h4.text-cyan-300,
+body.theme-warm .text-cyan-300 {
+    color: #1E3A8A !important;
+    -webkit-text-fill-color: #1E3A8A !important;
+    background: none !important;
+    background-image: none !important;
+    font-weight: 600 !important;
+}
+
+/* AI 分析正文里所有 p / li 默认色加深 */
+body.theme-warm #ai-analysis-stream p,
+body.theme-warm #ai-analysis-stream li,
+body.theme-warm #ai-analysis-stream ul,
+body.theme-warm #ai-analysis-stream ol,
+body.theme-warm #ai-analysis-stream div {
+    color: #1A1B25 !important;
+}
+body.theme-warm #ai-analysis-stream strong {
+    color: #6D28D9 !important;
+    -webkit-text-fill-color: #6D28D9 !important;
+}
+/* —— 兜底：modal 内所有正文文字（含 ai-analysis-stream 之外的范围/样本卡）都拉深 —— */
+body.theme-warm #modal-content,
+body.theme-warm #modal-content p,
+body.theme-warm #modal-content li,
+body.theme-warm #modal-content span,
+body.theme-warm #modal-content div { color: #1A1B25; }
+body.theme-warm #modal-content .text-slate-200,
+body.theme-warm #modal-content .text-slate-300 { color: #14151F !important; -webkit-text-fill-color: #14151F !important; }
+body.theme-warm #modal-content .text-slate-400 { color: #2D2F3D !important; -webkit-text-fill-color: #2D2F3D !important; }
+body.theme-warm #modal-content .text-slate-500 { color: #4A4D5E !important; -webkit-text-fill-color: #4A4D5E !important; }
+/* 列表 marker 颜色（list-disc 圆点） */
+body.theme-warm #modal-content ul.list-disc { color: #14151F !important; }
+body.theme-warm #modal-content ul.list-disc::marker,
+body.theme-warm #modal-content ul.list-disc li::marker { color: #6D28D9 !important; }
+/* AI 报告 markdown 容器内最强兜底 */
+body.theme-warm #ai-analysis-stream,
+body.theme-warm #ai-analysis-stream * {
+    color: #1A1B25 !important;
+}
+body.theme-warm #ai-analysis-stream h1,
+body.theme-warm #ai-analysis-stream h2 { color: #4338CA !important; -webkit-text-fill-color: #4338CA !important; font-weight: 700 !important; }
+body.theme-warm #ai-analysis-stream h3,
+body.theme-warm #ai-analysis-stream h4 { color: #1E3A8A !important; -webkit-text-fill-color: #1E3A8A !important; font-weight: 600 !important; }
+body.theme-warm #ai-analysis-stream strong { color: #6D28D9 !important; -webkit-text-fill-color: #6D28D9 !important; font-weight: 700 !important; }
+
+/* —— 范围/样本/生成时间这种灰标签（text-slate-500）也加深 —— */
+body.theme-warm .text-slate-500 { color: #4A4D5E !important; }
+body.theme-warm .text-slate-400 { color: #3F4256 !important; }
+body.theme-warm .text-slate-600 { color: #1A1B25 !important; }
+body.theme-warm .text-slate-300,
+body.theme-warm .text-slate-200 { color: #1A1B25 !important; }
+
+/* placeholder / 占位文字 */
+body.theme-warm .text-slate-500.text-xs,
+body.theme-warm .text-slate-400.text-xs { color: #4A4D5E !important; }
+
+/* —— 一些 "from-blue-500/10 to-..." 这种淡蓝渐变指标卡，改成奶油渐变 —— */
+body.theme-warm [class*="from-blue-"][class*="to-cyan-"],
+body.theme-warm [class*="from-sky-"][class*="to-blue-"],
+body.theme-warm [class*="from-cyan-"][class*="to-blue-"],
+body.theme-warm [class*="from-indigo-"] {
+    background-image: linear-gradient(135deg, #FFF8EA, #FBEFD8) !important;
+}
+
+/* —— 数字大字号 (text-blue-300 / 400 in stat cards) 在暖底要够深 —— */
+/* 已在上方 text-cyan/blue 规则统一处理 */
+
+/* —— 单位 / 描述小字 (text-blue-100/80 等)—— */
+body.theme-warm [class*="text-blue-50"],
+body.theme-warm [class*="text-cyan-50"] { color: var(--warm-text-soft) !important; }
+
+/* ============================================================
+   提升卡片与背景的对比度（暖白模式下卡片边界不清问题）
+   ============================================================ */
+
+/* 外层背景：白底 + 极淡紫调 */
+body.theme-warm {
+    background: linear-gradient(135deg, #F7F8FC 0%, #EEF1FA 50%, #F7F8FC 100%) !important;
+}
+
+/* 卡片本体改成更亮的白底 + 明显边框 + 柔和阴影 */
+body.theme-warm [class*="bg-slate-900"],
+body.theme-warm [class*="bg-slate-800"],
+body.theme-warm [class*="bg-slate-700"],
+body.theme-warm [class*="bg-slate-600"],
+body.theme-warm [class*="bg-slate-500"] {
+    border: 1px solid #ECECF2 !important;
+    box-shadow: 0 1px 3px rgba(20, 22, 40, 0.04), 0 1px 2px rgba(20, 22, 40, 0.03) !important;
+}
+
+body.theme-warm [class*="bg-slate-900"],
+body.theme-warm [class*="bg-slate-800"] { background-color: #FFFFFF !important; }
+body.theme-warm [class*="bg-slate-700"],
+body.theme-warm [class*="bg-slate-600"],
+body.theme-warm [class*="bg-slate-500"] { background-color: #FAFBFE !important; }
+
+/* 嵌套卡片（卡片内的卡片）用更柔的差异 */
+body.theme-warm [class*="bg-slate-900"] [class*="bg-slate-800"],
+body.theme-warm [class*="bg-slate-800"] [class*="bg-slate-700"],
+body.theme-warm [class*="bg-slate-700"] [class*="bg-slate-800"] {
+    box-shadow: inset 0 0 0 1px rgba(217, 199, 168, 0.4) !important;
+    border-color: transparent !important;
+}
+
+/* radial/linear 渐变 banner 也加边框阴影 */
+body.theme-warm [class*="bg-[radial-gradient"],
+body.theme-warm [class*="bg-[linear-gradient"] {
+    border: 1px solid #ECECF2 !important;
+    box-shadow: 0 1px 3px rgba(20, 22, 40, 0.04) !important;
+}
+
+/* 指标卡（彩色渐变背景）改为浅紫渐变 + 细边框 */
+body.theme-warm .bg-gradient-to-br[class*="from-emerald-500"],
+body.theme-warm .bg-gradient-to-br[class*="from-cyan-500"],
+body.theme-warm .bg-gradient-to-br[class*="from-blue-500"],
+body.theme-warm .bg-gradient-to-br[class*="from-amber-500"],
+body.theme-warm .bg-gradient-to-br[class*="from-violet-500"],
+body.theme-warm .bg-gradient-to-br[class*="from-rose-500"] {
+    background-image: linear-gradient(135deg, #FFFFFF, #F3F1FE) !important;
+    border: 1px solid #ECECF2 !important;
+    box-shadow: 0 1px 3px rgba(20, 22, 40, 0.04) !important;
+}
+
+/* 顶部 header / sidebar 不参与，单独移除 */
+body.theme-warm #sidebar,
+body.theme-warm header {
+    box-shadow: none !important;
+    border: none !important;
+    border-right: 1px solid var(--warm-border) !important;
+}
+body.theme-warm header { border-right: none !important; border-bottom: 1px solid var(--warm-border) !important; }
+
+/* —— 卡片悬浮加柔和暖色阴影 —— */
+body.theme-warm .bg-slate-700\/40,
+body.theme-warm .bg-slate-700\/50,
+body.theme-warm .bg-slate-800\/60,
+body.theme-warm .bg-slate-900 { box-shadow: 0 1px 3px rgba(74, 63, 53, 0.06); }
+
+/* —— 表格行 hover —— */
+body.theme-warm tbody tr.hover\:bg-slate-700\/30:hover,
+body.theme-warm .hover\:bg-slate-700\/40:hover,
+body.theme-warm .hover\:bg-slate-700\/50:hover,
+body.theme-warm .hover\:bg-slate-700\/60:hover,
+body.theme-warm .hover\:bg-slate-600\/70:hover { background-color: #F7F8FC !important; }
+
+/* —— 半透明色块 改为浅蓝紫色 —— */
+body.theme-warm .bg-amber-500\/15,
+body.theme-warm .bg-amber-500\/20,
+body.theme-warm .bg-amber-500\/30 { background-color: rgba(139, 92, 246, 0.08) !important; }
+body.theme-warm .bg-cyan-500\/15,
+body.theme-warm .bg-cyan-500\/20 { background-color: rgba(14, 165, 233, 0.08) !important; }
+body.theme-warm .bg-violet-500\/15,
+body.theme-warm .bg-violet-500\/20,
+body.theme-warm .bg-violet-500\/30 { background-color: rgba(124, 58, 237, 0.08) !important; }
+body.theme-warm .bg-emerald-500\/15,
+body.theme-warm .bg-emerald-500\/20 { background-color: rgba(16, 185, 129, 0.08) !important; }
+body.theme-warm .bg-red-500\/10,
+body.theme-warm .bg-red-500\/15,
+body.theme-warm .bg-red-500\/20 { background-color: rgba(239, 68, 68, 0.08) !important; }
+body.theme-warm .bg-blue-500\/5,
+body.theme-warm .bg-blue-500\/10 { background-color: rgba(99, 102, 241, 0.05) !important; }
+
+/* —— 输入框 / select —— */
+body.theme-warm input,
+body.theme-warm select,
+body.theme-warm textarea {
+    background-color: var(--warm-card) !important;
+    color: var(--warm-text) !important;
+    border-color: var(--warm-border) !important;
+}
+body.theme-warm input::placeholder { color: var(--warm-text-mute) !important; }
+
+/* —— 主题切换按钮 —— */
+.theme-toggle-btn {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.08);
+    color: #cbd5e1;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+.theme-toggle-btn:hover { background: rgba(255,255,255,0.15); }
+body.theme-warm .theme-toggle-btn {
+    background: rgba(99, 102, 241, 0.08);
+    color: var(--warm-primary);
+    border-color: var(--warm-border);
+}
+body.theme-warm .theme-toggle-btn:hover { background: rgba(99, 102, 241, 0.16); }
+
+/* —— 内嵌的硬编码颜色渐变小卡（区域概览里的两张蓝灰小卡）—— */
+body.theme-warm [class*="from-[#0e7490]"],
+body.theme-warm [class*="from-[#2563eb]"],
+body.theme-warm [class*="from-[#0c4a6e"],
+body.theme-warm [class*="from-[#1e3a5f"],
+body.theme-warm .bg-gradient-to-br[class*="from-[#"],
+body.theme-warm .bg-gradient-to-b[class*="from-[#"] {
+    background-image: linear-gradient(135deg, #FFFFFF, #F3F1FE) !important;
+    background-color: #FFFFFF !important;
+    border-color: #ECECF2 !important;
+}
+
+/* 嵌套外层卡片（slate-800/70 ... slate-800/50 这种 3 段渐变）也强制白底 */
+body.theme-warm .bg-gradient-to-br.from-slate-800\/70.via-slate-800\/60.to-slate-800\/50,
+body.theme-warm .bg-gradient-to-br[class*="from-slate-800"][class*="via-slate-800"][class*="to-slate-800"],
+body.theme-warm .bg-gradient-to-b.from-slate-800\/60.to-slate-800\/50 {
+    background-image: linear-gradient(135deg, #FFFFFF 0%, #F7F8FC 100%) !important;
+    border-color: #ECECF2 !important;
+}
+
+/* 这两张卡里的 sky-200/70 标签文字 */
+body.theme-warm [class*="text-sky-200"],
+body.theme-warm [class*="text-sky-100"] { color: #4A4D5E !important; }
+/* 这些选择器靠多 class 串联击中含有 radial/linear 渐变的容器 */
+body.theme-warm [class*="bg-[radial-gradient"],
+body.theme-warm [class*="bg-[linear-gradient"] {
+    background-image: linear-gradient(135deg, #FFFFFF 0%, #F3F1FE 50%, #EEF1FA 100%) !important;
+    background-color: #FFFFFF !important;
+    border: 1px solid #ECECF2 !important;
+    box-shadow: 0 1px 3px rgba(20, 22, 40, 0.04) !important;
+}
+
+/* —— 处理基于 gradient-to-* + slate/blue 的卡片背景 —— */
+body.theme-warm .bg-gradient-to-b.from-slate-800\/60,
+body.theme-warm .bg-gradient-to-br.from-slate-800\/70,
+body.theme-warm .bg-gradient-to-br.from-slate-800\/80,
+body.theme-warm .bg-gradient-to-br.from-slate-800,
+body.theme-warm .bg-gradient-to-br.from-slate-700 {
+    background-image: none !important;
+    background-color: var(--warm-card) !important;
+}
+
+/* —— ECharts 容器外层的 backdrop（如有）—— */
+body.theme-warm canvas { filter: none; }
+
+/* —— 强制让带 backdrop-blur 的暗色面板看起来是奶油色 —— */
+body.theme-warm .backdrop-blur-sm,
+body.theme-warm .backdrop-blur-md {
+    background-color: var(--warm-card) !important;
+}
+
+/* —— 大标题 banner 内的小角标 —— */
+body.theme-warm .role-badge { color: var(--warm-primary) !important; background: rgba(99, 102, 241, 0.1) !important; border-color: var(--warm-border) !important; }
+
+/* —— 阴影适配 —— */
+body.theme-warm .shadow-xl,
+body.theme-warm [class*="shadow-["] { box-shadow: 0 8px 24px rgba(74, 63, 53, 0.08) !important; }
+
+/* —— 表头 —— */
+body.theme-warm thead.bg-slate-800\/60,
+body.theme-warm thead .bg-slate-800\/60,
+body.theme-warm thead tr { background-color: #F7F8FC !important; }
+body.theme-warm thead th { color: var(--warm-text-soft) !important; font-weight: 500; }
+
+/* —— sidebar 滚动条 —— */
+body.theme-warm #sidebar { color: var(--warm-text); }
+
+/* —— "全区数据" / "本园" 等小徽章 —— */
+body.theme-warm [class*="role-badge"],
+body.theme-warm .px-3.py-1\.5.rounded-full { background-color: rgba(99, 102, 241, 0.1) !important; color: var(--warm-primary) !important; }
+
+/* —— 半透明色块（蓝/cyan 等渐变背景的指标卡）—— */
+body.theme-warm .from-emerald-500\/30,
+body.theme-warm .from-cyan-500\/30,
+body.theme-warm .from-blue-500\/30,
+body.theme-warm .from-amber-500\/30,
+body.theme-warm .from-violet-500\/30,
+body.theme-warm .from-rose-500\/30,
+body.theme-warm .to-teal-500\/10,
+body.theme-warm .to-blue-500\/10,
+body.theme-warm .to-cyan-500\/10,
+body.theme-warm .to-orange-500\/10,
+body.theme-warm .to-purple-500\/10 {
+    --tw-gradient-from: transparent !important;
+    --tw-gradient-to: transparent !important;
+}
+
+/* 指标卡 wrapper 直接铺浅紫底 */
+body.theme-warm .bg-gradient-to-br.from-emerald-500\/30,
+body.theme-warm .bg-gradient-to-br.from-cyan-500\/30,
+body.theme-warm .bg-gradient-to-br.from-blue-500\/30,
+body.theme-warm .bg-gradient-to-br.from-amber-500\/30,
+body.theme-warm .bg-gradient-to-br.from-violet-500\/30,
+body.theme-warm .bg-gradient-to-br.from-rose-500\/30 {
+    background-image: linear-gradient(135deg, #FFFFFF, #F3F1FE) !important;
+}
