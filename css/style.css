@@ -550,7 +550,8 @@ body.theme-warm #modal-overlay { background: rgba(74, 63, 53, 0.35) !important; 
 body.theme-warm #modal-content { background: var(--warm-card) !important; }
 
 /* —— 文字颜色覆盖 —— */
-body.theme-warm .text-white { color: var(--warm-text) !important; }
+body.theme-warm.text-white,
+body.theme-warm .text-white { color: var(--warm-text) !important; -webkit-text-fill-color: var(--warm-text) !important; }
 body.theme-warm .text-slate-200,
 body.theme-warm .text-slate-300 { color: var(--warm-text) !important; }
 body.theme-warm .text-slate-400,
