@@ -74,7 +74,7 @@ const App = {
 
     // 主题（暖白 / 深色）切换
     initTheme() {
-        const saved = localStorage.getItem('uiTheme') || 'warm';
+        const saved = localStorage.getItem('uiTheme') || 'dark';
         this.applyTheme(saved);
     },
     applyTheme(theme) {
