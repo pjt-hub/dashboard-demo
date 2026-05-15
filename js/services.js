@@ -1,4 +1,4 @@
-// 数据计算服务层 - AI分析模块数据处理
+// 数据计算服务层 - 数据处理模块
 
 const DataService = {
     // ========== 能力分布计算 ==========
@@ -83,10 +83,10 @@ const DataService = {
         })).sort((a, b) => b.percentage - a.percentage);
     },
 
-    // ========== 为AI服务准备数据 ==========
+    // ========== 数据分析准备 ==========
 
     /**
-     * 准备园所分析数据（给大模型）
+     * 准备园所分析数据
      * @param {Object} schoolData - 园所数据
      * @param {Array} classes - 班级数据
      * @param {Array} students - 学生数据
@@ -146,7 +146,7 @@ const DataService = {
     },
 
     /**
-     * 准备学生分析数据（给大模型）
+     * 准备学生分析数据
      * @param {Object} student - 学生信息
      * @param {Array} readingRecords - 阅读记录
      * @param {Array} books - 绘本库
