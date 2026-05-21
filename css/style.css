@@ -1,374 +1,378 @@
-/* AI绘本阅读室数据统计平台 - 明亮科技风样式 */
+/* ============================================================
+   AI绘本阅读室数据统计平台 · 主样式表
+   所有颜色/尺寸/动效 token 见 tokens.css
+   深色为默认,body.theme-warm 通过覆盖 :root 变量切到浅色
+   ============================================================ */
 
-/* 全局基础 - 更亮的蓝紫色渐变 */
+/* —— 基础 —— */
 body {
-    background: linear-gradient(135deg, #3d4f6f 0%, #4a6285 35%, #506a8e 50%, #4a6285 65%, #3d4f6f 100%);
+    background: var(--bg-base);
+    color: var(--text-primary);
     min-height: 100vh;
+    font-family: 'Fira Sans', 'Noto Sans SC', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
-/* 侧边栏 - 更亮 */
+/* 数字 / 代码用等宽字体,提升数据可读性 */
+.font-mono,
+.stat-card .text-data-lg,
+.stat-card .text-data-xl,
+.stat-card .text-3xl,
+.stat-card .text-2xl {
+    font-family: 'Fira Code', 'Fira Sans', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+}
+
+/* —— 侧边栏 —— */
 #sidebar {
-    background: linear-gradient(180deg, #3a4d68 0%, #425a7a 100%);
-    border-right: 1px solid rgba(140, 180, 240, 0.3);
+    background: var(--surface-sidebar);
+    border-right: 1px solid var(--border-subtle);
 }
 
-/* 侧边栏导航项 */
 .sidebar-nav-item {
-    color: #a0aec0;
+    color: var(--text-muted);
     margin-bottom: 2px;
+    transition: background var(--motion-base) var(--ease-standard),
+                color var(--motion-base) var(--ease-standard);
 }
 .sidebar-nav-item:hover {
-    background: rgba(96, 165, 250, 0.12);
-    color: #e2e8f0;
+    background: var(--hover-overlay);
+    color: var(--text-secondary);
 }
 .sidebar-nav-item.active {
-    background: linear-gradient(90deg, rgba(59, 130, 246, 0.2) 0%, rgba(6, 182, 212, 0.1) 100%);
-    color: #60a5fa;
+    background: linear-gradient(90deg, var(--active-overlay) 0%, transparent 100%);
+    color: var(--brand-400);
     font-weight: 500;
-    border-left: 3px solid #3b82f6;
+    border-left: 3px solid var(--brand-500);
 }
 .sidebar-nav-item.active svg {
-    color: #60a5fa;
+    color: var(--brand-400);
 }
 
-/* 顶部栏 - 更亮 */
+.sidebar-group-title {
+    display: none;
+}
+.sidebar-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.sidebar-nav-item.hidden-role {
+    display: none;
+}
+
+/* —— 顶部栏 —— */
 header {
-    background: rgba(55, 72, 98, 0.85) !important;
+    background: var(--surface-header);
     backdrop-filter: blur(12px);
-    border-bottom: 1px solid rgba(140, 180, 240, 0.35) !important;
+    border-bottom: 1px solid var(--border-subtle);
 }
 header * {
-    color: #c0cad6 !important;
+    color: var(--text-secondary);
 }
-
-/* 面包屑 */
 #breadcrumb {
-    color: #8896a6 !important;
+    color: var(--text-faint);
 }
 
-/* 页面标题 */
+/* —— 页面标题渐变 —— */
 h2.text-2xl {
-    background: linear-gradient(90deg, #60a5fa, #22d3ee);
+    background: linear-gradient(90deg, var(--brand-400), var(--info-400));
     -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
     background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
 }
 
-/* 主内容区 */
 main {
     background: transparent;
 }
 
-/* 卡片样式 - 更亮的毛玻璃 */
+/* —— 卡片(覆盖 Tailwind utility,统一走 token) —— */
 .stat-card,
 .bg-white {
-    background: rgba(75, 95, 125, 0.75) !important;
+    background: var(--surface-1);
     backdrop-filter: blur(14px);
-    border: 1px solid rgba(150, 190, 255, 0.35) !important;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+    border: 1px solid var(--border-default);
+    box-shadow: var(--shadow-card);
+    color: var(--text-primary);
+    transition: border-color var(--motion-base) var(--ease-standard),
+                box-shadow var(--motion-base) var(--ease-standard);
 }
 .bg-white:hover {
-    border-color: rgba(96, 165, 250, 0.35) !important;
-    box-shadow: 0 8px 24px rgba(59, 130, 246, 0.1);
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-card-hover);
 }
 
-/* 指标卡片内文字 */
 .bg-white .text-slate-500,
 .bg-white .text-sm.text-slate-500 {
-    color: #a0aec0 !important;
+    color: var(--text-muted);
 }
 .bg-white .text-3xl,
 .bg-white .text-2xl,
-.bg-white .text-xl {
-    color: #f1f5f9 !important;
-}
-.bg-white .text-xs.text-green-500 {
-    color: #34d399 !important;
-}
-.bg-white .text-slate-800,
-.bg-white .font-medium.text-slate-700,
-.bg-white .text-slate-700 {
-    color: #e2e8f0 !important;
-}
-
-/* 图表区域标题 */
+.bg-white .text-xl,
 .bg-white h3,
 .bg-white h4 {
-    color: #f1f5f9 !important;
+    color: var(--text-primary);
+}
+.bg-white .text-slate-800,
+.bg-white .text-slate-700,
+.bg-white .font-medium.text-slate-700 {
+    color: var(--text-secondary);
+}
+.bg-white .text-xs.text-green-500 {
+    color: var(--success-400);
 }
 
-/* 指标卡片图标背景 - 更亮 */
-.bg-blue-50 { background: rgba(59, 130, 246, 0.18) !important; }
-.bg-emerald-50 { background: rgba(16, 185, 129, 0.18) !important; }
-.bg-purple-50 { background: rgba(139, 92, 246, 0.18) !important; }
-.bg-amber-50 { background: rgba(245, 158, 11, 0.18) !important; }
-.bg-cyan-50 { background: rgba(6, 182, 212, 0.18) !important; }
-.bg-green-50 { background: rgba(34, 197, 94, 0.18) !important; }
-.bg-red-50 { background: rgba(239, 68, 68, 0.18) !important; }
+/* —— 指标卡图标背景(半透明) —— */
+.bg-blue-50    { background: color-mix(in oklab, var(--brand-500)   18%, transparent); }
+.bg-emerald-50 { background: color-mix(in oklab, var(--success-500) 18%, transparent); }
+.bg-purple-50  { background: color-mix(in oklab, #8B5CF6            18%, transparent); }
+.bg-amber-50   { background: color-mix(in oklab, var(--accent-500)  18%, transparent); }
+.bg-cyan-50    { background: color-mix(in oklab, var(--info-500)    18%, transparent); }
+.bg-green-50   { background: color-mix(in oklab, var(--success-500) 18%, transparent); }
+.bg-red-50     { background: color-mix(in oklab, var(--danger-500)  18%, transparent); }
 
-/* 指标卡片数值颜色 - 更鲜亮 */
-.text-blue-600 { color: #60a5fa !important; }
-.text-emerald-600 { color: #34d399 !important; }
-.text-purple-600 { color: #a78bfa !important; }
-.text-amber-600 { color: #fbbf24 !important; }
-.text-cyan-600 { color: #22d3ee !important; }
-.text-green-600 { color: #4ade80 !important; }
-.text-red-600 { color: #f87171 !important; }
+/* 指标卡数值色 */
+.text-blue-600    { color: var(--brand-400); }
+.text-emerald-600 { color: var(--success-400); }
+.text-purple-600  { color: #A78BFA; }
+.text-amber-600   { color: var(--accent-400); }
+.text-cyan-600    { color: var(--info-400); }
+.text-green-600   { color: var(--success-400); }
+.text-red-600     { color: var(--danger-400); }
 
-/* 表格样式 - 更亮 */
+/* —— 表格 —— */
 table {
-    color: #f0f4f8;
+    color: var(--text-secondary);
 }
 thead tr {
-    background: rgba(60, 80, 108, 0.85) !important;
+    background: var(--surface-3);
 }
 thead th {
-    color: #d1dce8 !important;
-    border-bottom: 1px solid rgba(140, 180, 240, 0.35) !important;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-default);
+    font-weight: 500;
 }
 tbody tr {
-    border-bottom: 1px solid rgba(110, 135, 165, 0.45) !important;
+    border-bottom: 1px solid var(--border-subtle);
+    transition: background var(--motion-fast) var(--ease-standard);
 }
 tbody tr:hover {
-    background: rgba(96, 165, 250, 0.18) !important;
+    background: var(--hover-overlay);
 }
 td {
-    color: #e2e8f0 !important;
+    color: var(--text-secondary);
 }
-td .font-medium {
-    color: #f1f5f9 !important;
-}
-td .font-semibold {
-    color: #60a5fa !important;
-}
+td .font-medium { color: var(--text-primary); }
+td .font-semibold { color: var(--brand-400); }
 td .text-slate-500,
-td .text-xs {
-    color: #8896a6 !important;
-}
+td .text-xs { color: var(--text-faint); }
 
-/* 标签badge */
+/* —— 徽章 —— */
 .rounded-full.text-xs.bg-blue-50 {
-    background: rgba(59, 130, 246, 0.2) !important;
-    color: #60a5fa !important;
+    background: color-mix(in oklab, var(--brand-500) 20%, transparent);
+    color: var(--brand-400);
 }
 .rounded-full.text-xs.bg-red-50 {
-    background: rgba(239, 68, 68, 0.2) !important;
-    color: #f87171 !important;
+    background: color-mix(in oklab, var(--danger-500) 20%, transparent);
+    color: var(--danger-400);
 }
 .rounded-full.text-xs.bg-green-50 {
-    background: rgba(34, 197, 94, 0.2) !important;
-    color: #4ade80 !important;
+    background: color-mix(in oklab, var(--success-500) 20%, transparent);
+    color: var(--success-400);
 }
 .rounded-full.text-xs.bg-purple-50 {
-    background: rgba(139, 92, 246, 0.2) !important;
-    color: #a78bfa !important;
+    background: color-mix(in oklab, #8B5CF6 20%, transparent);
+    color: #A78BFA;
 }
 
-/* 排名徽章 */
 .bg-amber-100 {
-    background: rgba(245, 158, 11, 0.28) !important;
-    color: #fbbf24 !important;
+    background: color-mix(in oklab, var(--accent-500) 28%, transparent);
+    color: var(--accent-400);
 }
 .bg-slate-100 {
-    background: rgba(85, 100, 120, 0.45) !important;
-    color: #b0bec5 !important;
+    background: var(--surface-2);
+    color: var(--text-muted);
 }
 
-/* 筛选器区域 - 更亮 */
+/* —— 筛选区 —— */
 .bg-slate-50 {
-    background: rgba(60, 80, 108, 0.6) !important;
-    border: 1px solid rgba(120, 150, 190, 0.5);
-    border-radius: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    transition: background var(--motion-base) var(--ease-standard);
 }
+.bg-slate-50:hover {
+    background: var(--surface-2);
+    border-color: var(--border-default);
+}
+.bg-slate-50 .text-sm.font-medium { color: var(--text-secondary); }
+.bg-slate-50 .text-xs.text-slate-400 { color: var(--text-faint); }
+.bg-slate-50 .text-lg.font-bold { color: var(--brand-400); }
 
-/* 输入框和下拉框 - 更亮 */
+/* —— 表单 —— */
 input[type="text"],
 input[type="date"],
 input[type="password"],
-select {
-    background: rgba(70, 92, 120, 0.85) !important;
-    border: 1px solid rgba(130, 160, 200, 0.55) !important;
-    color: #f0f4f8 !important;
+select,
+textarea {
+    background: var(--surface-3);
+    border: 1px solid var(--border-default);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    transition: border-color var(--motion-base) var(--ease-standard),
+                box-shadow var(--motion-base) var(--ease-standard);
 }
-input::placeholder {
-    color: #8a9ab0 !important;
+input::placeholder, textarea::placeholder {
+    color: var(--text-faint);
 }
-input:focus, select:focus {
-    border-color: rgba(96, 165, 250, 0.5) !important;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
+input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--brand-500);
+    box-shadow: 0 0 0 3px var(--focus-ring);
 }
 label {
-    color: #a0aec0 !important;
+    color: var(--text-muted);
 }
 
-/* 按钮样式 */
+/* —— 按钮(主要 / 成功 / 次要) —— */
 .bg-blue-500 {
-    background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+    background: linear-gradient(135deg, var(--brand-500), var(--brand-700));
+    box-shadow: var(--shadow-button);
+    color: var(--text-on-brand);
+    transition: background var(--motion-base) var(--ease-standard);
 }
 .bg-blue-500:hover {
-    background: linear-gradient(135deg, #60a5fa, #3b82f6) !important;
+    background: linear-gradient(135deg, var(--brand-400), var(--brand-600));
 }
+button.bg-blue-500.text-white { color: var(--text-on-brand); }
+
 .bg-green-500 {
-    background: linear-gradient(135deg, #10b981, #059669) !important;
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+    background: linear-gradient(135deg, var(--success-500), #059669);
+    box-shadow: 0 2px 8px color-mix(in oklab, var(--success-500) 30%, transparent);
+    color: var(--text-on-brand);
 }
+
 .bg-slate-200 {
-    background: rgba(70, 88, 112, 0.7) !important;
-    color: #b0bec5 !important;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    transition: background var(--motion-base) var(--ease-standard);
 }
 .bg-slate-200:hover {
-    background: rgba(85, 105, 130, 0.7) !important;
+    background: var(--surface-3);
 }
 
-/* 标签页导航 - 更亮 */
+/* CTA 高亮(琥珀,skill 推荐) */
+.btn-cta {
+    background: linear-gradient(135deg, var(--accent-400), var(--accent-600));
+    color: #1F2937;
+    box-shadow: 0 2px 8px color-mix(in oklab, var(--accent-500) 32%, transparent);
+}
+.btn-cta:hover {
+    filter: brightness(1.05);
+}
+
+/* —— 标签页导航 —— */
 .school-tab {
-    color: #b8c6d8 !important;
-    transition: all 0.2s ease;
+    color: var(--text-muted);
+    transition: all var(--motion-fast) var(--ease-standard);
 }
 .school-tab:hover {
-    color: #f1f5f9 !important;
-    background: rgba(96, 165, 250, 0.18) !important;
+    color: var(--text-primary);
+    background: var(--hover-overlay);
 }
 .school-tab.text-blue-600 {
-    color: #7ab8ff !important;
-    background: rgba(59, 130, 246, 0.22) !important;
-    border-bottom: 2px solid #60a5fa !important;
+    color: var(--brand-400);
+    background: var(--active-overlay);
+    border-bottom: 2px solid var(--brand-500);
 }
 .border-b.border-slate-200 {
-    border-color: rgba(100, 120, 150, 0.55) !important;
+    border-color: var(--border-default);
 }
 
-/* 分页 */
-.text-slate-600 {
-    color: #a0aec0 !important;
-}
-button.bg-blue-500.text-white {
-    color: #fff !important;
-}
+/* —— 文字工具类回流到 token —— */
+.text-slate-600 { color: var(--text-muted); }
+.text-sm.text-slate-500 { color: var(--text-faint); }
+.text-blue-500 { color: var(--brand-400); }
+.text-blue-500:hover { color: var(--brand-300); }
+.text-amber-500 { color: var(--accent-400); }
 
-/* 操作按钮 */
-.text-blue-500 {
-    color: #60a5fa !important;
-}
-.text-blue-500:hover {
-    color: #93c5fd !important;
-}
-.text-amber-500 {
-    color: #fbbf24 !important;
-}
+/* 设备状态指示灯 — 单独色块时保留实色 */
+.indicator-online  { background: var(--success-400); }
+.indicator-offline { background: var(--danger-400); }
 
-/* 分页文字 */
-.text-sm.text-slate-500 {
-    color: #8896a6 !important;
-}
-
-/* 设备状态指示灯 */
-.bg-green-500 {
-    background: #4ade80 !important;
-}
-.bg-red-500 {
-    background: #f87171 !important;
-}
-
-/* 模态框 - 更亮 */
+/* —— 模态框 —— */
 #modal-content {
-    background: linear-gradient(135deg, #4a5f7d, #3d5370) !important;
-    border: 1px solid rgba(150, 190, 255, 0.45);
-    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+    background: var(--surface-modal);
+    border: 1px solid var(--border-default);
+    box-shadow: var(--shadow-modal);
+    color: var(--text-primary);
+    border-radius: var(--radius-lg);
+    animation: modalIn var(--motion-slow) var(--ease-standard);
 }
-#modal-content h3 {
-    color: #f1f5f9 !important;
-}
-#modal-content h4 {
-    color: #e2e8f0 !important;
-}
-#modal-content label {
-    color: #a0aec0 !important;
-}
-#modal-content span {
-    color: #cbd5e1;
-}
-#modal-content .text-slate-500 {
-    color: #8896a6 !important;
-}
+#modal-content h3 { color: var(--text-primary); }
+#modal-content h4 { color: var(--text-secondary); }
+#modal-content label { color: var(--text-muted); }
+#modal-content span { color: var(--text-secondary); }
+#modal-content .text-slate-500 { color: var(--text-faint); }
 #modal-content .text-slate-700,
 #modal-content .text-slate-800,
-#modal-content .font-medium {
-    color: #e2e8f0 !important;
-}
+#modal-content .font-medium { color: var(--text-secondary); }
 #modal-content .bg-slate-50 {
-    background: rgba(50, 68, 92, 0.6) !important;
-    border: 1px solid rgba(85, 105, 130, 0.4);
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
 }
 #modal-content input,
 #modal-content select {
-    background: rgba(40, 55, 75, 0.8) !important;
-    border: 1px solid rgba(110, 135, 165, 0.4) !important;
-    color: #e8ecf0 !important;
+    background: var(--surface-3);
+    border: 1px solid var(--border-default);
+    color: var(--text-primary);
 }
 #modal-content input[readonly] {
-    background: rgba(50, 68, 92, 0.4) !important;
-    color: #8a9ab0 !important;
+    background: var(--surface-2);
+    color: var(--text-faint);
 }
-#modal-content table thead tr {
-    background: rgba(35, 50, 70, 0.6) !important;
-}
-#modal-content table td {
-    color: #cbd5e1 !important;
-}
-
-/* 园所数据概述 - 分类数据项 */
-.bg-slate-50 .text-sm.font-medium {
-    color: #e2e8f0 !important;
-}
-.bg-slate-50 .text-xs.text-slate-400 {
-    color: #8896a6 !important;
-}
-.bg-slate-50 .text-lg.font-bold {
-    color: #60a5fa !important;
-}
+#modal-content table thead tr { background: var(--surface-2); }
+#modal-content table td { color: var(--text-secondary); }
 
 /* 用户头像 */
 .bg-blue-500.rounded-full {
-    background: linear-gradient(135deg, #3b82f6, #06b6d4) !important;
+    background: linear-gradient(135deg, var(--brand-500), var(--info-500));
 }
 
-/* 滚动条 - 更亮 */
+/* —— 滚动条 —— */
 ::-webkit-scrollbar {
     width: 7px;
     height: 7px;
 }
 ::-webkit-scrollbar-track {
-    background: rgba(50, 70, 100, 0.35);
+    background: color-mix(in oklab, var(--surface-2) 50%, transparent);
 }
 ::-webkit-scrollbar-thumb {
-    background: rgba(96, 165, 250, 0.4);
-    border-radius: 4px;
+    background: color-mix(in oklab, var(--brand-400) 40%, transparent);
+    border-radius: var(--radius-sm);
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(96, 165, 250, 0.6);
+    background: color-mix(in oklab, var(--brand-400) 60%, transparent);
 }
 
-/* Toast通知 */
+/* —— 动画 —— */
 @keyframes slideIn {
     from { transform: translateX(100%); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
+    to   { transform: translateX(0); opacity: 1; }
 }
 .animate-slide-in {
-    animation: slideIn 0.3s ease-out;
+    animation: slideIn var(--motion-slow) var(--ease-standard);
 }
 
-/* 模态框动画 */
-#modal-content {
-    animation: modalIn 0.25s ease-out;
-}
 @keyframes modalIn {
-    from { transform: scale(0.9) translateY(20px); opacity: 0; }
-    to { transform: scale(1) translateY(0); opacity: 1; }
+    from { transform: scale(0.96) translateY(12px); opacity: 0; }
+    to   { transform: scale(1) translateY(0); opacity: 1; }
 }
 
-/* 装饰性光效 - 更亮的科技光晕 */
+/* —— 装饰性光晕(深色才有,浅色 .theme-warm 抹掉) —— */
 main::before {
     content: '';
     position: fixed;
@@ -376,25 +380,30 @@ main::before {
     right: -30%;
     width: 80%;
     height: 80%;
-    background: radial-gradient(circle, rgba(96, 165, 250, 0.1) 0%, rgba(34, 211, 238, 0.05) 40%, transparent 70%);
+    background: radial-gradient(circle,
+                color-mix(in oklab, var(--brand-400) 10%, transparent) 0%,
+                color-mix(in oklab, var(--info-400) 5%, transparent) 40%,
+                transparent 70%);
     pointer-events: none;
     z-index: 0;
 }
+body.theme-warm main::before {
+    display: none;
+}
 
-/* 页面内容层级 */
 #page-container {
     position: relative;
     z-index: 1;
 }
 
-/* 响应式 */
+/* —— 响应式 —— */
 @media (max-width: 768px) {
     #sidebar {
         width: 0;
         overflow: hidden;
     }
     main {
-        margin-left: 0 !important;
+        margin-left: 0;
     }
 }
 
@@ -404,22 +413,19 @@ button:disabled {
     opacity: 0.4;
 }
 
-/* 数据概述分类卡片hover */
-.bg-slate-50:hover {
-    background: rgba(45, 58, 80, 0.6) !important;
-    border-color: rgba(96, 165, 250, 0.2);
+/* —— 角色相关 —— */
+.role-option {
+    transition: background var(--motion-base) var(--ease-standard),
+                border-color var(--motion-base) var(--ease-standard);
 }
-
-/* 角色切换器样式 */
 .role-option.active {
-    background: rgba(59, 130, 246, 0.15) !important;
-    border-color: rgba(59, 130, 246, 0.4) !important;
+    background: var(--active-overlay);
+    border-color: var(--brand-500);
 }
 .role-option.active .text-slate-200 {
-    color: #60a5fa !important;
+    color: var(--brand-400);
 }
 
-/* 角色标签显示 */
 .role-badge {
     display: inline-flex;
     align-items: center;
@@ -427,594 +433,357 @@ button:disabled {
     padding: 2px 8px;
     border-radius: 9999px;
     font-size: 10px;
+    border: 1px solid transparent;
 }
 .role-badge.admin {
-    background: rgba(59, 130, 246, 0.2);
-    color: #60a5fa;
-    border: 1px solid rgba(59, 130, 246, 0.3);
+    background: color-mix(in oklab, var(--brand-500) 20%, transparent);
+    color: var(--brand-400);
+    border-color: color-mix(in oklab, var(--brand-500) 30%, transparent);
 }
 .role-badge.principal {
-    background: rgba(16, 185, 129, 0.2);
-    color: #34d399;
-    border: 1px solid rgba(16, 185, 129, 0.3);
+    background: color-mix(in oklab, var(--success-500) 20%, transparent);
+    color: var(--success-400);
+    border-color: color-mix(in oklab, var(--success-500) 30%, transparent);
 }
 .role-badge.teacher {
-    background: rgba(245, 158, 11, 0.2);
-    color: #fbbf24;
-    border: 1px solid rgba(245, 158, 11, 0.3);
+    background: color-mix(in oklab, var(--accent-500) 20%, transparent);
+    color: var(--accent-400);
+    border-color: color-mix(in oklab, var(--accent-500) 30%, transparent);
 }
 
-/* 侧边栏角色相关隐藏 */
-.sidebar-nav-item.hidden-role {
-    display: none !important;
-}
-
-.sidebar-group-title {
-    display: none !important;
-}
-
-.sidebar-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-/* 学校视图卡片 */
+/* —— 学校卡片 —— */
 .school-card {
     position: relative;
-    transition: all 0.3s ease;
+    transition: transform var(--motion-slow) var(--ease-standard),
+                box-shadow var(--motion-slow) var(--ease-standard);
 }
-
 .school-card::before {
     content: '';
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
+    top: 0; left: 0; right: 0;
     height: 3px;
-    background: linear-gradient(90deg, #22d3ee, #3b82f6, #8b5cf6);
+    background: linear-gradient(90deg, var(--info-400), var(--brand-500), #8B5CF6);
     opacity: 0;
-    transition: opacity 0.3s ease;
+    transition: opacity var(--motion-slow) var(--ease-standard);
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
-
 .school-card:hover::before {
     opacity: 1;
 }
-
 .school-card .school-icon {
     animation: pulse 2s infinite;
 }
-
 @keyframes pulse {
     0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.05); }
+    50%      { transform: scale(1.05); }
 }
-
-/* ============================================================
-   手机端 AI 报告 markdown 容器（mobile.html 不挂 theme-warm）
-   ============================================================ */
-.mobile-ai-md,
-.mobile-ai-md * { color: #1A1B25 !important; }
-.mobile-ai-md p,
-.mobile-ai-md li,
-.mobile-ai-md ul,
-.mobile-ai-md ol,
-.mobile-ai-md div { color: #1A1B25 !important; }
-.mobile-ai-md .text-slate-200,
-.mobile-ai-md .text-slate-300,
-.mobile-ai-md .text-slate-400,
-.mobile-ai-md .text-slate-500 { color: #1A1B25 !important; -webkit-text-fill-color: #1A1B25 !important; }
-.mobile-ai-md h1,
-.mobile-ai-md h2,
-.mobile-ai-md h2.text-amber-300,
-.mobile-ai-md .text-amber-300 { color: #4338CA !important; -webkit-text-fill-color: #4338CA !important; font-weight: 700 !important; font-size: 1.05rem; margin: 14px 0 8px; }
-.mobile-ai-md h3,
-.mobile-ai-md h4,
-.mobile-ai-md h4.text-cyan-300,
-.mobile-ai-md .text-cyan-300 { color: #1E3A8A !important; -webkit-text-fill-color: #1E3A8A !important; font-weight: 600 !important; font-size: 0.95rem; margin: 12px 0 6px; }
-.mobile-ai-md strong,
-.mobile-ai-md strong.text-amber-200 { color: #6D28D9 !important; -webkit-text-fill-color: #6D28D9 !important; font-weight: 700 !important; }
-.mobile-ai-md ul.list-disc { padding-left: 22px; margin: 8px 0; }
-.mobile-ai-md ul.list-disc li { margin: 4px 0; }
-.mobile-ai-md ul.list-disc li::marker { color: #6D28D9 !important; }
-   通过 <body class="theme-warm"> 启用，覆盖常用 slate / 暗色工具类。
-   颜色基调：奶油白底 + 暖琥珀强调 + 深咖文字
-   ============================================================ */
-body.theme-warm {
-    /* 纯白紫调风：参考课例报告页 */
-    --warm-bg: #F7F8FC;
-    --warm-bg-soft: #EEF1FA;
-    --warm-card: #FFFFFF;
-    --warm-card-soft: #FAFBFE;
-    --warm-border: #ECECF2;
-    --warm-border-strong: #D8DAE5;
-    --warm-text: #14151F;
-    --warm-text-soft: #2D2F3D;
-    --warm-text-mute: #4A4D5E;
-    --warm-primary: #6366F1;   /* 蓝紫主色 */
-    --warm-accent: #8B5CF6;    /* 紫色强调 */
-
-    background: linear-gradient(135deg, #F7F8FC 0%, #EEF1FA 60%, #F7F8FC 100%) !important;
-    color: var(--warm-text) !important;
-}
-
-/* —— 背景类覆盖（用属性选择器一网打尽所有透明度变体）—— */
-body.theme-warm [class*="bg-slate-900"],
-body.theme-warm [class*="bg-slate-800"] { background-color: var(--warm-card) !important; }
-
-body.theme-warm [class*="bg-slate-700"],
-body.theme-warm [class*="bg-slate-600"],
-body.theme-warm [class*="bg-slate-500"] { background-color: var(--warm-card-soft) !important; }
-
-body.theme-warm #modal-overlay { background: rgba(74, 63, 53, 0.35) !important; }
-body.theme-warm #modal-content { background: var(--warm-card) !important; }
-
-/* —— 文字颜色覆盖 —— */
-body.theme-warm.text-white,
-body.theme-warm .text-white { color: var(--warm-text) !important; -webkit-text-fill-color: var(--warm-text) !important; }
-body.theme-warm .text-slate-200,
-body.theme-warm .text-slate-300 { color: var(--warm-text) !important; }
-body.theme-warm .text-slate-400,
-body.theme-warm .text-slate-500,
-body.theme-warm .text-slate-600 { color: var(--warm-text-soft) !important; }
-body.theme-warm .text-gray-900 { color: var(--warm-text) !important; }
-body.theme-warm .text-gray-700,
-body.theme-warm .text-gray-600,
-body.theme-warm .text-gray-500 { color: var(--warm-text-soft) !important; }
-
-/* 强调色统一靠向暖色 —— 用 box-shadow + filter 不会破坏图表 */
-body.theme-warm .text-cyan-300,
-body.theme-warm .text-cyan-400,
-body.theme-warm .text-blue-300,
-body.theme-warm .text-blue-400 { color: #4F46E5 !important; font-weight: 500; }
-body.theme-warm .text-emerald-300,
-body.theme-warm .text-emerald-400 { color: #0EA5E9 !important; font-weight: 500; }
-body.theme-warm .text-amber-200,
-body.theme-warm .text-amber-300,
-body.theme-warm .text-amber-400 { color: #7C3AED !important; font-weight: 600; }
-body.theme-warm .text-violet-300 { color: #7C3AED !important; }
-body.theme-warm .text-red-300 { color: #DC2626 !important; }
-
-/* —— 边框颜色覆盖 —— */
-body.theme-warm [class*="border-slate-"] { border-color: var(--warm-border) !important; }
-body.theme-warm .border-gray-200 { border-color: var(--warm-border) !important; }
-body.theme-warm .border-cyan-400\/30,
-body.theme-warm .border-cyan-400\/25,
-body.theme-warm .border-blue-400\/30,
-body.theme-warm .border-amber-400\/30,
-body.theme-warm .border-amber-400\/60,
-body.theme-warm .border-emerald-400\/30,
-body.theme-warm .border-violet-400\/30,
-body.theme-warm .border-red-400\/30 { border-color: var(--warm-border-strong) !important; }
-
-/* —— 渐变文字（标题）改成蓝紫渐变 —— */
-body.theme-warm .bg-gradient-to-r.from-blue-400.to-cyan-300,
-body.theme-warm .bg-gradient-to-r.from-amber-300.to-cyan-300,
-body.theme-warm .bg-gradient-to-r.from-amber-400.to-orange-400,
-body.theme-warm .bg-gradient-to-r.from-amber-500.to-orange-500 {
-    background-image: linear-gradient(90deg, #6366F1, #8B5CF6) !important;
-}
-
-/* —— body 背景渐变覆盖 —— */
-body.theme-warm.bg-gradient-to-br { background-image: none !important; }
-
-/* —— 侧边栏 —— */
-body.theme-warm #sidebar {
-    background: linear-gradient(180deg, #FFFFFF 0%, #F7F8FC 100%) !important;
-    border-right: 1px solid var(--warm-border) !important;
-}
-body.theme-warm #sidebar h1,
-body.theme-warm #sidebar .text-white,
-body.theme-warm #sidebar p,
-body.theme-warm #sidebar span,
-body.theme-warm #sidebar div { color: var(--warm-text) !important; }
-body.theme-warm #sidebar .text-slate-400,
-body.theme-warm #sidebar .text-slate-500 { color: var(--warm-text-soft) !important; }
-body.theme-warm #sidebar .border-slate-700 { border-color: var(--warm-border) !important; }
-body.theme-warm .sidebar-nav-item,
-body.theme-warm .sidebar-nav-item span,
-body.theme-warm .sidebar-nav-item svg { color: var(--warm-text-soft) !important; }
-body.theme-warm .sidebar-nav-item:hover { background: rgba(99, 102, 241, 0.06) !important; }
-body.theme-warm .sidebar-nav-item:hover,
-body.theme-warm .sidebar-nav-item:hover span,
-body.theme-warm .sidebar-nav-item:hover svg { color: var(--warm-text) !important; }
-body.theme-warm .sidebar-nav-item.active {
-    background: linear-gradient(90deg, rgba(99, 102, 241, 0.12) 0%, rgba(139, 92, 246, 0.06) 100%) !important;
-    border-left: 3px solid var(--warm-primary) !important;
-}
-body.theme-warm .sidebar-nav-item.active,
-body.theme-warm .sidebar-nav-item.active span,
-body.theme-warm .sidebar-nav-item.active svg { color: var(--warm-primary) !important; }
-body.theme-warm .sidebar-group-title { color: var(--warm-text-mute) !important; }
-
-/* —— 顶部栏 —— */
-body.theme-warm header {
-    background: rgba(255, 255, 255, 0.95) !important;
-    border-bottom: 1px solid var(--warm-border) !important;
-}
-body.theme-warm header * { color: var(--warm-text) !important; }
-body.theme-warm header #breadcrumb,
-body.theme-warm header #current-time { color: var(--warm-text-soft) !important; }
-
-/* —— 低透明度的浅色文字（蓝/sky/teal 系）在暖底上会发白发灰，统一改成深咖 —— */
-body.theme-warm [class*="text-sky-"],
-body.theme-warm [class*="text-blue-100"],
-body.theme-warm [class*="text-blue-200"],
-body.theme-warm [class*="text-cyan-100"],
-body.theme-warm [class*="text-cyan-200"],
-body.theme-warm [class*="text-teal-"],
-body.theme-warm [class*="text-indigo-"],
-body.theme-warm [class*="text-violet-100"],
-body.theme-warm [class*="text-violet-200"],
-body.theme-warm [class*="text-violet-300"],
-body.theme-warm [class*="text-purple-100"],
-body.theme-warm [class*="text-purple-200"],
-body.theme-warm [class*="text-purple-300"],
-body.theme-warm [class*="text-pink-100"],
-body.theme-warm [class*="text-pink-200"],
-body.theme-warm [class*="text-rose-100"],
-body.theme-warm [class*="text-rose-200"],
-body.theme-warm [class*="text-fuchsia-"],
-body.theme-warm [class*="text-emerald-100"],
-body.theme-warm [class*="text-emerald-200"],
-body.theme-warm [class*="text-amber-100"],
-body.theme-warm [class*="text-amber-200"] { color: var(--warm-text) !important; }
-
-/* 渐变文字（from-violet-X to-rose-X / from-purple-X to-pink-X 之类）改为蓝紫渐变 */
-body.theme-warm [class*="bg-clip-text"][class*="bg-gradient-to-"] {
-    background-image: linear-gradient(90deg, #4F46E5, #7C3AED) !important;
-    color: transparent !important;
-    -webkit-text-fill-color: transparent !important;
-    font-weight: 700 !important;
-}
-
-/* 单独写一遍 bg-gradient-to-r/b/br 击中渐变 banner 中 bg-clip-text 标题 */
-body.theme-warm .bg-gradient-to-r[class*="from-violet-"],
-body.theme-warm .bg-gradient-to-r[class*="from-purple-"],
-body.theme-warm .bg-gradient-to-r[class*="from-pink-"],
-body.theme-warm .bg-gradient-to-r[class*="from-rose-"] {
-    background-image: linear-gradient(90deg, #4F46E5, #7C3AED) !important;
-}
-
-/* —— 模态框 / AI 分析 markdown 标题强制加深加粗 —— */
-body.theme-warm h1, body.theme-warm h2, body.theme-warm h3,
-body.theme-warm h4, body.theme-warm h5, body.theme-warm h6 {
-    color: var(--warm-text) !important;
-}
-body.theme-warm h1.text-white, body.theme-warm h2.text-white,
-body.theme-warm h3.text-white, body.theme-warm h4.text-white,
-body.theme-warm h5.text-white, body.theme-warm h6.text-white,
-body.theme-warm .text-white {
-    color: #0F1020 !important;
-    -webkit-text-fill-color: #0F1020 !important;
-    background: none !important;
-    background-image: none !important;
-    font-weight: 700 !important;
-}
-
-/* modal 主标题（《XXX》AI 热点问题分析）位于 #modal-content 内的 h3 —— */
-body.theme-warm #modal-content h3,
-body.theme-warm #modal-content h3.text-lg,
-body.theme-warm #modal-content h3.font-bold {
-    color: #0F1020 !important;
-    -webkit-text-fill-color: #0F1020 !important;
-    background: none !important;
-    background-image: none !important;
-    font-weight: 700 !important;
-}
-
-/* AI 分析输出区里的二级/三级标题原本是 amber-300 / cyan-300，确保可读 */
-body.theme-warm #ai-analysis-stream h1,
-body.theme-warm #ai-analysis-stream h2,
-body.theme-warm #ai-analysis-stream h3,
-body.theme-warm #ai-analysis-stream h4,
-body.theme-warm #ai-analysis-stream h5,
-body.theme-warm #ai-analysis-stream h6,
-body.theme-warm #ai-analysis-stream .text-amber-300,
-body.theme-warm h2.text-amber-300,
-body.theme-warm h3.text-amber-300,
-body.theme-warm h4.text-amber-300,
-body.theme-warm .text-amber-300 {
-    color: #4338CA !important;
-    -webkit-text-fill-color: #4338CA !important;
-    background: none !important;
-    background-image: none !important;
-    font-weight: 700 !important;
-}
-body.theme-warm #ai-analysis-stream h3,
-body.theme-warm h2.text-cyan-300,
-body.theme-warm h3.text-cyan-300,
-body.theme-warm h4.text-cyan-300,
-body.theme-warm .text-cyan-300 {
-    color: #1E3A8A !important;
-    -webkit-text-fill-color: #1E3A8A !important;
-    background: none !important;
-    background-image: none !important;
-    font-weight: 600 !important;
-}
-
-/* AI 分析正文里所有 p / li 默认色加深 */
-body.theme-warm #ai-analysis-stream p,
-body.theme-warm #ai-analysis-stream li,
-body.theme-warm #ai-analysis-stream ul,
-body.theme-warm #ai-analysis-stream ol,
-body.theme-warm #ai-analysis-stream div {
-    color: #1A1B25 !important;
-}
-body.theme-warm #ai-analysis-stream strong {
-    color: #6D28D9 !important;
-    -webkit-text-fill-color: #6D28D9 !important;
-}
-/* —— 兜底：modal 内所有正文文字（含 ai-analysis-stream 之外的范围/样本卡）都拉深 —— */
-body.theme-warm #modal-content,
-body.theme-warm #modal-content p,
-body.theme-warm #modal-content li,
-body.theme-warm #modal-content span,
-body.theme-warm #modal-content div { color: #1A1B25; }
-body.theme-warm #modal-content .text-slate-200,
-body.theme-warm #modal-content .text-slate-300 { color: #14151F !important; -webkit-text-fill-color: #14151F !important; }
-body.theme-warm #modal-content .text-slate-400 { color: #2D2F3D !important; -webkit-text-fill-color: #2D2F3D !important; }
-body.theme-warm #modal-content .text-slate-500 { color: #4A4D5E !important; -webkit-text-fill-color: #4A4D5E !important; }
-/* 列表 marker 颜色（list-disc 圆点） */
-body.theme-warm #modal-content ul.list-disc { color: #14151F !important; }
-body.theme-warm #modal-content ul.list-disc::marker,
-body.theme-warm #modal-content ul.list-disc li::marker { color: #6D28D9 !important; }
-/* AI 报告 markdown 容器内最强兜底（不依赖 #modal-content） */
-body.theme-warm #ai-analysis-stream,
-body.theme-warm #ai-analysis-stream * {
-    color: #1A1B25 !important;
-}
-body.theme-warm #ai-analysis-stream h1,
-body.theme-warm #ai-analysis-stream h2 { color: #4338CA !important; -webkit-text-fill-color: #4338CA !important; font-weight: 700 !important; }
-body.theme-warm #ai-analysis-stream h3,
-body.theme-warm #ai-analysis-stream h4 { color: #1E3A8A !important; -webkit-text-fill-color: #1E3A8A !important; font-weight: 600 !important; }
-body.theme-warm #ai-analysis-stream strong { color: #6D28D9 !important; -webkit-text-fill-color: #6D28D9 !important; font-weight: 700 !important; }
-
-/* 全局兜底：任何位置的 text-slate-200/300/400/500 在亮主题下一律拉深 */
-body.theme-warm .text-slate-200,
-body.theme-warm .text-slate-300 { color: #14151F !important; -webkit-text-fill-color: #14151F !important; }
-body.theme-warm .text-slate-400 { color: #2D2F3D !important; -webkit-text-fill-color: #2D2F3D !important; }
-body.theme-warm .text-slate-500 { color: #4A4D5E !important; -webkit-text-fill-color: #4A4D5E !important; }
-
-/* —— 范围/样本/生成时间这种灰标签（text-slate-500）也加深 —— */
-body.theme-warm .text-slate-500 { color: #4A4D5E !important; }
-body.theme-warm .text-slate-400 { color: #3F4256 !important; }
-body.theme-warm .text-slate-600 { color: #1A1B25 !important; }
-body.theme-warm .text-slate-300,
-body.theme-warm .text-slate-200 { color: #1A1B25 !important; }
-
-/* placeholder / 占位文字 */
-body.theme-warm .text-slate-500.text-xs,
-body.theme-warm .text-slate-400.text-xs { color: #4A4D5E !important; }
-
-/* —— 一些 "from-blue-500/10 to-..." 这种淡蓝渐变指标卡，改成奶油渐变 —— */
-body.theme-warm [class*="from-blue-"][class*="to-cyan-"],
-body.theme-warm [class*="from-sky-"][class*="to-blue-"],
-body.theme-warm [class*="from-cyan-"][class*="to-blue-"],
-body.theme-warm [class*="from-indigo-"] {
-    background-image: linear-gradient(135deg, #FFF8EA, #FBEFD8) !important;
-}
-
-/* —— 数字大字号 (text-blue-300 / 400 in stat cards) 在暖底要够深 —— */
-/* 已在上方 text-cyan/blue 规则统一处理 */
-
-/* —— 单位 / 描述小字 (text-blue-100/80 等)—— */
-body.theme-warm [class*="text-blue-50"],
-body.theme-warm [class*="text-cyan-50"] { color: var(--warm-text-soft) !important; }
-
-/* ============================================================
-   提升卡片与背景的对比度（暖白模式下卡片边界不清问题）
-   ============================================================ */
-
-/* 外层背景：白底 + 极淡紫调 */
-body.theme-warm {
-    background: linear-gradient(135deg, #F7F8FC 0%, #EEF1FA 50%, #F7F8FC 100%) !important;
-}
-
-/* 卡片本体改成更亮的白底 + 明显边框 + 柔和阴影 */
-body.theme-warm [class*="bg-slate-900"],
-body.theme-warm [class*="bg-slate-800"],
-body.theme-warm [class*="bg-slate-700"],
-body.theme-warm [class*="bg-slate-600"],
-body.theme-warm [class*="bg-slate-500"] {
-    border: 1px solid #ECECF2 !important;
-    box-shadow: 0 1px 3px rgba(20, 22, 40, 0.04), 0 1px 2px rgba(20, 22, 40, 0.03) !important;
-}
-
-body.theme-warm [class*="bg-slate-900"],
-body.theme-warm [class*="bg-slate-800"] { background-color: #FFFFFF !important; }
-body.theme-warm [class*="bg-slate-700"],
-body.theme-warm [class*="bg-slate-600"],
-body.theme-warm [class*="bg-slate-500"] { background-color: #FAFBFE !important; }
-
-/* 嵌套卡片（卡片内的卡片）用更柔的差异 */
-body.theme-warm [class*="bg-slate-900"] [class*="bg-slate-800"],
-body.theme-warm [class*="bg-slate-800"] [class*="bg-slate-700"],
-body.theme-warm [class*="bg-slate-700"] [class*="bg-slate-800"] {
-    box-shadow: inset 0 0 0 1px rgba(217, 199, 168, 0.4) !important;
-    border-color: transparent !important;
-}
-
-/* radial/linear 渐变 banner 也加边框阴影 */
-body.theme-warm [class*="bg-[radial-gradient"],
-body.theme-warm [class*="bg-[linear-gradient"] {
-    border: 1px solid #ECECF2 !important;
-    box-shadow: 0 1px 3px rgba(20, 22, 40, 0.04) !important;
-}
-
-/* 指标卡（彩色渐变背景）改为浅紫渐变 + 细边框 */
-body.theme-warm .bg-gradient-to-br[class*="from-emerald-500"],
-body.theme-warm .bg-gradient-to-br[class*="from-cyan-500"],
-body.theme-warm .bg-gradient-to-br[class*="from-blue-500"],
-body.theme-warm .bg-gradient-to-br[class*="from-amber-500"],
-body.theme-warm .bg-gradient-to-br[class*="from-violet-500"],
-body.theme-warm .bg-gradient-to-br[class*="from-rose-500"] {
-    background-image: linear-gradient(135deg, #FFFFFF, #F3F1FE) !important;
-    border: 1px solid #ECECF2 !important;
-    box-shadow: 0 1px 3px rgba(20, 22, 40, 0.04) !important;
-}
-
-/* 顶部 header / sidebar 不参与，单独移除 */
-body.theme-warm #sidebar,
-body.theme-warm header {
-    box-shadow: none !important;
-    border: none !important;
-    border-right: 1px solid var(--warm-border) !important;
-}
-body.theme-warm header { border-right: none !important; border-bottom: 1px solid var(--warm-border) !important; }
-
-/* —— 卡片悬浮加柔和暖色阴影 —— */
-body.theme-warm .bg-slate-700\/40,
-body.theme-warm .bg-slate-700\/50,
-body.theme-warm .bg-slate-800\/60,
-body.theme-warm .bg-slate-900 { box-shadow: 0 1px 3px rgba(74, 63, 53, 0.06); }
-
-/* —— 表格行 hover —— */
-body.theme-warm tbody tr.hover\:bg-slate-700\/30:hover,
-body.theme-warm .hover\:bg-slate-700\/40:hover,
-body.theme-warm .hover\:bg-slate-700\/50:hover,
-body.theme-warm .hover\:bg-slate-700\/60:hover,
-body.theme-warm .hover\:bg-slate-600\/70:hover { background-color: #F7F8FC !important; }
-
-/* —— 半透明色块 改为浅蓝紫色 —— */
-body.theme-warm .bg-amber-500\/15,
-body.theme-warm .bg-amber-500\/20,
-body.theme-warm .bg-amber-500\/30 { background-color: rgba(139, 92, 246, 0.08) !important; }
-body.theme-warm .bg-cyan-500\/15,
-body.theme-warm .bg-cyan-500\/20 { background-color: rgba(14, 165, 233, 0.08) !important; }
-body.theme-warm .bg-violet-500\/15,
-body.theme-warm .bg-violet-500\/20,
-body.theme-warm .bg-violet-500\/30 { background-color: rgba(124, 58, 237, 0.08) !important; }
-body.theme-warm .bg-emerald-500\/15,
-body.theme-warm .bg-emerald-500\/20 { background-color: rgba(16, 185, 129, 0.08) !important; }
-body.theme-warm .bg-red-500\/10,
-body.theme-warm .bg-red-500\/15,
-body.theme-warm .bg-red-500\/20 { background-color: rgba(239, 68, 68, 0.08) !important; }
-body.theme-warm .bg-blue-500\/5,
-body.theme-warm .bg-blue-500\/10 { background-color: rgba(99, 102, 241, 0.05) !important; }
-
-/* —— 输入框 / select —— */
-body.theme-warm input,
-body.theme-warm select,
-body.theme-warm textarea {
-    background-color: var(--warm-card) !important;
-    color: var(--warm-text) !important;
-    border-color: var(--warm-border) !important;
-}
-body.theme-warm input::placeholder { color: var(--warm-text-mute) !important; }
 
 /* —— 主题切换按钮 —— */
 .theme-toggle-btn {
-    width: 36px; height: 36px;
-    border-radius: 10px;
-    display: inline-flex; align-items: center; justify-content: center;
-    background: rgba(255,255,255,0.08);
-    color: #cbd5e1;
-    border: 1px solid rgba(148, 163, 184, 0.3);
-    transition: all 0.2s ease;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--hover-overlay);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-default);
     cursor: pointer;
+    transition: background var(--motion-base) var(--ease-standard);
 }
-.theme-toggle-btn:hover { background: rgba(255,255,255,0.15); }
-body.theme-warm .theme-toggle-btn {
-    background: rgba(99, 102, 241, 0.08);
-    color: var(--warm-primary);
-    border-color: var(--warm-border);
+.theme-toggle-btn:hover {
+    background: var(--active-overlay);
 }
-body.theme-warm .theme-toggle-btn:hover { background: rgba(99, 102, 241, 0.16); }
-
-/* —— 内嵌的硬编码颜色渐变小卡（区域概览里的两张蓝灰小卡）—— */
-body.theme-warm [class*="from-[#0e7490]"],
-body.theme-warm [class*="from-[#2563eb]"],
-body.theme-warm [class*="from-[#0c4a6e"],
-body.theme-warm [class*="from-[#1e3a5f"],
-body.theme-warm .bg-gradient-to-br[class*="from-[#"],
-body.theme-warm .bg-gradient-to-b[class*="from-[#"] {
-    background-image: linear-gradient(135deg, #FFFFFF, #F3F1FE) !important;
-    background-color: #FFFFFF !important;
-    border-color: #ECECF2 !important;
+body.theme-dark .theme-toggle-btn {
+    color: var(--text-secondary);
 }
 
-/* 嵌套外层卡片（slate-800/70 ... slate-800/50 这种 3 段渐变）也强制白底 */
-body.theme-warm .bg-gradient-to-br.from-slate-800\/70.via-slate-800\/60.to-slate-800\/50,
-body.theme-warm .bg-gradient-to-br[class*="from-slate-800"][class*="via-slate-800"][class*="to-slate-800"],
-body.theme-warm .bg-gradient-to-b.from-slate-800\/60.to-slate-800\/50 {
-    background-image: linear-gradient(135deg, #FFFFFF 0%, #F7F8FC 100%) !important;
-    border-color: #ECECF2 !important;
+/* ============================================================
+   默认 = 白紫主题。Tailwind 的 slate/暗色 utility 被默认重写。
+   注意:Tailwind CDN 的 utility 优先级是 (0,1,0),且注入在我们之后。
+   所以这里所有兜底选择器都加 `body` 前缀,提到 (0,2,0) 才能赢。
+   要切回深色,在 <body> 上加 .theme-dark
+   ============================================================ */
+
+body {
+    background: var(--bg-base);
+    color: var(--text-primary);
 }
 
-/* 这两张卡里的 sky-200/70 标签文字 */
-body.theme-warm [class*="text-sky-200"],
-body.theme-warm [class*="text-sky-100"] { color: #4A4D5E !important; }
-/* 这些选择器靠多 class 串联击中含有 radial/linear 渐变的容器 */
-body.theme-warm [class*="bg-[radial-gradient"],
-body.theme-warm [class*="bg-[linear-gradient"] {
-    background-image: linear-gradient(135deg, #FFFFFF 0%, #F3F1FE 50%, #EEF1FA 100%) !important;
-    background-color: #FFFFFF !important;
-    border: 1px solid #ECECF2 !important;
-    box-shadow: 0 1px 3px rgba(20, 22, 40, 0.04) !important;
+/* body 上的 bg-gradient utility 抹掉(若 HTML 上仍残留) */
+body.bg-gradient-to-br {
+    background-image: none;
 }
 
-/* —— 处理基于 gradient-to-* + slate/blue 的卡片背景 —— */
-body.theme-warm .bg-gradient-to-b.from-slate-800\/60,
-body.theme-warm .bg-gradient-to-br.from-slate-800\/70,
-body.theme-warm .bg-gradient-to-br.from-slate-800\/80,
-body.theme-warm .bg-gradient-to-br.from-slate-800,
-body.theme-warm .bg-gradient-to-br.from-slate-700 {
-    background-image: none !important;
-    background-color: var(--warm-card) !important;
+/* slate 深色背景类 —— 默认改用白紫卡片 */
+body:not(.theme-dark) [class*="bg-slate-900"],
+body:not(.theme-dark) [class*="bg-slate-800"] {
+    background-color: var(--surface-1);
+    border: 1px solid var(--border-subtle);
+}
+body:not(.theme-dark) [class*="bg-slate-700"],
+body:not(.theme-dark) [class*="bg-slate-600"],
+body:not(.theme-dark) [class*="bg-slate-500"] {
+    background-color: var(--surface-2);
+    border: 1px solid var(--border-subtle);
 }
 
-/* —— ECharts 容器外层的 backdrop（如有）—— */
-body.theme-warm canvas { filter: none; }
-
-/* —— 强制让带 backdrop-blur 的暗色面板看起来是奶油色 —— */
-body.theme-warm .backdrop-blur-sm,
-body.theme-warm .backdrop-blur-md {
-    background-color: var(--warm-card) !important;
+/* sticky header 单独白底(原 bg-slate-800/70 在白紫下应该是半透明白) */
+body:not(.theme-dark) header[class*="bg-slate-800"] {
+    background-color: var(--surface-header);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border-subtle);
 }
 
-/* —— 大标题 banner 内的小角标 —— */
-body.theme-warm .role-badge { color: var(--warm-primary) !important; background: rgba(99, 102, 241, 0.1) !important; border-color: var(--warm-border) !important; }
+/* 文字工具类 —— 默认走 token */
+body:not(.theme-dark) .text-white {
+    color: var(--text-primary);
+    -webkit-text-fill-color: var(--text-primary);
+}
+body:not(.theme-dark) .text-slate-200,
+body:not(.theme-dark) .text-slate-300 {
+    color: var(--text-primary);
+    -webkit-text-fill-color: var(--text-primary);
+}
+body:not(.theme-dark) .text-slate-400,
+body:not(.theme-dark) .text-slate-500,
+body:not(.theme-dark) .text-slate-600 {
+    color: var(--text-muted);
+    -webkit-text-fill-color: var(--text-muted);
+}
+body:not(.theme-dark) .text-gray-900 { color: var(--text-primary); }
+body:not(.theme-dark) .text-gray-700,
+body:not(.theme-dark) .text-gray-600,
+body:not(.theme-dark) .text-gray-500 { color: var(--text-muted); }
 
-/* —— 阴影适配 —— */
-body.theme-warm .shadow-xl,
-body.theme-warm [class*="shadow-["] { box-shadow: 0 8px 24px rgba(74, 63, 53, 0.08) !important; }
+/* 高饱和深色字 —— 锚到品牌紫 */
+body:not(.theme-dark) .text-cyan-300,
+body:not(.theme-dark) .text-cyan-400,
+body:not(.theme-dark) .text-blue-300,
+body:not(.theme-dark) .text-blue-400 { color: var(--brand-700); font-weight: 500; }
+body:not(.theme-dark) .text-emerald-300,
+body:not(.theme-dark) .text-emerald-400 { color: #0F766E; font-weight: 500; }
+body:not(.theme-dark) .text-amber-200,
+body:not(.theme-dark) .text-amber-300,
+body:not(.theme-dark) .text-amber-400 { color: var(--accent-600); font-weight: 600; }
+body:not(.theme-dark) .text-violet-300 { color: var(--brand-700); }
+body:not(.theme-dark) .text-red-300 { color: var(--danger-500); }
 
-/* —— 表头 —— */
-body.theme-warm thead.bg-slate-800\/60,
-body.theme-warm thead .bg-slate-800\/60,
-body.theme-warm thead tr { background-color: #F7F8FC !important; }
-body.theme-warm thead th { color: var(--warm-text-soft) !important; font-weight: 500; }
-
-/* —— sidebar 滚动条 —— */
-body.theme-warm #sidebar { color: var(--warm-text); }
-
-/* —— "全区数据" / "本园" 等小徽章 —— */
-body.theme-warm [class*="role-badge"],
-body.theme-warm .px-3.py-1\.5.rounded-full { background-color: rgba(99, 102, 241, 0.1) !important; color: var(--warm-primary) !important; }
-
-/* —— 半透明色块（蓝/cyan 等渐变背景的指标卡）—— */
-body.theme-warm .from-emerald-500\/30,
-body.theme-warm .from-cyan-500\/30,
-body.theme-warm .from-blue-500\/30,
-body.theme-warm .from-amber-500\/30,
-body.theme-warm .from-violet-500\/30,
-body.theme-warm .from-rose-500\/30,
-body.theme-warm .to-teal-500\/10,
-body.theme-warm .to-blue-500\/10,
-body.theme-warm .to-cyan-500\/10,
-body.theme-warm .to-orange-500\/10,
-body.theme-warm .to-purple-500\/10 {
-    --tw-gradient-from: transparent !important;
-    --tw-gradient-to: transparent !important;
+/* 边框工具类 */
+body:not(.theme-dark) [class*="border-slate-"],
+body:not(.theme-dark) .border-gray-200 {
+    border-color: var(--border-subtle);
 }
 
-/* 指标卡 wrapper 直接铺浅紫底 */
-body.theme-warm .bg-gradient-to-br.from-emerald-500\/30,
-body.theme-warm .bg-gradient-to-br.from-cyan-500\/30,
-body.theme-warm .bg-gradient-to-br.from-blue-500\/30,
-body.theme-warm .bg-gradient-to-br.from-amber-500\/30,
-body.theme-warm .bg-gradient-to-br.from-violet-500\/30,
-body.theme-warm .bg-gradient-to-br.from-rose-500\/30 {
-    background-image: linear-gradient(135deg, #FFFFFF, #F3F1FE) !important;
+/* 渐变标题统一锚到品牌紫渐变 */
+body:not(.theme-dark) .bg-gradient-to-r.from-blue-400.to-cyan-300,
+body:not(.theme-dark) .bg-gradient-to-r.from-amber-300.to-cyan-300,
+body:not(.theme-dark) .bg-gradient-to-r.from-amber-400.to-orange-400,
+body:not(.theme-dark) .bg-gradient-to-r.from-amber-500.to-orange-500,
+body:not(.theme-dark) [class*="bg-clip-text"][class*="bg-gradient-to-"] {
+    background-image: linear-gradient(90deg, var(--brand-600), var(--brand-800));
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    font-weight: 700;
+}
+
+/* 标题 */
+body:not(.theme-dark) h1, body h2, body h3, body h4, body h5, body h6 {
+    color: var(--text-primary);
+}
+
+/* 低饱和度浅色文字 —— 拉深 */
+body:not(.theme-dark) [class*="text-sky-"],
+body:not(.theme-dark) [class*="text-blue-100"],
+body:not(.theme-dark) [class*="text-blue-200"],
+body:not(.theme-dark) [class*="text-cyan-100"],
+body:not(.theme-dark) [class*="text-cyan-200"],
+body:not(.theme-dark) [class*="text-teal-"],
+body:not(.theme-dark) [class*="text-indigo-"],
+body:not(.theme-dark) [class*="text-violet-100"],
+body:not(.theme-dark) [class*="text-violet-200"],
+body:not(.theme-dark) [class*="text-violet-300"],
+body:not(.theme-dark) [class*="text-purple-100"],
+body:not(.theme-dark) [class*="text-purple-200"],
+body:not(.theme-dark) [class*="text-purple-300"],
+body:not(.theme-dark) [class*="text-pink-100"],
+body:not(.theme-dark) [class*="text-pink-200"],
+body:not(.theme-dark) [class*="text-rose-100"],
+body:not(.theme-dark) [class*="text-rose-200"],
+body:not(.theme-dark) [class*="text-fuchsia-"],
+body:not(.theme-dark) [class*="text-emerald-100"],
+body:not(.theme-dark) [class*="text-emerald-200"],
+body:not(.theme-dark) [class*="text-amber-100"],
+body:not(.theme-dark) [class*="text-amber-200"] {
+    color: var(--text-primary);
+}
+
+/* 半透明色块统一减淡 */
+body:not(.theme-dark) .bg-amber-500\/15,
+body:not(.theme-dark) .bg-amber-500\/20,
+body:not(.theme-dark) .bg-amber-500\/30 { background-color: color-mix(in oklab, var(--accent-500) 10%, transparent); }
+body:not(.theme-dark) .bg-cyan-500\/15,
+body:not(.theme-dark) .bg-cyan-500\/20 { background-color: color-mix(in oklab, var(--info-500) 10%, transparent); }
+body:not(.theme-dark) .bg-violet-500\/15,
+body:not(.theme-dark) .bg-violet-500\/20,
+body:not(.theme-dark) .bg-violet-500\/30 { background-color: color-mix(in oklab, var(--brand-500) 10%, transparent); }
+body:not(.theme-dark) .bg-emerald-500\/15,
+body:not(.theme-dark) .bg-emerald-500\/20 { background-color: color-mix(in oklab, var(--success-500) 10%, transparent); }
+body:not(.theme-dark) .bg-red-500\/10,
+body:not(.theme-dark) .bg-red-500\/15,
+body:not(.theme-dark) .bg-red-500\/20 { background-color: color-mix(in oklab, var(--danger-500) 10%, transparent); }
+body:not(.theme-dark) .bg-blue-500\/5,
+body:not(.theme-dark) .bg-blue-500\/10 { background-color: color-mix(in oklab, var(--brand-500) 8%, transparent); }
+
+/* 渐变指标卡 —— 浅紫白 */
+body:not(.theme-dark) .bg-gradient-to-br[class*="from-emerald-500"],
+body:not(.theme-dark) .bg-gradient-to-br[class*="from-cyan-500"],
+body:not(.theme-dark) .bg-gradient-to-br[class*="from-blue-500"],
+body:not(.theme-dark) .bg-gradient-to-br[class*="from-amber-500"],
+body:not(.theme-dark) .bg-gradient-to-br[class*="from-violet-500"],
+body:not(.theme-dark) .bg-gradient-to-br[class*="from-rose-500"] {
+    background-image: linear-gradient(135deg, #FFFFFF, var(--brand-50));
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-card);
+}
+
+/* slate 渐变片段 —— 任何 from/via/to 含 slate 都强制白紫(覆盖 bg-gradient-to-* utility) */
+body:not(.theme-dark) [class*="from-slate-"],
+body:not(.theme-dark) [class*="via-slate-"],
+body:not(.theme-dark) [class*="to-slate-"] {
+    --tw-gradient-from: #FFFFFF !important;
+    --tw-gradient-via: var(--brand-50) !important;
+    --tw-gradient-to:  #FAF5FF !important;
+}
+body:not(.theme-dark) .bg-gradient-to-br[class*="from-slate-"],
+body:not(.theme-dark) .bg-gradient-to-b[class*="from-slate-"],
+body:not(.theme-dark) .bg-gradient-to-r[class*="from-slate-"],
+body:not(.theme-dark) .bg-gradient-to-t[class*="from-slate-"],
+body:not(.theme-dark) .bg-gradient-to-bl[class*="from-slate-"],
+body:not(.theme-dark) .bg-gradient-to-tl[class*="from-slate-"],
+body:not(.theme-dark) .bg-gradient-to-tr[class*="from-slate-"] {
+    background-image: linear-gradient(135deg, #FFFFFF 0%, var(--brand-50) 50%, #FAF5FF 100%);
+    background-color: var(--surface-1);
+    border-color: var(--border-subtle);
+    box-shadow: var(--shadow-card);
+}
+
+/* 自定义 hex 渐变(from-[#xxxxxx]) —— 也统一白紫 */
+body:not(.theme-dark) [class*="from-[#"],
+body:not(.theme-dark) .bg-gradient-to-br[class*="from-["],
+body:not(.theme-dark) .bg-gradient-to-b[class*="from-["],
+body:not(.theme-dark) .bg-gradient-to-r[class*="from-["] {
+    background-image: linear-gradient(135deg, #FFFFFF, var(--brand-50));
+    background-color: var(--surface-1);
+    border-color: var(--border-subtle);
+}
+
+body:not(.theme-dark) [class*="bg-[radial-gradient"],
+body:not(.theme-dark) [class*="bg-[linear-gradient"] {
+    background-image:
+        radial-gradient(circle at top left,  rgba(167, 139, 250, 0.16), transparent 30%),
+        radial-gradient(circle at top right, rgba(139, 92, 246, 0.14), transparent 32%),
+        linear-gradient(135deg, #FFFFFF, #FAF5FF);
+    background-color: var(--surface-1);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-card);
+}
+
+/* 模态框遮罩 */
+body:not(.theme-dark) #modal-overlay {
+    background: rgba(76, 29, 149, 0.30);
+}
+
+/* 表格 hover 行 */
+body:not(.theme-dark) tbody tr.hover\:bg-slate-700\/30:hover,
+body:not(.theme-dark) .hover\:bg-slate-700\/40:hover,
+body:not(.theme-dark) .hover\:bg-slate-700\/50:hover,
+body:not(.theme-dark) .hover\:bg-slate-700\/60:hover,
+body:not(.theme-dark) .hover\:bg-slate-600\/70:hover {
+    background-color: var(--hover-overlay);
+}
+
+/* 表头 */
+body:not(.theme-dark) thead.bg-slate-800\/60,
+body:not(.theme-dark) thead .bg-slate-800\/60,
+body:not(.theme-dark) thead tr {
+    background-color: var(--surface-2);
+}
+body:not(.theme-dark) thead th {
+    color: var(--text-muted);
+}
+
+/* backdrop-blur 在白紫下变白卡 */
+body:not(.theme-dark) .backdrop-blur-sm,
+body:not(.theme-dark) .backdrop-blur-md {
+    background-color: var(--surface-1);
+}
+
+/* 大阴影柔化 */
+body:not(.theme-dark) .shadow-xl,
+body:not(.theme-dark) [class*="shadow-["] {
+    box-shadow: var(--shadow-card-hover);
+}
+
+/* AI 报告 markdown(modal 与 mobile 共用) */
+.mobile-ai-md,
+.mobile-ai-md *,
+#ai-analysis-stream,
+#ai-analysis-stream * {
+    color: var(--text-primary);
+}
+.mobile-ai-md h1,
+.mobile-ai-md h2,
+#ai-analysis-stream h1,
+#ai-analysis-stream h2 {
+    color: var(--brand-700);
+    font-weight: 700;
+    font-size: 1.05rem;
+    margin: 14px 0 8px;
+}
+.mobile-ai-md h3,
+.mobile-ai-md h4,
+#ai-analysis-stream h3,
+#ai-analysis-stream h4 {
+    color: var(--brand-800);
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin: 12px 0 6px;
+}
+.mobile-ai-md strong,
+#ai-analysis-stream strong {
+    color: var(--accent-600);
+    font-weight: 700;
+}
+.mobile-ai-md ul.list-disc {
+    padding-left: 22px;
+    margin: 8px 0;
+}
+.mobile-ai-md ul.list-disc li {
+    margin: 4px 0;
+}
+.mobile-ai-md ul.list-disc li::marker,
+#ai-analysis-stream ul li::marker {
+    color: var(--accent-600);
+}
+
+/* —— focus-visible 全局可达性 —— */
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid var(--brand-500);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
+/* —— 工具类:cursor-pointer 默认补全 —— */
+.sidebar-nav-item,
+.school-tab,
+.role-option,
+[data-page] {
+    cursor: pointer;
 }
