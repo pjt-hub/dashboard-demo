@@ -1,4 +1,21 @@
 ﻿// 应用程序主逻辑 - 深色科技风数据大屏
+
+// Heroicons / Lucide 24x24 SVG icon 集合,统一替代原 emoji 控件图标
+const Icons = {
+    _wrap(path, size = 'w-4 h-4') {
+        return `<svg class="${size}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">${path}</svg>`;
+    },
+    admin(size)     { return this._wrap('<path stroke-linecap="round" stroke-linejoin="round" d="M3 21v-2a4 4 0 014-4h10a4 4 0 014 4v2M12 11a4 4 0 100-8 4 4 0 000 8z"/>', size); },
+    school(size)    { return this._wrap('<path stroke-linecap="round" stroke-linejoin="round" d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6"/>', size); },
+    teacher(size)   { return this._wrap('<path stroke-linecap="round" stroke-linejoin="round" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"/>', size); },
+    student(size)   { return this._wrap('<path stroke-linecap="round" stroke-linejoin="round" d="M16 14a4 4 0 10-8 0M12 11a3 3 0 100-6 3 3 0 000 6zM6 21h12a2 2 0 002-2v-1a4 4 0 00-4-4H8a4 4 0 00-4 4v1a2 2 0 002 2z"/>', size); },
+    book(size)      { return this._wrap('<path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>', size); },
+    chat(size)      { return this._wrap('<path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.3-3.9A7.96 7.96 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>', size); },
+    chart(size)     { return this._wrap('<path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h2a2 2 0 01-2-2z"/>', size); },
+    activity(size)  { return this._wrap('<path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>', size); },
+    device(size)    { return this._wrap('<path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>', size); },
+};
+
 const App = {
     currentPage: 'dataOverview',
     schoolDataTab: 'overview',
@@ -72,26 +89,28 @@ const App = {
         this.selectedKindergartensForLine = kindergartens.slice(0, 3).map(k => k.id);
     },
 
-    // 主题（暖白 / 深色）切换
+    // 主题（白紫默认 / 深色可选）切换
     initTheme() {
-        const saved = localStorage.getItem('uiTheme') || 'dark';
+        const saved = localStorage.getItem('uiTheme') || 'warm';
         this.applyTheme(saved);
     },
     applyTheme(theme) {
-        const isWarm = theme === 'warm';
-        document.body.classList.toggle('theme-warm', isWarm);
+        const isDark = theme === 'dark';
+        document.body.classList.toggle('theme-dark', isDark);
+        // 兼容旧类名:warm 即默认,不挂任何类
+        document.body.classList.remove('theme-warm');
         const dark = document.getElementById('theme-icon-dark');
         const light = document.getElementById('theme-icon-light');
         if (dark && light) {
-            dark.classList.toggle('hidden', isWarm);
-            light.classList.toggle('hidden', !isWarm);
+            dark.classList.toggle('hidden', !isDark);
+            light.classList.toggle('hidden', isDark);
         }
         const btn = document.getElementById('theme-toggle');
-        if (btn) btn.title = isWarm ? '切换到深色主题' : '切换到暖白主题';
+        if (btn) btn.title = isDark ? '切换到白紫主题' : '切换到深色主题';
         localStorage.setItem('uiTheme', theme);
     },
     toggleTheme() {
-        const next = document.body.classList.contains('theme-warm') ? 'dark' : 'warm';
+        const next = document.body.classList.contains('theme-dark') ? 'warm' : 'dark';
         this.applyTheme(next);
         // 重新加载当前页面，让图表带新主题重建
         try {
@@ -986,6 +1005,9 @@ const App = {
                 const overviewData = this.getOverviewDataForCurrentRange();
                 Charts.initDataOverviewCharts(overviewData);
                 this.renderDataOverviewRankings(overviewData.bookRanking);
+                if (this.currentRole === 'admin' && overviewData.classUsageComparison) {
+                    Charts.initBanjunScatter('banjun-scatter-chart', overviewData.classUsageComparison);
+                }
                 break;
             case 'schoolData': this.initSchoolDataPage(); break;
             case 'aiOverview': this.initAiOverviewPage(); break;
@@ -996,6 +1018,27 @@ const App = {
     toggleFullscreen() {
         if (!document.fullscreenElement) document.documentElement.requestFullscreen();
         else document.exitFullscreen();
+    },
+
+    filterBanjunDistrict(district) {
+        const overviewData = this.getOverviewDataForCurrentRange();
+        if (!overviewData || !overviewData.classUsageComparison) return;
+        const chips = document.querySelectorAll('#banjun-district-chips .banjun-chip');
+        chips.forEach(chip => {
+            const isActive = chip.dataset.district === district;
+            chip.classList.toggle('bg-brand-500', isActive);
+            chip.classList.toggle('text-white', isActive);
+            chip.classList.toggle('border-brand-500', isActive);
+            chip.classList.toggle('bg-white/40', !isActive);
+            chip.classList.toggle('text-slate-600', !isActive);
+            chip.classList.toggle('border-slate-300/40', !isActive);
+        });
+        const dom = document.getElementById('banjun-scatter-chart');
+        if (dom && typeof echarts !== 'undefined') {
+            const existing = echarts.getInstanceByDom(dom);
+            if (existing) existing.dispose();
+        }
+        Charts.initBanjunScatter('banjun-scatter-chart', overviewData.classUsageComparison, district);
     },
 
     showToast(message, type = 'info') {
@@ -1186,54 +1229,50 @@ const App = {
                     ${this.chartTitle('园所班均使用对比', 'bg-cyan-500')}
                     <div class="text-xs text-slate-300 px-3 py-1.5 rounded-full border border-slate-400/20 bg-slate-700/30 w-fit">区域内各园所班均数据</div>
                 </div>
-                <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.45fr)] gap-5">
-                    <!-- 左侧：区域概览 -->
-                    <div class="rounded-[26px] border border-slate-600/20 bg-gradient-to-br from-slate-800/70 via-slate-800/60 to-slate-800/50 p-5 shadow-xl">
+                <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+                    <!-- 左侧:区域概览 + 散点气泡图 -->
+                    <div class="rounded-[26px] border border-slate-600/20 bg-gradient-to-br from-slate-800/70 via-slate-800/60 to-slate-800/50 p-5 shadow-xl flex flex-col">
                         <div class="text-xs uppercase tracking-[0.24em] text-sky-200/70">区域概览</div>
-                        <div class="mt-2 text-2xl font-semibold text-white leading-tight">区域园所班均使用概览</div>
-                        <div class="mt-5 grid grid-cols-2 gap-3">
-                            <div class="rounded-2xl border border-slate-600/20 bg-gradient-to-br from-[#0e7490]/15 to-slate-800/30 px-4 py-4">
+                        <div class="mt-2 text-2xl font-semibold text-white leading-tight">区域园所班均使用分布</div>
+                        <div class="mt-1 text-xs text-slate-400">气泡大小 = 班级数,虚线 = 区域均值,4 象限快速识别园所表现</div>
+                        <div class="mt-4 grid grid-cols-2 gap-3">
+                            <div class="rounded-2xl border border-slate-600/20 bg-gradient-to-br from-[#0e7490]/15 to-slate-800/30 px-4 py-3">
                                 <div class="text-xs text-sky-100/80">区域平均班均活动次数</div>
-                                <div class="mt-2 text-3xl font-bold text-white">${data.summary.avgActivityCount}</div>
-                                <div class="mt-1 text-xs text-slate-400">区域内平均每班活动次数</div>
+                                <div class="mt-1 text-2xl font-bold text-white">${data.summary.avgActivityCount}<span class="text-xs text-slate-400 ml-1 font-normal">次/班</span></div>
                             </div>
-                            <div class="rounded-2xl border border-slate-600/20 bg-gradient-to-br from-[#2563eb]/15 to-slate-800/30 px-4 py-4">
+                            <div class="rounded-2xl border border-slate-600/20 bg-gradient-to-br from-[#2563eb]/15 to-slate-800/30 px-4 py-3">
                                 <div class="text-xs text-blue-100/80">区域平均班均参与人次</div>
-                                <div class="mt-2 text-3xl font-bold text-white">${data.summary.avgParticipantCount}</div>
-                                <div class="mt-1 text-xs text-slate-400">区域内平均每班参与人次</div>
+                                <div class="mt-1 text-2xl font-bold text-white">${data.summary.avgParticipantCount}<span class="text-xs text-slate-400 ml-1 font-normal">人次/班</span></div>
                             </div>
                         </div>
-                        <div class="mt-5 space-y-3">
-                            <div class="rounded-2xl border border-slate-600/15 bg-slate-800/40 px-4 py-4">
-                                <div class="flex items-center justify-between gap-3">
-                                    <div>
-                                        <div class="text-xs text-slate-500">班均活动次数最高园所</div>
-                                        <div class="mt-1 text-lg font-semibold text-white">${topActivitySchool.name}</div>
-                                    </div>
-                                    <div class="text-right">
-                                        <div class="text-2xl font-bold text-sky-300">${topActivitySchool.avgActivityCount}</div>
-                                        <div class="text-xs text-slate-500">次/班</div>
-                                    </div>
-                                </div>
+                        <!-- 区域筛选 chips -->
+                        <div id="banjun-district-chips" class="mt-4 flex flex-wrap gap-1.5">
+                            ${(() => {
+                                const districts = ['all', ...Array.from(new Set(schools.map(s => s.district || '未分类')))];
+                                return districts.map(d => {
+                                    const label = d === 'all' ? `全部 ${schools.length}` : `${d} ${schools.filter(s => (s.district || '未分类') === d).length}`;
+                                    const active = d === 'all';
+                                    return `<button type="button" class="banjun-chip text-[11px] px-2.5 py-1 rounded-full border transition-colors ${active ? 'bg-brand-500 text-white border-brand-500' : 'bg-white/40 text-slate-600 border-slate-300/40 hover:bg-brand-50'}" data-district="${d}" onclick="App.filterBanjunDistrict('${d.replace(/'/g, "\\'")}')">${label}</button>`;
+                                }).join('');
+                            })()}
+                        </div>
+                        <!-- 散点气泡图 -->
+                        <div id="banjun-scatter-chart" class="mt-3 flex-1 min-h-[300px]"></div>
+                        <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+                            <div class="rounded-xl border border-slate-600/15 bg-slate-800/40 px-3 py-2">
+                                <div class="text-slate-500">活动次数最高</div>
+                                <div class="mt-0.5 font-semibold text-white truncate">${topActivitySchool.name}</div>
+                                <div class="text-sky-300 font-bold">${topActivitySchool.avgActivityCount} <span class="text-slate-500 font-normal">次/班</span></div>
                             </div>
-                            <div class="rounded-2xl border border-slate-600/15 bg-slate-800/40 px-4 py-4">
-                                <div class="flex items-center justify-between gap-3">
-                                    <div>
-                                        <div class="text-xs text-slate-500">班均参与人次最高园所</div>
-                                        <div class="mt-1 text-lg font-semibold text-white">${topParticipantSchool.name}</div>
-                                    </div>
-                                    <div class="text-right">
-                                        <div class="text-2xl font-bold text-blue-300">${topParticipantSchool.avgParticipantCount}</div>
-                                        <div class="text-xs text-slate-500">人次/班</div>
-                                    </div>
-                                </div>
+                            <div class="rounded-xl border border-slate-600/15 bg-slate-800/40 px-3 py-2">
+                                <div class="text-slate-500">参与人次最高</div>
+                                <div class="mt-0.5 font-semibold text-white truncate">${topParticipantSchool.name}</div>
+                                <div class="text-blue-300 font-bold">${topParticipantSchool.avgParticipantCount} <span class="text-slate-500 font-normal">人次/班</span></div>
                             </div>
                         </div>
                     </div>
-                    <!-- 右侧：园所排名 -->
-                    <div class="grid grid-cols-1 2xl:grid-cols-2 gap-4">
-                        ${metricConfigs.map(renderMetricRanking).join('')}
-                    </div>
+                    <!-- 中/右侧:两个排行卡 -->
+                    ${metricConfigs.map(renderMetricRanking).join('')}
                 </div>
             </div>
         `;
@@ -1295,9 +1334,9 @@ const App = {
         let scopeBadge = '';
         if (this.currentRole === 'principal') {
             pageTitle = this.selectedSchool ? `${this.selectedSchool.name} 大数据总览` : '本园大数据总览';
-            scopeBadge = `<span class="role-badge principal">🏫 园长视角</span>`;
+            scopeBadge = `<span class="role-badge principal inline-flex items-center gap-1">${Icons.school()} 园长视角</span>`;
         } else {
-            scopeBadge = `<span class="role-badge admin">👔 全区数据</span>`;
+            scopeBadge = `<span class="role-badge admin inline-flex items-center gap-1">${Icons.admin()} 全区数据</span>`;
         }
 
         return `
@@ -1648,15 +1687,15 @@ const App = {
     renderAiSummaryCards(summary) {
         const active = this._aiActiveMetric;
         const cards = [
-            { key: 'students', label: '活跃幼儿数', value: summary.activeStudents, unit: '人', icon: '👶', color: 'from-emerald-500/30 to-teal-500/10 border-emerald-400/30', accent: 'text-emerald-300' },
-            { key: 'books', label: '互动绘本数', value: summary.totalBooks, unit: '本', icon: '📖', color: 'from-cyan-500/30 to-blue-500/10 border-cyan-400/30', accent: 'text-cyan-300' },
-            { key: 'chats', label: '累计 AI 对话次数', value: summary.totalChats, unit: '次', icon: '💬', color: 'from-amber-500/30 to-orange-500/10 border-amber-400/30', accent: 'text-amber-300' }
+            { key: 'students', label: '活跃幼儿数', value: summary.activeStudents, unit: '人', icon: Icons.student('w-5 h-5'), color: 'from-emerald-500/30 to-teal-500/10 border-emerald-400/30', accent: 'text-emerald-300' },
+            { key: 'books', label: '互动绘本数', value: summary.totalBooks, unit: '本', icon: Icons.book('w-5 h-5'), color: 'from-cyan-500/30 to-blue-500/10 border-cyan-400/30', accent: 'text-cyan-300' },
+            { key: 'chats', label: '累计 AI 对话次数', value: summary.totalChats, unit: '次', icon: Icons.chat('w-5 h-5'), color: 'from-amber-500/30 to-orange-500/10 border-amber-400/30', accent: 'text-amber-300' }
         ];
         return cards.map(c => `
             <div onclick="App.toggleAiMetric('${c.key}')" class="rounded-2xl border bg-gradient-to-br ${c.color} p-4 backdrop-blur-sm cursor-pointer transition-all hover:scale-[1.01] ${active === c.key ? 'ring-2 ring-offset-2 ring-offset-slate-800 ring-white/30' : ''}">
                 <div class="flex items-center justify-between mb-2">
                     <span class="text-xs text-slate-300">${c.label}</span>
-                    <span class="text-2xl">${c.icon}</span>
+                    <span class="${c.accent}">${c.icon}</span>
                 </div>
                 <div class="flex items-end justify-between">
                     <div class="flex items-baseline gap-1">
@@ -4349,13 +4388,13 @@ ${allQuestionsText || '（无）'}
     renderSchoolDataPage() {
         // 基础标签页（园长和教师可见）
         const baseTabs = [
-            { id: 'overview', label: '数据概述', icon: '📊' },
-            { id: 'activities', label: '绘本活动', icon: '📚' },
-            { id: 'books', label: '绘本', icon: '📖' },
-            { id: 'classes', label: '班级', icon: '🏫' },
-            { id: 'teachers', label: '教师', icon: '👩‍🏫' },
-            { id: 'students', label: '幼儿', icon: '👶' },
-            { id: 'devices', label: '设备', icon: '💻' }
+            { id: 'overview', label: '数据概述', icon: Icons.chart('w-4 h-4') },
+            { id: 'activities', label: '绘本活动', icon: Icons.activity('w-4 h-4') },
+            { id: 'books', label: '绘本', icon: Icons.book('w-4 h-4') },
+            { id: 'classes', label: '班级', icon: Icons.school('w-4 h-4') },
+            { id: 'teachers', label: '教师', icon: Icons.teacher('w-4 h-4') },
+            { id: 'students', label: '幼儿', icon: Icons.student('w-4 h-4') },
+            { id: 'devices', label: '设备', icon: Icons.device('w-4 h-4') }
         ];
 
         // 教育局管理员：未选学校时只显示全区数据概览和学校筛选，选了学校后显示完整标签
@@ -4363,8 +4402,8 @@ ${allQuestionsText || '（无）'}
         if (this.currentRole === 'admin') {
             if (!this.selectedSchool) {
                 tabs = [
-                    { id: 'overview', label: '全区数据概览', icon: '📊' },
-                    { id: 'schools', label: '学校筛选', icon: '🏫' }
+                    { id: 'overview', label: '全区数据概览', icon: Icons.chart('w-4 h-4') },
+                    { id: 'schools', label: '学校筛选', icon: Icons.school('w-4 h-4') }
                 ];
             } else {
                 tabs = baseTabs;
@@ -4384,21 +4423,21 @@ ${allQuestionsText || '（无）'}
             if (this.selectedSchool) {
                 titleText = `${this.selectedSchool.name}数据统计`;
                 scopeSelector = `
-                    <span class="role-badge admin">🏫 ${this.selectedSchool.name}</span>
+                    <span class="role-badge admin inline-flex items-center gap-1">${Icons.school()} ${this.selectedSchool.name}</span>
                     <button onclick="App.clearSelectedSchool()" class="px-3 py-1.5 rounded-lg bg-slate-600/50 border border-slate-500/30 text-slate-300 text-sm hover:bg-slate-500/50 hover:text-white transition-all flex items-center gap-1.5">
                         <span>←</span> 返回学校筛选
                     </button>
                 `;
             } else {
                 titleText = '全区园所综合数据统计';
-                scopeSelector = `<span class="role-badge admin">👔 全区数据</span>`;
+                scopeSelector = `<span class="role-badge admin inline-flex items-center gap-1">${Icons.admin()} 全区数据</span>`;
             }
         } else if (this.currentRole === 'principal') {
             titleText = this.selectedSchool ? `${this.selectedSchool.name}数据统计` : '园所数据统计';
-            scopeSelector = `<span class="role-badge principal">🏫 ${this.selectedSchool ? this.selectedSchool.name : '本园'}</span>`;
+            scopeSelector = `<span class="role-badge principal inline-flex items-center gap-1">${Icons.school()} ${this.selectedSchool ? this.selectedSchool.name : '本园'}</span>`;
         } else if (this.currentRole === 'teacher') {
             titleText = this.selectedClass ? `${this.selectedClass.name}数据统计` : '班级数据统计';
-            scopeSelector = `<span class="role-badge teacher">👩‍🏫 ${this.selectedClass ? this.selectedClass.name : '本班'}</span>`;
+            scopeSelector = `<span class="role-badge teacher inline-flex items-center gap-1">${Icons.teacher()} ${this.selectedClass ? this.selectedClass.name : '本班'}</span>`;
         }
 
         return `
@@ -4417,7 +4456,7 @@ ${allQuestionsText || '（无）'}
                 <div class="flex justify-center items-center border-b border-slate-500/35 overflow-x-auto bg-slate-700/40">
                     ${tabs.map(tab => `
                         <button class="school-tab flex-1 min-w-0 px-4 py-3 text-sm font-medium whitespace-nowrap transition-all flex items-center justify-center gap-1.5 ${tab.id === this.schoolDataTab ? 'text-blue-400 border-b-2 border-blue-500 bg-blue-500/10' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/30'}" data-tab="${tab.id}" onclick="App.switchSchoolTab('${tab.id}')">
-                            <span class="text-xs">${tab.icon}</span>${tab.label}
+                            <span class="flex-shrink-0">${tab.icon}</span>${tab.label}
                         </button>
                     `).join('')}
                 </div>
@@ -4605,8 +4644,8 @@ ${allQuestionsText || '（无）'}
 
                         <!-- 学校标识 -->
                         <div class="relative flex items-center gap-3 mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-400/20 to-blue-500/20 border border-cyan-400/20 flex items-center justify-center text-2xl shadow-lg">
-                                🏫
+                            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-400/20 to-blue-500/20 border border-cyan-400/20 flex items-center justify-center text-cyan-300 shadow-lg">
+                                ${Icons.school('w-6 h-6')}
                             </div>
                             <div class="flex-1">
                                 <h3 class="text-lg font-bold text-white group-hover:text-cyan-200 transition-colors">${school.name}</h3>

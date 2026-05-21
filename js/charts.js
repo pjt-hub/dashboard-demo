@@ -13,6 +13,128 @@ const Charts = {
         try { fn(); } catch (e) { console.warn('Chart init error:', e); }
     },
 
+    // —— 园所班均使用 散点气泡图(管理员视角) ——
+    // filterDistrict: 'all' | 具体区名,默认 'all'
+    initBanjunScatter(domId, data, filterDistrict) {
+        const chart = this.createChart(domId);
+        if (!chart || !data || !data.schools || !data.schools.length) return null;
+        const filter = filterDistrict || 'all';
+        const allSchools = data.schools;
+        const schools = filter === 'all' ? allSchools : allSchools.filter(s => (s.district || '未分类') === filter);
+        const palette = this.palette();
+        // 颜色映射用全量数据,避免筛选后颜色串位
+        const allDistricts = Array.from(new Set(allSchools.map(s => s.district || '未分类')));
+        const colorOf = d => palette[allDistricts.indexOf(d) % palette.length];
+
+        const districtMap = {};
+        schools.forEach(s => {
+            const d = s.district || '未分类';
+            if (!districtMap[d]) districtMap[d] = [];
+            districtMap[d].push(s);
+        });
+        const districts = Object.keys(districtMap);
+
+        const series = districts.map(district => ({
+            name: district,
+            type: 'scatter',
+            symbolSize: (val, params) => {
+                const cls = params.data.classCount || 1;
+                return Math.max(14, Math.min(40, Math.sqrt(cls) * 5.5));
+            },
+            itemStyle: {
+                color: colorOf(district),
+                opacity: 0.55,
+                borderColor: '#FFFFFF',
+                borderWidth: 1.5,
+                shadowColor: 'rgba(91,33,182,0.18)',
+                shadowBlur: 6,
+            },
+            emphasis: {
+                focus: 'series',
+                scale: 1.4,
+                itemStyle: { opacity: 1, shadowBlur: 16, borderWidth: 2 },
+                label: { show: true, formatter: p => p.data.name, position: 'top', fontSize: 11, fontWeight: 600, color: '#1E1B4B' }
+            },
+            data: districtMap[district].map(s => ({
+                value: [s.avgActivityCount, s.avgParticipantCount],
+                name: s.name,
+                district: s.district,
+                classCount: s.classCount,
+            })),
+        }));
+
+        // markLine 用当前可见数据重算,使象限切分对得上
+        const avg = (arr, key) => arr.length ? +(arr.reduce((s, x) => s + x[key], 0) / arr.length).toFixed(1) : 0;
+        const avgX = filter === 'all' ? data.summary.avgActivityCount : avg(schools, 'avgActivityCount');
+        const avgY = filter === 'all' ? data.summary.avgParticipantCount : avg(schools, 'avgParticipantCount');
+        const avgLabel = filter === 'all' ? '区域均' : `${filter}均`;
+
+        const option = {
+            color: palette,
+            tooltip: {
+                trigger: 'item',
+                formatter: p => {
+                    const d = p.data;
+                    return `<div style="font-weight:600;margin-bottom:4px">${d.name}</div>` +
+                           `<div style="color:#6D28D9">${d.district} · ${d.classCount} 个班</div>` +
+                           `<div style="margin-top:4px">班均活动 <b>${d.value[0]}</b> 次</div>` +
+                           `<div>班均参与 <b>${d.value[1]}</b> 人次</div>`;
+                }
+            },
+            legend: {
+                top: 0,
+                left: 'center',
+                icon: 'circle',
+                itemWidth: 8,
+                itemHeight: 8,
+                textStyle: { color: this.axisColor(), fontSize: 11 },
+                data: districts,
+            },
+            grid: { top: 36, left: 50, right: 18, bottom: 44 },
+            xAxis: {
+                type: 'value',
+                name: '班均活动次数 (次/班)',
+                nameLocation: 'middle',
+                nameGap: 28,
+                nameTextStyle: { color: this.axisColor(), fontSize: 11 },
+                axisLine: { lineStyle: { color: this.splitLineColor() } },
+                axisLabel: { color: this.axisColor(), fontSize: 11 },
+                splitLine: { lineStyle: { color: this.splitLineColor(), type: 'dashed' } },
+            },
+            yAxis: {
+                type: 'value',
+                name: '班均参与人次',
+                nameLocation: 'middle',
+                nameGap: 36,
+                nameTextStyle: { color: this.axisColor(), fontSize: 11 },
+                axisLine: { lineStyle: { color: this.splitLineColor() } },
+                axisLabel: { color: this.axisColor(), fontSize: 11 },
+                splitLine: { lineStyle: { color: this.splitLineColor(), type: 'dashed' } },
+            },
+            series: series.concat([{
+                // 区域均值参考线(把图分 4 象限)
+                type: 'scatter',
+                data: [],
+                markLine: {
+                    silent: true,
+                    symbol: 'none',
+                    lineStyle: { color: '#A78BFA', type: 'dashed', width: 1 },
+                    label: {
+                        formatter: p => p.data.xAxis !== undefined ? `${avgLabel} ${avgX}` : `${avgLabel} ${avgY}`,
+                        color: '#7C3AED',
+                        fontSize: 10,
+                    },
+                    data: [
+                        { xAxis: avgX },
+                        { yAxis: avgY },
+                    ]
+                }
+            }])
+        };
+        chart.setOption(option);
+        return chart;
+    },
+
     createChart(domId) {
         const dom = document.getElementById(domId);
         if (!dom) return null;
@@ -89,20 +211,22 @@ const Charts = {
     },
 
     isWarm() {
-        return typeof document !== 'undefined' && document.body.classList.contains('theme-warm');
+        // 默认 = 白紫主题(无 class);只有显式挂上 theme-dark 才走深色
+        if (typeof document === 'undefined') return false;
+        return !document.body.classList.contains('theme-dark');
     },
 
     // 当前生效的色板（用在 option.color 替换硬编码数组）
     palette() {
         return this.isWarm()
-            ? ['#C68A4A', '#7A8B3F', '#9A6F8A', '#E07A5F', '#B07332', '#8FAE9D', '#D4A574', '#A06B5C']
+            ? ['#8B5CF6', '#6366F1', '#F59E0B', '#EC4899', '#14B8A6', '#A78BFA', '#F472B6', '#2563EB']
             : ['#3b82f6', '#06b6d4', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444', '#14b8a6', '#a855f7'];
     },
-    axisColor() { return this.isWarm() ? '#9A8B7A' : '#94a3b8'; },
-    splitLineColor() { return this.isWarm() ? 'rgba(217,199,168,0.5)' : 'rgba(148,163,184,0.15)'; },
+    axisColor() { return this.isWarm() ? '#6D28D9' : '#94a3b8'; },
+    splitLineColor() { return this.isWarm() ? 'rgba(221,214,254,0.5)' : 'rgba(148,163,184,0.15)'; },
     radarSplitArea() {
         return this.isWarm()
-            ? ['rgba(255,248,234,0.6)', 'rgba(254,243,221,0.5)', 'rgba(244,236,220,0.4)', 'rgba(232,220,200,0.3)']
+            ? ['rgba(245,243,255,0.6)', 'rgba(237,233,254,0.5)', 'rgba(221,214,254,0.4)', 'rgba(196,181,253,0.3)']
             : ['rgba(15,23,42,0.1)', 'rgba(30,41,59,0.2)', 'rgba(51,65,85,0.15)', 'rgba(71,85,105,0.1)'];
     },
     theme() { return this.isWarm() ? this.warmTheme : this.darkTheme; },

@@ -4,12 +4,57 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI绘本阅读室数据统计平台</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@300;400;500;600;700&family=Fira+Code:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                50:  '#F5F3FF',
+                100: '#EDE9FE',
+                200: '#DDD6FE',
+                300: '#C4B5FD',
+                400: '#A78BFA',
+                500: '#8B5CF6',
+                600: '#7C3AED',
+                700: '#6D28D9',
+                800: '#5B21B6',
+                900: '#4C1D95',
+              },
+              accent: {
+                400: '#FBBF24',
+                500: '#F59E0B',
+                600: '#D97706',
+              },
+            },
+            fontFamily: {
+              sans: ['"Fira Sans"', '"Noto Sans SC"', 'system-ui', 'sans-serif'],
+              mono: ['"Fira Code"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+            },
+            fontSize: {
+              'data-xs': ['0.75rem',  { lineHeight: '1rem' }],
+              'data-sm': ['0.875rem', { lineHeight: '1.25rem' }],
+              'data-md': ['1rem',     { lineHeight: '1.5rem' }],
+              'data-lg': ['1.5rem',   { lineHeight: '2rem',   fontWeight: '600' }],
+              'data-xl': ['2rem',     { lineHeight: '2.25rem', fontWeight: '600' }],
+            },
+            boxShadow: {
+              card:      '0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04)',
+              'card-hover': '0 4px 12px rgba(30, 64, 175, 0.12), 0 2px 6px rgba(15, 23, 42, 0.06)',
+            },
+          },
+        },
+      };
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
-    <link rel="stylesheet" href="css/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/tokens.css?v=6">
+    <link rel="stylesheet" href="css/style.css?v=6">
 </head>
-<body class="bg-gradient-to-br from-slate-700 via-slate-600 to-slate-700 min-h-screen text-white font-['Noto_Sans_SC'] flex">
+<body class="min-h-screen font-sans flex">
 
     <!-- ========== 左侧导航栏（对标远程平台） ========== -->
     <aside id="sidebar" class="w-56 bg-slate-800 min-h-screen flex flex-col fixed left-0 top-0 z-40 transition-all duration-300">
@@ -67,21 +112,21 @@
             <div id="role-switcher" class="hidden mt-3 space-y-2">
                 <div class="text-xs text-slate-500 mb-2">切换角色</div>
                 <button class="role-option w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all hover:bg-blue-500/10 border border-transparent" data-role="admin" onclick="App.switchRole('admin')">
-                    <span class="text-base">👔</span>
+                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 21v-2a4 4 0 014-4h10a4 4 0 014 4v2M12 11a4 4 0 100-8 4 4 0 000 8z"></path></svg>
                     <div class="text-left">
                         <div class="text-slate-200">教育局管理员</div>
                         <div class="text-xs text-slate-500">查看全区数据</div>
                     </div>
                 </button>
                 <button class="role-option w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all hover:bg-blue-500/10 border border-transparent" data-role="principal" onclick="App.switchRole('principal')">
-                    <span class="text-base">🏫</span>
+                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6"></path></svg>
                     <div class="text-left">
                         <div class="text-slate-200">园长</div>
                         <div class="text-xs text-slate-500">查看本园数据</div>
                     </div>
                 </button>
                 <button class="role-option w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all hover:bg-blue-500/10 border border-transparent" data-role="teacher" onclick="App.switchRole('teacher')">
-                    <span class="text-base">👩‍🏫</span>
+                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 14l9-5-9-5-9 5 9 5z"></path></svg>
                     <div class="text-left">
                         <div class="text-slate-200">教师</div>
                         <div class="text-xs text-slate-500">查看本班数据</div>
@@ -125,9 +170,9 @@
     <!-- Toast通知 -->
     <div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2"></div>
 
-    <script src="js/mockData.js"></script>
-    <script src="js/services.js"></script>
-    <script src="js/charts.js"></script>
-    <script src="js/app.js"></script>
+    <script src="js/mockData.js?v=6"></script>
+    <script src="js/services.js?v=6"></script>
+    <script src="js/charts.js?v=6"></script>
+    <script src="js/app.js?v=6"></script>
 </body>
 </html>

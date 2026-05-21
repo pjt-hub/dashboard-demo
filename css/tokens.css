@@ -1,0 +1,149 @@
+/* ============================================================
+   AI绘本阅读室 · Design Tokens
+   默认主题:白紫(Lilac on White),tokens 是单一变量源
+   - .theme-dark  深色科技蓝(原默认,保留作可选)
+   ============================================================ */
+
+:root {
+    /* —— 品牌主色:紫色(替代原蓝色) —— */
+    --brand-50:  #F5F3FF;
+    --brand-100: #EDE9FE;
+    --brand-200: #DDD6FE;
+    --brand-300: #C4B5FD;
+    --brand-400: #A78BFA;
+    --brand-500: #8B5CF6;
+    --brand-600: #7C3AED;
+    --brand-700: #6D28D9;
+    --brand-800: #5B21B6;
+    --brand-900: #4C1D95;
+
+    /* —— 强调色(琥珀,CTA / 高亮) —— */
+    --accent-400: #FBBF24;
+    --accent-500: #F59E0B;
+    --accent-600: #D97706;
+
+    /* —— 语义色 —— */
+    --success-400: #34D399;
+    --success-500: #10B981;
+    --warning-400: #FBBF24;
+    --warning-500: #F59E0B;
+    --danger-400:  #F87171;
+    --danger-500:  #EF4444;
+    --info-400:    #818CF8;
+    --info-500:    #6366F1;
+
+    /* —— 表层(默认 = 白紫) —— */
+    --bg-base:        linear-gradient(135deg, #FFFFFF 0%, #FAF5FF 50%, #F5F3FF 100%);
+    --bg-app:         #FAF5FF;
+    --surface-1:      #FFFFFF;                  /* 卡片 */
+    --surface-2:      #FAF5FF;                  /* 内嵌面板 / 筛选区 */
+    --surface-3:      #FFFFFF;                  /* 表头 / 输入框 */
+    --surface-sidebar: linear-gradient(180deg, #FFFFFF 0%, #F5F3FF 100%);
+    --surface-header: rgba(255, 255, 255, 0.92);
+    --surface-modal:  #FFFFFF;
+
+    --border-subtle:   #EDE9FE;                 /* 极淡紫 */
+    --border-default:  #DDD6FE;                 /* 中淡紫 */
+    --border-strong:   #8B5CF6;                 /* 主紫 */
+
+    /* —— 文字 —— */
+    --text-primary:   #1E1B4B;                  /* 深紫黑 */
+    --text-secondary: #312E81;                  /* 紫黑 */
+    --text-muted:     #6D28D9;                  /* 紫调灰 */
+    --text-faint:     #8B7FB8;                  /* 浅紫灰 */
+    --text-on-brand:  #FFFFFF;
+
+    /* —— 高亮态 —— */
+    --hover-overlay:  rgba(139, 92, 246, 0.08);
+    --active-overlay: rgba(139, 92, 246, 0.14);
+    --focus-ring:     rgba(139, 92, 246, 0.30);
+
+    /* —— 图表色板(白底紫调) —— */
+    --chart-1: #8B5CF6;   /* 紫主 */
+    --chart-2: #6366F1;   /* 靛 */
+    --chart-3: #F59E0B;   /* 琥珀 */
+    --chart-4: #EC4899;   /* 玫瑰 */
+    --chart-5: #14B8A6;   /* 青 */
+    --chart-6: #A78BFA;   /* 浅紫 */
+    --chart-7: #F472B6;   /* 浅粉 */
+    --chart-8: #2563EB;   /* 蓝 */
+
+    /* —— 阴影(柔紫调) —— */
+    --shadow-card:       0 1px 3px rgba(91, 33, 182, 0.06), 0 1px 2px rgba(91, 33, 182, 0.04);
+    --shadow-card-hover: 0 8px 24px rgba(139, 92, 246, 0.14), 0 2px 6px rgba(91, 33, 182, 0.06);
+    --shadow-modal:      0 24px 48px rgba(91, 33, 182, 0.16);
+    --shadow-button:     0 2px 8px rgba(139, 92, 246, 0.30);
+
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 20px;
+
+    --motion-fast:   150ms;
+    --motion-base:   200ms;
+    --motion-slow:   300ms;
+    --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* —— 可选深色主题:原科技蓝灰(若想切回旧风格) —— */
+body.theme-dark {
+    --brand-50:  #EFF6FF;
+    --brand-100: #DBEAFE;
+    --brand-200: #BFDBFE;
+    --brand-300: #93C5FD;
+    --brand-400: #60A5FA;
+    --brand-500: #3B82F6;
+    --brand-600: #2563EB;
+    --brand-700: #1D4ED8;
+    --brand-800: #1E40AF;
+    --brand-900: #1E3A8A;
+
+    --bg-base:        linear-gradient(135deg, #3D4F6F 0%, #4A6285 35%, #506A8E 50%, #4A6285 65%, #3D4F6F 100%);
+    --bg-app:         #3D4F6F;
+    --surface-1:      rgba(75, 95, 125, 0.75);
+    --surface-2:      rgba(60, 80, 108, 0.60);
+    --surface-3:      rgba(70, 92, 120, 0.85);
+    --surface-sidebar: linear-gradient(180deg, #3A4D68 0%, #425A7A 100%);
+    --surface-header: rgba(55, 72, 98, 0.85);
+    --surface-modal:  linear-gradient(135deg, #4A5F7D, #3D5370);
+
+    --border-subtle:   rgba(140, 180, 240, 0.30);
+    --border-default:  rgba(150, 190, 255, 0.35);
+    --border-strong:   rgba(96, 165, 250, 0.50);
+
+    --text-primary:   #F1F5F9;
+    --text-secondary: #E2E8F0;
+    --text-muted:     #A0AEC0;
+    --text-faint:     #8896A6;
+
+    --hover-overlay:  rgba(96, 165, 250, 0.12);
+    --active-overlay: rgba(59, 130, 246, 0.20);
+    --focus-ring:     rgba(59, 130, 246, 0.45);
+
+    --chart-1: #60A5FA;
+    --chart-2: #34D399;
+    --chart-3: #FBBF24;
+    --chart-4: #A78BFA;
+    --chart-5: #22D3EE;
+    --chart-6: #F87171;
+    --chart-7: #4ADE80;
+    --chart-8: #FB7185;
+
+    --shadow-card:       0 6px 20px rgba(0, 0, 0, 0.18);
+    --shadow-card-hover: 0 8px 24px rgba(59, 130, 246, 0.18);
+    --shadow-modal:      0 25px 50px rgba(0, 0, 0, 0.30);
+    --shadow-button:     0 2px 8px rgba(59, 130, 246, 0.30);
+}
+
+/* 兼容旧类名 .theme-warm:依然指向白紫(也就是当前 :root,无需重写) */
+body.theme-warm {
+    /* 旧浅色入口,继承默认即可 */
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
