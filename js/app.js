@@ -698,6 +698,10 @@ const App = {
             this.selectedClass = null;
         }
 
+        // 重置园所数据页的子标签与搜索状态，避免跨角色残留（如 admin 的"学校筛选"搜索栏）
+        this.schoolDataTab = 'overview';
+        this.schoolSearchKeyword = '';
+
         this.updateRoleUI();
         this.updateSidebarForRole();
 
@@ -946,16 +950,6 @@ const App = {
                 if (page) this.loadPage(page);
             });
         });
-        document.querySelectorAll('.sidebar-group-title').forEach(title => {
-            title.addEventListener('click', () => {
-                const group = title.dataset.group;
-                const groupEl = document.getElementById(`group-${group}`);
-                if (groupEl) {
-                    groupEl.classList.toggle('hidden');
-                    title.querySelector('.group-arrow')?.classList.toggle('rotate-180');
-                }
-            });
-        });
     },
 
     loadPage(pageName) {
@@ -978,11 +972,11 @@ const App = {
             item.classList.toggle('active', item.dataset.page === pageName);
         });
         const breadcrumbMap = {
-            dataOverview: '首页 / 基础设置 / 大数据总览',
+            dataOverview: '首页 / 大数据总览',
             schoolData: this.currentRole === 'teacher'
-                ? '首页 / 基础设置 / 班级数据'
-                : this.currentRole === 'admin' ? '首页 / 基础设置 / 区域数据' : '首页 / 基础设置 / 园所数据',
-            aiOverview: '首页 / 基础设置 / AI总览',
+                ? '首页 / 班级数据'
+                : this.currentRole === 'admin' ? '首页 / 区域数据' : '首页 / 园所数据',
+            aiOverview: '首页 / AI总览',
         };
         document.getElementById('breadcrumb').textContent = breadcrumbMap[pageName] || '首页';
         Charts.dispose();
@@ -1330,7 +1324,7 @@ const App = {
         const iconBolt = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>';
 
         // 根据角色显示不同的标题
-        let pageTitle = 'AI绘本阅读室大数据总览';
+        let pageTitle = '安徽省合肥市蜀山区大数据总览';
         let scopeBadge = '';
         if (this.currentRole === 'principal') {
             pageTitle = this.selectedSchool ? `${this.selectedSchool.name} 大数据总览` : '本园大数据总览';
@@ -4533,6 +4527,11 @@ ${allQuestionsText || '（无）'}
         // 教师视角不可能停留在 devices 子页签
         if (this.currentRole === 'teacher' && this.schoolDataTab === 'devices') {
             this.schoolDataTab = 'overview';
+        }
+        // 非教育局管理员不应停留在"学校筛选"子页签
+        if (this.currentRole !== 'admin' && this.schoolDataTab === 'schools') {
+            this.schoolDataTab = 'overview';
+            this.schoolSearchKeyword = '';
         }
         this.renderSchoolTabContent(this.schoolDataTab);
         // 同步更新tab高亮状态

@@ -51,14 +51,6 @@ body {
     color: var(--brand-400);
 }
 
-.sidebar-group-title {
-    display: none;
-}
-.sidebar-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
 .sidebar-nav-item.hidden-role {
     display: none;
 }
@@ -526,7 +518,31 @@ body:not(.theme-dark) [class*="bg-slate-700"],
 body:not(.theme-dark) [class*="bg-slate-600"],
 body:not(.theme-dark) [class*="bg-slate-500"] {
     background-color: var(--surface-2);
-    border: 1px solid var(--border-subtle);
+    border: 1px solid var(--border-default);
+}
+/* 嵌套场景:卡片(slate-800)内的 inset 面板(slate-700/600)给更明显的边框,
+   避免内嵌底色 #FAF5FF 与外卡背景 #FFFFFF 视觉粘连(尤其页面渐变也走 #FAF5FF) */
+body:not(.theme-dark) [class*="bg-slate-800"] [class*="bg-slate-700"],
+body:not(.theme-dark) [class*="bg-slate-800"] [class*="bg-slate-600"],
+body:not(.theme-dark) [class*="bg-slate-700"] [class*="bg-slate-700"],
+body:not(.theme-dark) [class*="bg-slate-700"] [class*="bg-slate-600"] {
+    background-color: var(--surface-3);
+    border-color: var(--border-default);
+}
+
+/* 工具栏/筛选按钮:inactive 态需要看得见的描边 */
+body:not(.theme-dark) button[class*="bg-slate-700"],
+body:not(.theme-dark) button[class*="bg-slate-800"] {
+    background-color: var(--brand-50);
+    border-color: var(--brand-200);
+    color: var(--text-secondary);
+    box-shadow: 0 1px 2px rgba(91, 33, 182, 0.06);
+}
+body:not(.theme-dark) button[class*="bg-slate-700"]:hover,
+body:not(.theme-dark) button[class*="bg-slate-800"]:hover {
+    background-color: var(--brand-100);
+    border-color: var(--brand-400);
+    color: var(--brand-700);
 }
 
 /* sticky header 单独白底(原 bg-slate-800/70 在白紫下应该是半透明白) */
@@ -540,6 +556,15 @@ body:not(.theme-dark) header[class*="bg-slate-800"] {
 body:not(.theme-dark) .text-white {
     color: var(--text-primary);
     -webkit-text-fill-color: var(--text-primary);
+}
+/* 例外:在品牌紫填充上的 .text-white 应保留白字(active 按钮、品牌 chip) */
+body:not(.theme-dark) [class*="bg-brand-"] .text-white,
+body:not(.theme-dark) [class*="bg-brand-"].text-white,
+body:not(.theme-dark) button.bg-brand-500.text-white,
+body:not(.theme-dark) .bg-brand-500 .text-white,
+body:not(.theme-dark) .bg-brand-600 .text-white {
+    color: var(--text-on-brand);
+    -webkit-text-fill-color: var(--text-on-brand);
 }
 body:not(.theme-dark) .text-slate-200,
 body:not(.theme-dark) .text-slate-300 {
@@ -634,7 +659,25 @@ body:not(.theme-dark) .bg-red-500\/10,
 body:not(.theme-dark) .bg-red-500\/15,
 body:not(.theme-dark) .bg-red-500\/20 { background-color: color-mix(in oklab, var(--danger-500) 10%, transparent); }
 body:not(.theme-dark) .bg-blue-500\/5,
-body:not(.theme-dark) .bg-blue-500\/10 { background-color: color-mix(in oklab, var(--brand-500) 8%, transparent); }
+body:not(.theme-dark) .bg-blue-500\/10,
+body:not(.theme-dark) .bg-blue-500\/15,
+body:not(.theme-dark) .bg-blue-500\/20 { background-color: color-mix(in oklab, var(--brand-500) 12%, transparent); }
+
+/* active 态按钮:bg-blue-500/20 + text-blue-300 + border-blue-500/40 锚到品牌紫 */
+body:not(.theme-dark) button.bg-blue-500\/20,
+body:not(.theme-dark) button[class*="bg-blue-500\/15"],
+body:not(.theme-dark) button[class*="bg-blue-500\/20"] {
+    background-color: var(--brand-500);
+    border-color: var(--brand-500);
+    color: var(--text-on-brand);
+    -webkit-text-fill-color: var(--text-on-brand);
+    box-shadow: var(--shadow-button);
+}
+body:not(.theme-dark) button.bg-blue-500\/20:hover,
+body:not(.theme-dark) button[class*="bg-blue-500\/20"]:hover {
+    background-color: var(--brand-600);
+    border-color: var(--brand-600);
+}
 
 /* 渐变指标卡 —— 浅紫白 */
 body:not(.theme-dark) .bg-gradient-to-br[class*="from-emerald-500"],
@@ -690,9 +733,11 @@ body:not(.theme-dark) [class*="bg-[linear-gradient"] {
     box-shadow: var(--shadow-card);
 }
 
-/* 模态框遮罩 */
+/* 模态框遮罩 — 低饱和深色 + 轻微模糊，避免页面整屏泛紫 */
 body:not(.theme-dark) #modal-overlay {
-    background: rgba(76, 29, 149, 0.30);
+    background: rgba(30, 27, 75, 0.42);
+    backdrop-filter: blur(3px) saturate(0.85);
+    -webkit-backdrop-filter: blur(3px) saturate(0.85);
 }
 
 /* 表格 hover 行 */
