@@ -950,16 +950,6 @@ const App = {
                 if (page) this.loadPage(page);
             });
         });
-        document.querySelectorAll('.sidebar-group-title').forEach(title => {
-            title.addEventListener('click', () => {
-                const group = title.dataset.group;
-                const groupEl = document.getElementById(`group-${group}`);
-                if (groupEl) {
-                    groupEl.classList.toggle('hidden');
-                    title.querySelector('.group-arrow')?.classList.toggle('rotate-180');
-                }
-            });
-        });
     },
 
     loadPage(pageName) {
@@ -982,11 +972,11 @@ const App = {
             item.classList.toggle('active', item.dataset.page === pageName);
         });
         const breadcrumbMap = {
-            dataOverview: '首页 / 基础设置 / 大数据总览',
+            dataOverview: '首页 / 大数据总览',
             schoolData: this.currentRole === 'teacher'
-                ? '首页 / 基础设置 / 班级数据'
-                : this.currentRole === 'admin' ? '首页 / 基础设置 / 区域数据' : '首页 / 基础设置 / 园所数据',
-            aiOverview: '首页 / 基础设置 / AI总览',
+                ? '首页 / 班级数据'
+                : this.currentRole === 'admin' ? '首页 / 区域数据' : '首页 / 园所数据',
+            aiOverview: '首页 / AI总览',
         };
         document.getElementById('breadcrumb').textContent = breadcrumbMap[pageName] || '首页';
         Charts.dispose();

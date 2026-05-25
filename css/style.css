@@ -51,14 +51,6 @@ body {
     color: var(--brand-400);
 }
 
-.sidebar-group-title {
-    display: none;
-}
-.sidebar-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
 .sidebar-nav-item.hidden-role {
     display: none;
 }
@@ -541,15 +533,15 @@ body:not(.theme-dark) [class*="bg-slate-700"] [class*="bg-slate-600"] {
 /* 工具栏/筛选按钮:inactive 态需要看得见的描边 */
 body:not(.theme-dark) button[class*="bg-slate-700"],
 body:not(.theme-dark) button[class*="bg-slate-800"] {
-    background-color: var(--surface-1);
-    border-color: var(--border-default);
+    background-color: var(--brand-50);
+    border-color: var(--brand-200);
     color: var(--text-secondary);
-    box-shadow: 0 1px 2px rgba(91, 33, 182, 0.04);
+    box-shadow: 0 1px 2px rgba(91, 33, 182, 0.06);
 }
 body:not(.theme-dark) button[class*="bg-slate-700"]:hover,
 body:not(.theme-dark) button[class*="bg-slate-800"]:hover {
-    background-color: var(--brand-50);
-    border-color: var(--brand-300);
+    background-color: var(--brand-100);
+    border-color: var(--brand-400);
     color: var(--brand-700);
 }
 
@@ -741,9 +733,11 @@ body:not(.theme-dark) [class*="bg-[linear-gradient"] {
     box-shadow: var(--shadow-card);
 }
 
-/* 模态框遮罩 */
+/* 模态框遮罩 — 低饱和深色 + 轻微模糊，避免页面整屏泛紫 */
 body:not(.theme-dark) #modal-overlay {
-    background: rgba(76, 29, 149, 0.30);
+    background: rgba(30, 27, 75, 0.42);
+    backdrop-filter: blur(3px) saturate(0.85);
+    -webkit-backdrop-filter: blur(3px) saturate(0.85);
 }
 
 /* 表格 hover 行 */
