@@ -1355,7 +1355,7 @@ const App = {
 
             <!-- 图表第一行 -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                ${this.card(this.chartTitle('幼儿阅读绘本类型-次数占比', 'bg-blue-500') + '<div id="book-type-chart" class="h-72"></div>')}
+                ${this.card(this.chartTitle('幼儿阅读绘本类型-次数', 'bg-blue-500') + '<div id="book-type-chart" class="h-72"></div>')}
                 ${this.card(this.chartTitle('幼儿阅读绘本-能力分布', 'bg-emerald-500') + '<div id="ability-distribution-chart" class="h-72"></div>')}
             </div>
 
