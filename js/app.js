@@ -1347,10 +1347,10 @@ const App = {
 
             <!-- 4个核心指标 -->
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                ${this.statCard('绘本活动次数', stats.activityCount, iconBook, 'blue', '较上周增长 15.6%')}
-                ${this.statCard('绘本活动时长', stats.activityDuration + 'h', iconClock, 'emerald', '较上周增长 12.3%')}
-                ${this.statCard('参与活动人次', stats.participantCount, iconUsers, 'purple', '较上周增长 18.5%')}
-                ${this.statCard('绘本阅读时长', stats.readingDuration + 'h', iconBolt, 'amber', '较上周增长 8.7%')}
+                ${this.statCard('绘本活动次数', stats.activityCount, iconBook, 'blue', '较上一周期增长 15.6%')}
+                ${this.statCard('绘本活动时长', stats.activityDuration + 'h', iconClock, 'emerald', '较上一周期增长 12.3%')}
+                ${this.statCard('参与活动人次', stats.participantCount, iconUsers, 'purple', '较上一周期增长 18.5%')}
+                ${this.statCard('绘本阅读时长', stats.readingDuration + 'h', iconBolt, 'amber', '较上一周期增长 8.7%')}
             </div>
 
             <!-- 图表第一行 -->
