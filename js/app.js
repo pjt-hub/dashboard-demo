@@ -2364,7 +2364,7 @@ const App = {
         const map = new Map();
         list.forEach(item => {
             const key = item.student || '匿名';
-            if (!map.has(key)) map.set(key, { student: key, className: item.className || '-', chatCount: 0, turns: 0, books: new Set(), latestTime: '', latestBook: '' });
+            if (!map.has(key)) map.set(key, { student: key, className: item.className || '-', chatCount: 0, turns: 0, books: new Set(), latestTime: '', latestBook: '', scopes: { full: 0, page: 0 } });
             const stat = map.get(key);
             stat.chatCount += 1;
             stat.turns += item.session?.length || 0;
@@ -2373,6 +2373,7 @@ const App = {
                 stat.latestTime = item.time;
                 stat.latestBook = item.book || '';
             }
+            if (item.scope === 'full') stat.scopes.full += 1; else stat.scopes.page += 1;
         });
         const all = [...map.values()].sort((a, b) => b.chatCount - a.chatCount);
         const total = all.length;
@@ -2402,6 +2403,10 @@ const App = {
                 <td class="px-3 py-2.5 text-center text-sm text-emerald-400">${r.chatCount}</td>
                 <td class="px-3 py-2.5 text-center text-sm text-slate-200">${r.turns}</td>
                 <td class="px-3 py-2.5 text-center text-sm text-slate-200">${r.books.size}</td>
+                <td class="px-3 py-2.5 text-center text-xs text-slate-400">
+                    <span class="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 mr-1">阅读中 ${r.scopes.page}</span>
+                    <span class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300">阅读后 ${r.scopes.full}</span>
+                </td>
                 <td class="px-3 py-2.5 text-center text-xs text-slate-400">${r.latestTime || '-'}</td>
                 <td class="px-3 py-2.5 text-left text-xs text-amber-300">${r.latestBook ? `《${r.latestBook}》` : '-'}</td>
                 <td class="px-3 py-2.5 text-center">${analysisCell}</td>
@@ -2409,18 +2414,19 @@ const App = {
                     <button onclick="App.viewAiStudentDrilldown('${escStudent}')" class="text-emerald-300 hover:text-emerald-200 text-xs">查看 ›</button>
                 </td>
             </tr>`;
-        }).join('') : `<tr><td colspan="10" class="px-3 py-8 text-center text-slate-500 text-sm">当前时间范围内暂无幼儿互动明细</td></tr>`;
+        }).join('') : `<tr><td colspan="11" class="px-3 py-8 text-center text-slate-500 text-sm">当前时间范围内暂无幼儿互动明细</td></tr>`;
         const headers = [
             { label: '#', align: 'center', width: '4%' },
-            { label: '幼儿', align: 'left', width: '11%' },
-            { label: '班级', align: 'center', width: '9%' },
-            { label: '对话次数', align: 'center', width: '8%' },
-            { label: '累计轮次', align: 'center', width: '8%' },
-            { label: '互动绘本', align: 'center', width: '8%' },
-            { label: '最近对话', align: 'center', width: '12%' },
-            { label: '最近绘本', align: 'left', width: '16%' },
-            { label: '兴趣画像分析', align: 'center', width: '17%' },
-            { label: '操作', align: 'center', width: '7%' }
+            { label: '幼儿', align: 'left', width: '10%' },
+            { label: '班级', align: 'center', width: '8%' },
+            { label: '对话次数', align: 'center', width: '7%' },
+            { label: '累计轮次', align: 'center', width: '7%' },
+            { label: '互动绘本', align: 'center', width: '7%' },
+            { label: '对话类型分布', align: 'center', width: '15%' },
+            { label: '最近对话', align: 'center', width: '11%' },
+            { label: '最近绘本', align: 'left', width: '13%' },
+            { label: '兴趣画像分析', align: 'center', width: '12%' },
+            { label: '操作', align: 'center', width: '6%' }
         ];
         return `
             <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-emerald-400/25 p-4 mt-4">
@@ -2662,27 +2668,33 @@ const App = {
         // 表格选择栏
         const headers = isBook
             ? [
-                { label: '小朋友', align: 'left', width: '14%' },
-                { label: '日期', align: 'center', width: '12%' },
-                { label: '班级', align: 'center', width: '10%' },
-                { label: '对话次数', align: 'center', width: '10%' },
-                { label: '累计轮次', align: 'center', width: '10%' },
-                { label: '最近时间', align: 'center', width: '14%' },
-                { label: '操作', align: 'center', width: '10%' }
-            ]
-            : [
                 { label: '小朋友', align: 'left', width: '12%' },
                 { label: '日期', align: 'center', width: '10%' },
                 { label: '班级', align: 'center', width: '9%' },
-                { label: '绘本', align: 'left', width: '14%' },
-                { label: '对话次数', align: 'center', width: '9%' },
-                { label: '累计轮次', align: 'center', width: '9%' },
-                { label: '最近时间', align: 'center', width: '14%' },
-                { label: '操作', align: 'center', width: '10%' }
+                { label: '对话次数', align: 'center', width: '8%' },
+                { label: '累计轮次', align: 'center', width: '8%' },
+                { label: '对话类型分布', align: 'center', width: '17%' },
+                { label: '最近时间', align: 'center', width: '12%' },
+                { label: '操作', align: 'center', width: '8%' }
+            ]
+            : [
+                { label: '小朋友', align: 'left', width: '11%' },
+                { label: '日期', align: 'center', width: '9%' },
+                { label: '班级', align: 'center', width: '8%' },
+                { label: '绘本', align: 'left', width: '12%' },
+                { label: '对话次数', align: 'center', width: '8%' },
+                { label: '累计轮次', align: 'center', width: '8%' },
+                { label: '对话类型分布', align: 'center', width: '15%' },
+                { label: '最近时间', align: 'center', width: '12%' },
+                { label: '操作', align: 'center', width: '7%' }
             ];
 
         const tableRows = filteredGroups.length ? filteredGroups.map(g => {
             const groupTotalTurns = g.items.reduce((s, h) => s + (h.session?.length || 0), 0);
+            const scopeCount = g.items.reduce((acc, h) => {
+                if (h.scope === 'full') acc.full += 1; else acc.page += 1;
+                return acc;
+            }, { page: 0, full: 0 });
             const latestTime = g.items[g.items.length - 1]?.time || '';
             const escStudent = g.student.replace(/'/g, "\\'");
             const escDate = g.date.replace(/'/g, "\\'");
@@ -2695,12 +2707,16 @@ const App = {
                     ${!isBook ? `<td class="px-3 py-2.5 text-left"><span class="text-amber-300 text-sm">《${g.book}》</span></td>` : ''}
                     <td class="px-3 py-2.5 text-center text-sm text-cyan-400">${g.items.length}</td>
                     <td class="px-3 py-2.5 text-center text-sm text-slate-200">${groupTotalTurns}</td>
+                    <td class="px-3 py-2.5 text-center text-xs text-slate-400">
+                        <span class="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 mr-1">阅读中 ${scopeCount.page}</span>
+                        <span class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300">阅读后 ${scopeCount.full}</span>
+                    </td>
                     <td class="px-3 py-2.5 text-center text-xs text-slate-400">${latestTime}</td>
                     <td class="px-3 py-2.5 text-center">
                         <button onclick="App.viewAiDrilldownSession('${escStudent}','${escDate}','${escBook}')" class="text-blue-400 hover:text-blue-300 text-xs">查看 ›</button>
                     </td>
                 </tr>`;
-        }).join('') : `<tr><td colspan="${isBook ? 7 : 8}" class="px-3 py-8 text-center text-slate-500 text-sm">暂无对话明细</td></tr>`;
+        }).join('') : `<tr><td colspan="${isBook ? 8 : 9}" class="px-3 py-8 text-center text-slate-500 text-sm">暂无对话明细</td></tr>`;
 
         const titleText = isBook ? `《${dd.value}》全部对话` : `${dd.value} 的全部对话`;
 
