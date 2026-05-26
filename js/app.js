@@ -1746,21 +1746,25 @@ const App = {
 
     // 重新渲染区域/园所活动次数图（头部 + 图表）
     refreshWeeklyActivityChart() {
-        const headerHost = document.querySelector('#weekly-activity-chart')?.parentElement;
-        if (headerHost) {
-            const oldHeader = headerHost.querySelector('h3')?.closest('.flex.items-center.justify-between');
-            if (oldHeader) oldHeader.outerHTML = this.renderWeeklyActivityChartHeader();
-        }
-        const dom = document.getElementById('weekly-activity-chart');
-        if (dom && typeof echarts !== 'undefined') {
-            const existing = echarts.getInstanceByDom(dom);
+        // 整段重渲染：拿到 chart dom 的 card 父级，连 header + chart dom 一起重画，
+        // 避免 dispose / outerHTML 顺序导致 echarts 实例残留旧 series 的问题
+        const chartDom = document.getElementById('weekly-activity-chart');
+        const card = chartDom?.closest('[class*="rounded-2xl"]') || chartDom?.parentElement;
+        if (chartDom && typeof echarts !== 'undefined') {
+            const existing = echarts.getInstanceByDom(chartDom);
             if (existing && !existing.isDisposed()) {
                 existing.dispose();
                 Charts.instances = Charts.instances.filter(c => c !== existing);
             }
         }
+        if (card) {
+            card.innerHTML = this.renderWeeklyActivityChartHeader() + '<div id="weekly-activity-chart" class="h-72"></div>';
+        }
         const data = this._lastWeeklyActivityData || MockData.weeklyActivity;
-        Charts.safeInit(() => Charts.initWeeklyActivityBar(data, this.weeklyActivityChartTypes));
+        // 等下一帧让 dom 真正插入完毕再 init，避免 echarts 拿到旧节点
+        requestAnimationFrame(() => {
+            Charts.safeInit(() => Charts.initWeeklyActivityBar(data, this.weeklyActivityChartTypes));
+        });
     },
 
     // 兼容老入口：保留 setWeeklyActivityChartType（外部如果还有调用，也走多选逻辑）
@@ -1878,27 +1882,27 @@ const App = {
 
     // 刷新园所使用次数趋势图表
     refreshKindergartenUsageChart() {
-        // 整段重渲染筛选栏（徽章 / 下拉文案 / 选项对勾全部跟着 selectedKindergartensForLine 同步）
-        const header = document.getElementById('kindergarten-usage-header');
-        if (header) {
-            const wasOpen = !document.getElementById('kindergarten-dropdown-menu')?.classList.contains('hidden');
-            header.outerHTML = this.renderKindergartenUsageChartHeader();
-            if (wasOpen) {
-                document.getElementById('kindergarten-dropdown-menu')?.classList.remove('hidden');
-                document.getElementById('kindergarten-dropdown-arrow')?.classList.add('rotate-180');
-            }
-        }
-        // 重新绘制图表前先释放旧实例（避免 setOption merge 残留旧 series）
-        const dom = document.getElementById('kindergarten-usage-chart');
-        if (dom && typeof echarts !== 'undefined') {
-            const existing = echarts.getInstanceByDom(dom);
+        const wasOpen = !document.getElementById('kindergarten-dropdown-menu')?.classList.contains('hidden');
+        const chartDom = document.getElementById('kindergarten-usage-chart');
+        const card = chartDom?.closest('[class*="rounded-2xl"]') || chartDom?.parentElement;
+        if (chartDom && typeof echarts !== 'undefined') {
+            const existing = echarts.getInstanceByDom(chartDom);
             if (existing && !existing.isDisposed()) {
                 existing.dispose();
                 Charts.instances = Charts.instances.filter(c => c !== existing);
             }
         }
+        if (card) {
+            card.innerHTML = this.renderKindergartenUsageChartHeader() + '<div id="kindergarten-usage-chart" class="h-72"></div>';
+            if (wasOpen) {
+                document.getElementById('kindergarten-dropdown-menu')?.classList.remove('hidden');
+                document.getElementById('kindergarten-dropdown-arrow')?.classList.add('rotate-180');
+            }
+        }
         const data = this.buildKindergartenUsageSeries();
-        Charts.safeInit(() => Charts.initKindergartenUsageLine(data, this.kindergartenUsageChartTypes));
+        requestAnimationFrame(() => {
+            Charts.safeInit(() => Charts.initKindergartenUsageLine(data, this.kindergartenUsageChartTypes));
+        });
     },
 
     // 构建园所使用次数序列数据
