@@ -248,11 +248,12 @@ const Charts = {
         this.safeInit(() => this.initAbilityRadar(data.abilityDistribution));
         // 缓存活动数据 + 按当前选择类型渲染（折线 / 柱状）
         if (typeof App !== 'undefined') App._lastWeeklyActivityData = data.weeklyActivity;
-        const weeklyType = (typeof App !== 'undefined' && App.weeklyActivityChartType) || 'line';
-        this.safeInit(() => this.initWeeklyActivityBar(data.weeklyActivity, weeklyType));
+        const weeklyTypes = (typeof App !== 'undefined' && App.weeklyActivityChartTypes) || ['line'];
+        this.safeInit(() => this.initWeeklyActivityBar(data.weeklyActivity, weeklyTypes));
         // 管理员显示园所使用次数折线图，园长显示教师排名
         if (App.currentRole === 'admin') {
-            this.safeInit(() => this.initKindergartenUsageLine(data.kindergartenUsageSeries));
+            const usageTypes = (typeof App !== 'undefined' && App.kindergartenUsageChartTypes) || ['line', 'bar'];
+            this.safeInit(() => this.initKindergartenUsageLine(data.kindergartenUsageSeries, usageTypes));
         } else {
             this.safeInit(() => this.initTeacherRankingBar(data.teacherRanking));
         }
@@ -466,13 +467,17 @@ const Charts = {
         const data = customData || MockData.weeklyActivity;
         const isMonthly = data.granularity === 'month';
         const rotate = !isMonthly && data.dates.length > 14 ? 35 : 0;
+        // 兼容旧入参：字符串单选 + 新入参：数组多选
+        const types = Array.isArray(chartType) ? chartType : [chartType];
+        const showLine = types.includes('line');
+        const showBar = types.includes('bar') || (!showLine);
         const baseAxis = {
             backgroundColor: 'transparent',
-            tooltip: { ...this.darkTheme.tooltip, trigger: 'axis', axisPointer: { type: chartType === 'line' ? 'cross' : 'shadow', shadowStyle: { color: 'rgba(59,130,246,0.05)' }, lineStyle: { color: 'rgba(99,102,241,0.3)' } } },
+            tooltip: { ...this.darkTheme.tooltip, trigger: 'axis', axisPointer: { type: showLine ? 'cross' : 'shadow', shadowStyle: { color: 'rgba(59,130,246,0.05)' }, lineStyle: { color: 'rgba(99,102,241,0.3)' } } },
             grid: { left: 40, right: 20, top: 20, bottom: 30 },
             xAxis: {
                 type: 'category',
-                boundaryGap: chartType === 'bar',
+                boundaryGap: showBar,
                 data: data.dates,
                 axisLabel: {
                     color: '#8896a6',
@@ -486,12 +491,14 @@ const Charts = {
             yAxis: { type: 'value', axisLabel: { color: '#8896a6', fontSize: 11 }, splitLine: { lineStyle: { color: 'rgba(85,100,120,0.3)' } } }
         };
 
-        const lineSeries = [{
+        const lineSeries = {
+            name: '折线',
             type: 'line',
             data: data.values,
             smooth: true,
             symbol: 'circle',
             symbolSize: 7,
+            z: 5,
             lineStyle: {
                 width: 2.5,
                 color: '#06b6d4',
@@ -499,26 +506,32 @@ const Charts = {
                 shadowColor: 'rgba(6,182,212,0.35)'
             },
             itemStyle: { color: '#06b6d4', borderColor: '#0891b2', borderWidth: 2 },
-            areaStyle: {
+            areaStyle: showBar ? undefined : {
                 color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
                     { offset: 0, color: 'rgba(6,182,212,0.35)' },
                     { offset: 1, color: 'rgba(59,130,246,0.04)' }
                 ])
             }
-        }];
+        };
 
-        const barSeries = [{
+        const barSeries = {
+            name: '柱状',
             type: 'bar', data: data.values, barWidth: data.dates.length > 12 ? '55%' : '40%',
             itemStyle: {
                 borderRadius: [6, 6, 0, 0],
-                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#06b6d4' }, { offset: 1, color: '#3b82f6' }]),
-                shadowBlur: 8, shadowColor: 'rgba(6,182,212,0.2)'
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#3b82f6' }, { offset: 1, color: '#1e40af' }]),
+                shadowBlur: 8, shadowColor: 'rgba(6,182,212,0.2)',
+                opacity: showLine ? 0.55 : 1
             }
-        }];
+        };
+
+        const series = [];
+        if (showBar) series.push(barSeries);
+        if (showLine) series.push(lineSeries);
 
         chart.setOption({
             ...baseAxis,
-            series: chartType === 'bar' ? barSeries : lineSeries
+            series
         }, true);
         window.addEventListener('resize', () => chart.resize());
     },
@@ -552,50 +565,62 @@ const Charts = {
         window.addEventListener('resize', () => chart.resize());
     },
 
-    // 园所使用次数趋势 - 柱状+折线组合图（管理员端）
-    initKindergartenUsageLine(customData = null) {
+    // 园所使用次数趋势（管理员端）。chartType: 字符串 'combo'|'bar'|'line' 或 数组 ['line','bar']
+    initKindergartenUsageLine(customData = null, chartType = ['line', 'bar']) {
         const chart = this.createChart('kindergarten-usage-chart');
         if (!chart) return;
         const data = customData || { dates: [], values: [], series: [], granularity: 'day' };
         const colors = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1'];
         const seriesList = data.series || [];
 
-        // 计算"总和"折线
-        const totalValues = (data.dates || []).map((_, i) =>
-            seriesList.reduce((sum, s) => sum + (Number(s.values?.[i]) || 0), 0)
-        );
+        // 入参规范化（兼容老 'combo'/'bar'/'line' 字符串）
+        let types;
+        if (Array.isArray(chartType)) {
+            types = chartType.length ? chartType : ['line'];
+        } else if (chartType === 'combo') {
+            types = ['line', 'bar'];
+        } else {
+            types = [chartType];
+        }
+        const showBar = types.includes('bar');
+        const showLine = types.includes('line');
 
-        // 多园所时柱宽自适应：柱宽 = (60% / 园所数)，并保留 16% 间距
         const groupCount = Math.max(1, seriesList.length);
         const barWidth = `${Math.max(8, Math.floor(60 / groupCount))}%`;
 
-        const barSeries = seriesList.map((item, index) => ({
-            name: item.name,
+        const barSeries = showBar ? seriesList.map((item, index) => ({
+            name: item.name + (showLine ? ' · 柱状' : ''),
             type: 'bar',
             data: item.values,
             barWidth,
             barGap: '20%',
             itemStyle: {
                 borderRadius: [4, 4, 0, 0],
+                opacity: showLine ? 0.55 : 1,
                 color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
                     { offset: 0, color: colors[index % colors.length] },
                     { offset: 1, color: colors[index % colors.length] + 'AA' }
                 ])
             }
-        }));
+        })) : [];
 
-        const lineSeries = totalValues.length ? [{
-            name: '所选园所总和',
+        const lineSeries = showLine ? seriesList.map((item, index) => ({
+            name: item.name + (showBar ? ' · 折线' : ''),
             type: 'line',
-            data: totalValues,
+            data: item.values,
             smooth: true,
             symbol: 'circle',
-            symbolSize: 7,
-            yAxisIndex: 1,
-            lineStyle: { width: 2.5, color: '#f97316', shadowBlur: 4, shadowColor: 'rgba(249,115,22,0.35)' },
-            itemStyle: { color: '#f97316', borderColor: '#ea580c', borderWidth: 2 },
-            z: 5
-        }] : [];
+            symbolSize: 6,
+            z: 5,
+            lineStyle: { width: 2, color: colors[index % colors.length] },
+            itemStyle: { color: colors[index % colors.length] },
+            areaStyle: showBar ? undefined : {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: colors[index % colors.length] + '33' },
+                    { offset: 1, color: colors[index % colors.length] + '00' }
+                ])
+            }
+        })) : [];
 
         chart.setOption({
             backgroundColor: 'transparent',
@@ -622,7 +647,7 @@ const Charts = {
                 type: 'scroll',
                 pageTextStyle: { color: '#a0aec0' }
             },
-            grid: { left: 50, right: 50, top: 36, bottom: 40 },
+            grid: { left: 50, right: 24, top: 36, bottom: 40 },
             xAxis: {
                 type: 'category',
                 data: data.dates,
@@ -635,26 +660,11 @@ const Charts = {
                 axisLine: { lineStyle: { color: 'rgba(85,100,120,0.35)' } },
                 axisTick: { show: false }
             },
-            yAxis: [
-                {
-                    type: 'value',
-                    name: '各园所',
-                    nameLocation: 'end',
-                    nameGap: 14,
-                    nameTextStyle: { color: '#8896a6', fontSize: 11, align: 'left', padding: [0, 0, 0, -8] },
-                    axisLabel: { color: '#8896a6', fontSize: 11 },
-                    splitLine: { lineStyle: { color: 'rgba(85,100,120,0.3)' } }
-                },
-                {
-                    type: 'value',
-                    name: '总和',
-                    nameLocation: 'end',
-                    nameGap: 14,
-                    nameTextStyle: { color: '#f97316', fontSize: 11, align: 'right', padding: [0, -8, 0, 0] },
-                    axisLabel: { color: '#f97316', fontSize: 11 },
-                    splitLine: { show: false }
-                }
-            ],
+            yAxis: {
+                type: 'value',
+                axisLabel: { color: '#8896a6', fontSize: 11 },
+                splitLine: { lineStyle: { color: 'rgba(85,100,120,0.3)' } }
+            },
             series: [...barSeries, ...lineSeries]
         }, true);
         window.addEventListener('resize', () => chart.resize());

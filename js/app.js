@@ -86,6 +86,9 @@ const App = {
     selectedClass: null,   // 选中的班级（教师视角）
     selectedKindergartensForLine: [], // 园所使用次数趋势选中的园所ID（多选）
     weeklyActivityChartType: 'line', // 区域/园所绘本活动次数图表类型：line | bar
+    weeklyActivityChartTypes: ['line', 'bar'], // 多选：可同时显示，最少保留一个
+    kindergartenUsageChartType: 'combo', // 园所使用次数趋势：combo（柱+总和折线） | bar | line
+    kindergartenUsageChartTypes: ['line', 'bar'], // 多选：可同时显示，最少保留一个
 
     pagination: {
         activities: { page: 1, pageSize: 10 },
@@ -1101,7 +1104,7 @@ const App = {
                 .sort((a, b) => b.readCount - a.readCount)[0];
             if (pick) {
                 push(pick, '可拓展',
-                    `${scope}对「${leastType.name}」类型阅读较少（仅 ${leastType.readCount} 次），全部数据中《${pick.name}》是该类型阅读量最高的一本（${pick.readCount} 次），可作为类型拓展首选。`);
+                    `${scope}对「${leastType.name}」类型阅读较少（仅 ${leastType.readCount} 次），《${pick.name}》是该类型阅读量最高的一本，可作为类型拓展首选。`);
             }
         }
 
@@ -1685,23 +1688,31 @@ const App = {
         wrap.innerHTML = this.tableWrap(headers, rows);
     },
 
-    // 区域/园所绘本活动次数图表头部（带 折线/柱状 切换）
+    // 区域/园所绘本活动次数图表头部（折线/柱状 多选，最少保留一个）
     renderWeeklyActivityChartHeader() {
         const isAdmin = this.currentRole === 'admin';
         const title = isAdmin ? '区域绘本活动次数' : '园所绘本活动次数';
         const helpText = isAdmin
             ? '统计范围：当前所选时间范围内全区园所的绘本活动。\n口径：按时间分桶（日/月，由所选范围自动决定）累计活动场次。\n用途：观察全区整体活跃趋势，识别周内/月内波动规律。'
             : '统计范围：当前所选时间范围内本园所/本班的绘本活动。\n口径：按时间分桶累计活动场次。\n用途：观察活跃趋势，发现规律性高/低谷。';
-        const type = this.weeklyActivityChartType || 'line';
-        const tab = (key, label, icon) => `
-            <button onclick="App.setWeeklyActivityChartType('${key}')"
+        const types = (this.weeklyActivityChartTypes && this.weeklyActivityChartTypes.length)
+            ? this.weeklyActivityChartTypes
+            : ['line'];
+        const tab = (key, label, icon) => {
+            const active = types.includes(key);
+            const onlyOne = types.length === 1 && active;
+            return `
+            <button onclick="App.toggleWeeklyActivityChartType('${key}')"
+                ${onlyOne ? 'disabled' : ''}
                 class="px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1
-                    ${type === key
+                    ${active
                         ? 'bg-cyan-400/15 text-cyan-200 border border-cyan-400/30'
-                        : 'text-slate-400 border border-transparent hover:text-slate-200 hover:bg-slate-700/40'}"
-                title="切换到${label}图">
+                        : 'text-slate-400 border border-transparent hover:text-slate-200 hover:bg-slate-700/40'}
+                    ${onlyOne ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}"
+                title="${onlyOne ? '至少保留一种图形' : (active ? '点击隐藏' + label : '点击显示' + label)}">
                 ${icon}<span>${label}</span>
             </button>`;
+        };
         const lineIcon = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 17l6-6 4 4 8-8"/></svg>';
         const barIcon = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20V10M10 20V4M16 20v-6M22 20H2"/></svg>';
         return `
@@ -1717,23 +1728,29 @@ const App = {
             </div>`;
     },
 
-    // 切换区域/园所活动次数图表类型
-    setWeeklyActivityChartType(type) {
+    // 切换区域/园所活动次数图表类型（多选，最少保留一个）
+    toggleWeeklyActivityChartType(type) {
         if (type !== 'line' && type !== 'bar') return;
-        if (this.weeklyActivityChartType === type) return;
-        this.weeklyActivityChartType = type;
-        // 更新切换按钮状态：直接整段重渲染头部
-        const card = document.querySelector('#weekly-activity-chart')?.closest('div.bg-slate-600\\/50, .card, [class*="rounded-2xl"]');
+        const list = Array.isArray(this.weeklyActivityChartTypes) ? this.weeklyActivityChartTypes.slice() : [];
+        const idx = list.indexOf(type);
+        if (idx > -1) {
+            if (list.length === 1) return; // 至少保留一个
+            list.splice(idx, 1);
+        } else {
+            list.push(type);
+        }
+        this.weeklyActivityChartTypes = list;
+        this.weeklyActivityChartType = list.length === 1 ? list[0] : 'combo';
+        this.refreshWeeklyActivityChart();
+    },
+
+    // 重新渲染区域/园所活动次数图（头部 + 图表）
+    refreshWeeklyActivityChart() {
         const headerHost = document.querySelector('#weekly-activity-chart')?.parentElement;
         if (headerHost) {
-            const newHeader = this.renderWeeklyActivityChartHeader();
-            // 头部是 chart 节点的同级第一个元素
             const oldHeader = headerHost.querySelector('h3')?.closest('.flex.items-center.justify-between');
-            if (oldHeader) {
-                oldHeader.outerHTML = newHeader;
-            }
+            if (oldHeader) oldHeader.outerHTML = this.renderWeeklyActivityChartHeader();
         }
-        // 释放旧实例并重画
         const dom = document.getElementById('weekly-activity-chart');
         if (dom && typeof echarts !== 'undefined') {
             const existing = echarts.getInstanceByDom(dom);
@@ -1743,22 +1760,55 @@ const App = {
             }
         }
         const data = this._lastWeeklyActivityData || MockData.weeklyActivity;
-        Charts.safeInit(() => Charts.initWeeklyActivityBar(data, this.weeklyActivityChartType));
+        Charts.safeInit(() => Charts.initWeeklyActivityBar(data, this.weeklyActivityChartTypes));
+    },
+
+    // 兼容老入口：保留 setWeeklyActivityChartType（外部如果还有调用，也走多选逻辑）
+    setWeeklyActivityChartType(type) {
+        this.weeklyActivityChartTypes = [type];
+        this.weeklyActivityChartType = type;
+        this.refreshWeeklyActivityChart();
     },
 
     renderKindergartenUsageChartHeader() {
         const kindergartens = MockData.kindergartens || [];
         const selectedNames = kindergartens.filter(k => this.selectedKindergartensForLine.includes(k.id)).map(k => k.name);
+        const types = (this.kindergartenUsageChartTypes && this.kindergartenUsageChartTypes.length)
+            ? this.kindergartenUsageChartTypes
+            : ['line'];
+        const tab = (key, label, icon) => {
+            const active = types.includes(key);
+            const onlyOne = types.length === 1 && active;
+            return `
+            <button onclick="App.toggleKindergartenUsageChartType('${key}')"
+                ${onlyOne ? 'disabled' : ''}
+                class="px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1
+                    ${active
+                        ? 'bg-purple-400/15 text-purple-200 border border-purple-400/30'
+                        : 'text-slate-400 border border-transparent hover:text-slate-200 hover:bg-slate-700/40'}
+                    ${onlyOne ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}"
+                title="${onlyOne ? '至少保留一种图形' : (active ? '点击隐藏' + label : '点击显示' + label)}">
+                ${icon}<span>${label}</span>
+            </button>`;
+        };
+        const lineIcon = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 17l6-6 4 4 8-8"/></svg>';
+        const barIcon = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20V10M10 20V4M16 20v-6M22 20H2"/></svg>';
 
         return `
             <div class="space-y-3" id="kindergarten-usage-header">
                 <div class="flex items-center justify-between gap-3">
                     <h3 class="text-base font-semibold text-white flex items-center gap-2">
                         <span class="w-1.5 h-5 bg-purple-500 rounded-full"></span>
-                        <span class="flex items-center gap-1.5">园所使用次数趋势${this.helpIcon('统计范围：当前所选时间范围内的设备使用记录。\n图表组合：\n· 分组柱状图：每个选中园所一组柱，按时间分桶对比\n· 总和折线（橙色）：所选园所的总使用次数（副 Y 轴）\n用途：在多园所之间做横向对比的同时，看到整体趋势走向。')}</span>
+                        <span class="flex items-center gap-1.5">园所使用次数趋势${this.helpIcon('统计范围：当前所选时间范围内的设备使用记录。\n口径：每个选中园所一组数据，按时间分桶展示。\n图形选择：折线/柱状可以同时展示，也可以点击只保留一种（最少保留一种）。')}</span>
                     </h3>
-                    <div class="text-xs text-slate-400 px-2 py-1 rounded-full border border-slate-500/30 bg-slate-700/30">
-                        已选 ${selectedNames.length} 个园所
+                    <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-1 p-0.5 rounded-lg bg-slate-700/40 border border-slate-500/30">
+                            ${tab('line', '折线', lineIcon)}
+                            ${tab('bar', '柱状', barIcon)}
+                        </div>
+                        <div class="text-xs text-slate-400 px-2 py-1 rounded-full border border-slate-500/30 bg-slate-700/30">
+                            已选 ${selectedNames.length} 个园所
+                        </div>
                     </div>
                 </div>
                 <div class="relative" id="kindergarten-dropdown-container">
@@ -1787,6 +1837,28 @@ const App = {
         const arrow = document.getElementById('kindergarten-dropdown-arrow');
         if (menu) menu.classList.toggle('hidden');
         if (arrow) arrow.classList.toggle('rotate-180');
+    },
+
+    // 切换园所使用次数趋势的展示形式（多选：折线/柱状，最少保留一个）
+    toggleKindergartenUsageChartType(type) {
+        if (!['line', 'bar'].includes(type)) return;
+        const list = Array.isArray(this.kindergartenUsageChartTypes) ? this.kindergartenUsageChartTypes.slice() : [];
+        const idx = list.indexOf(type);
+        if (idx > -1) {
+            if (list.length === 1) return;
+            list.splice(idx, 1);
+        } else {
+            list.push(type);
+        }
+        this.kindergartenUsageChartTypes = list;
+        this.refreshKindergartenUsageChart();
+    },
+
+    // 兼容老入口
+    setKindergartenUsageChartType(type) {
+        if (!['line', 'bar'].includes(type)) return;
+        this.kindergartenUsageChartTypes = [type];
+        this.refreshKindergartenUsageChart();
     },
 
     // 切换园所选择（无数量限制）
@@ -1826,7 +1898,7 @@ const App = {
             }
         }
         const data = this.buildKindergartenUsageSeries();
-        Charts.safeInit(() => Charts.initKindergartenUsageLine(data));
+        Charts.safeInit(() => Charts.initKindergartenUsageLine(data, this.kindergartenUsageChartTypes));
     },
 
     // 构建园所使用次数序列数据

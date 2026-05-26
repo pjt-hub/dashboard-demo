@@ -6,6 +6,12 @@
 
 ## [2026-05-26]
 
+### 变更
+- **区域绘本活动次数 / 园所使用次数趋势 改为折线+柱状多选** - 之前是单选切换，现在两个图表都默认折线+柱状同时显示，标题右侧的小按钮可以独立点亮/隐藏（最少保留一种），按钮在仅剩一种时禁用避免误操作。
+  - 修改函数：`renderWeeklyActivityChartHeader / toggleWeeklyActivityChartType / refreshWeeklyActivityChart`、`renderKindergartenUsageChartHeader / toggleKindergartenUsageChartType / refreshKindergartenUsageChart`，对应的 `Charts.initWeeklyActivityBar / Charts.initKindergartenUsageLine` 入参改为支持数组（同时兼容老的字符串入参）
+  - 园所使用次数趋势同时移除了"总和折线 + 副 Y 轴"，每个园所一柱一线，柱在叠加折线时半透明显示
+  - 文件：`js/app.js`、`js/charts.js`
+
 ### 修复
 - **左侧问号气泡被遮挡** - 之前 `.chart-help-tip` 用绝对定位，挂在 `.chart-help` 内，会被父级 `overflow:hidden` 卡住，导致靠左模块的问号气泡显示不全。改成全局 `position:fixed` 气泡 + JS 计算坐标（自动检测下方空间不足时翻到上方，并对视口边缘做 8px 内边距钳制），不再受任何父容器裁剪影响。
   - 修改函数：`App.helpIcon()`、新增 `App._ensureHelpTip / _showHelpTip / _hideHelpTip`
