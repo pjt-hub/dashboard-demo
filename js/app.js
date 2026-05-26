@@ -1104,7 +1104,7 @@ const App = {
                 .sort((a, b) => b.readCount - a.readCount)[0];
             if (pick) {
                 push(pick, '可拓展',
-                    `${scope}对「${leastType.name}」类型阅读较少（仅 ${leastType.readCount} 次），全部数据中《${pick.name}》是该类型阅读量最高的一本（${pick.readCount} 次），可作为类型拓展首选。`);
+                    `${scope}对「${leastType.name}」类型阅读较少（仅 ${leastType.readCount} 次），《${pick.name}》是该类型阅读量最高的一本，可作为类型拓展首选。`);
             }
         }
 
