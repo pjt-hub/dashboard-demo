@@ -462,6 +462,15 @@ const Charts = {
 
     // 近七日活动 - 柱状图
     initWeeklyActivityBar(customData = null, chartType = 'line') {
+        // 二道保险：进入前若 dom 上还挂着旧实例（来自上次切换），先 dispose，避免 setOption 残留旧 series
+        const oldDom = document.getElementById('weekly-activity-chart');
+        if (oldDom && typeof echarts !== 'undefined') {
+            const old = echarts.getInstanceByDom(oldDom);
+            if (old && !old.isDisposed()) {
+                old.dispose();
+                this.instances = this.instances.filter(c => c !== old);
+            }
+        }
         const chart = this.createChart('weekly-activity-chart');
         if (!chart) return;
         const data = customData || MockData.weeklyActivity;
@@ -568,6 +577,14 @@ const Charts = {
 
     // 园所使用次数趋势（管理员端）。chartType: 字符串 'combo'|'bar'|'line' 或 数组 ['line','bar']
     initKindergartenUsageLine(customData = null, chartType = ['line', 'bar']) {
+        const oldDom = document.getElementById('kindergarten-usage-chart');
+        if (oldDom && typeof echarts !== 'undefined') {
+            const old = echarts.getInstanceByDom(oldDom);
+            if (old && !old.isDisposed()) {
+                old.dispose();
+                this.instances = this.instances.filter(c => c !== old);
+            }
+        }
         const chart = this.createChart('kindergarten-usage-chart');
         if (!chart) return;
         const data = customData || { dates: [], values: [], series: [], granularity: 'day' };
