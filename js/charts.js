@@ -497,19 +497,19 @@ const Charts = {
             data: data.values,
             smooth: true,
             symbol: 'circle',
-            symbolSize: 7,
-            z: 5,
+            symbolSize: showBar ? 8 : 7,
+            z: 10,
             lineStyle: {
-                width: 2.5,
+                width: showBar ? 3 : 2.5,
                 color: '#06b6d4',
                 shadowBlur: 6,
-                shadowColor: 'rgba(6,182,212,0.35)'
+                shadowColor: 'rgba(6,182,212,0.45)'
             },
             itemStyle: { color: '#06b6d4', borderColor: '#0891b2', borderWidth: 2 },
-            areaStyle: showBar ? undefined : {
+            areaStyle: {
                 color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                    { offset: 0, color: 'rgba(6,182,212,0.35)' },
-                    { offset: 1, color: 'rgba(59,130,246,0.04)' }
+                    { offset: 0, color: showBar ? 'rgba(6,182,212,0.18)' : 'rgba(6,182,212,0.35)' },
+                    { offset: 1, color: 'rgba(59,130,246,0.02)' }
                 ])
             }
         };
@@ -517,11 +517,12 @@ const Charts = {
         const barSeries = {
             name: '柱状',
             type: 'bar', data: data.values, barWidth: data.dates.length > 12 ? '55%' : '40%',
+            z: 1,
             itemStyle: {
                 borderRadius: [6, 6, 0, 0],
                 color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#3b82f6' }, { offset: 1, color: '#1e40af' }]),
                 shadowBlur: 8, shadowColor: 'rgba(6,182,212,0.2)',
-                opacity: showLine ? 0.55 : 1
+                opacity: showLine ? 0.32 : 1
             }
         };
 
@@ -594,9 +595,10 @@ const Charts = {
             data: item.values,
             barWidth,
             barGap: '20%',
+            z: 1,
             itemStyle: {
                 borderRadius: [4, 4, 0, 0],
-                opacity: showLine ? 0.55 : 1,
+                opacity: showLine ? 0.32 : 1,
                 color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
                     { offset: 0, color: colors[index % colors.length] },
                     { offset: 1, color: colors[index % colors.length] + 'AA' }
@@ -610,10 +612,10 @@ const Charts = {
             data: item.values,
             smooth: true,
             symbol: 'circle',
-            symbolSize: 6,
-            z: 5,
-            lineStyle: { width: 2, color: colors[index % colors.length] },
-            itemStyle: { color: colors[index % colors.length] },
+            symbolSize: showBar ? 7 : 6,
+            z: 10,
+            lineStyle: { width: showBar ? 2.5 : 2, color: colors[index % colors.length] },
+            itemStyle: { color: colors[index % colors.length], borderColor: '#fff', borderWidth: showBar ? 1.5 : 0 },
             areaStyle: showBar ? undefined : {
                 color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
                     { offset: 0, color: colors[index % colors.length] + '33' },
