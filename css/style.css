@@ -832,3 +832,81 @@ textarea:focus-visible {
 [data-page] {
     cursor: pointer;
 }
+
+/* ========== 图表标题 · 规则说明气泡（？） ========== */
+.chart-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    color: rgba(148, 163, 184, 0.85);
+    background: rgba(148, 163, 184, 0.12);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    cursor: help;
+    transition: color .15s, background .15s, border-color .15s;
+    flex-shrink: 0;
+    outline: none;
+}
+.chart-help:hover,
+.chart-help:focus-visible {
+    color: #fff;
+    background: rgba(56, 189, 248, 0.22);
+    border-color: rgba(56, 189, 248, 0.45);
+}
+/* 浅色主题适配 */
+body:not(.theme-dark) .chart-help {
+    color: var(--text-muted);
+    background: var(--brand-50);
+    border-color: var(--brand-200);
+}
+body:not(.theme-dark) .chart-help:hover,
+body:not(.theme-dark) .chart-help:focus-visible {
+    color: var(--brand-700);
+    background: var(--brand-100);
+    border-color: var(--brand-400);
+}
+
+/* 全局 tooltip：fixed 定位，脱离父级 overflow:hidden 裁剪 */
+.global-help-tip {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 280px;
+    max-width: calc(100vw - 16px);
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.96);
+    color: #e2e8f0;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.55;
+    text-align: left;
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    box-shadow: 0 12px 32px rgba(2, 6, 23, 0.5);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition: opacity .15s, transform .15s, visibility .15s;
+    z-index: 9999;
+    pointer-events: none;
+    white-space: pre-line;
+}
+.global-help-tip.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+.global-help-tip.above {
+    transform: translateY(4px);
+}
+.global-help-tip.show.above {
+    transform: translateY(0);
+}
+body:not(.theme-dark) .global-help-tip {
+    background: #ffffff;
+    color: var(--text-primary);
+    border-color: var(--border-default);
+    box-shadow: 0 12px 32px rgba(91, 33, 182, 0.16);
+}

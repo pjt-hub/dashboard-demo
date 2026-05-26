@@ -16,6 +16,67 @@ const Icons = {
     device(size)    { return this._wrap('<path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>', size); },
 };
 
+// 中文首字母（拼音首字母）工具：用于学校/班级/姓名"yg→阳光、hd→海淀"这类模糊筛选。
+// 字典只列学校/地名/班级常用字，不引入完整拼音库，保持文件零依赖。
+const PinyinUtil = {
+    _map: {
+        a: '阿啊',
+        b: '班北白百宝本笔贝备',
+        c: '彩朝陈春晨长城',
+        d: '大东冬德地丁丹朵淀',
+        e: '恩二儿',
+        f: '方芳风房府福丰飞',
+        g: '高港光关广国',
+        h: '海花华红虹和河鸿欢华',
+        j: '佳家健建江金井京静菊洁君',
+        k: '康开',
+        l: '丽蓝兰乐林立刘亮龙李',
+        m: '美明苗梅麦敏',
+        n: '南宁',
+        p: '平蒲朴',
+        q: '青秋启琪',
+        r: '仁日润瑞',
+        s: '三山上时实树双思松',
+        t: '童天同太通',
+        w: '万文五武望王伟',
+        x: '西希夏小新星雪喜祥香晓秀霞',
+        y: '阳幼育园杨颐燕英艳一娅亚雅',
+        z: '中智朱赵子张',
+    },
+    _cache: null,
+    _build() {
+        if (this._cache) return this._cache;
+        const cache = {};
+        Object.keys(this._map).forEach(letter => {
+            for (const ch of this._map[letter]) cache[ch] = letter;
+        });
+        this._cache = cache;
+        return cache;
+    },
+    initial(text) {
+        if (!text) return '';
+        const dict = this._build();
+        let out = '';
+        for (const ch of String(text)) {
+            if (dict[ch]) {
+                out += dict[ch];
+            } else if (/[a-z]/i.test(ch)) {
+                out += ch.toLowerCase();
+            } else if (/\d/.test(ch)) {
+                out += ch;
+            }
+        }
+        return out;
+    },
+    match(text, keyword) {
+        const lower = String(text || '').toLowerCase();
+        const kw = String(keyword || '').toLowerCase().trim();
+        if (!kw) return true;
+        if (lower.includes(kw)) return true;
+        return this.initial(text).includes(kw);
+    },
+};
+
 const App = {
     currentPage: 'dataOverview',
     schoolDataTab: 'overview',
@@ -24,6 +85,7 @@ const App = {
     selectedSchool: null,  // 选中的园所（园长视角）
     selectedClass: null,   // 选中的班级（教师视角）
     selectedKindergartensForLine: [], // 园所使用次数趋势选中的园所ID（多选）
+    weeklyActivityChartType: 'line', // 区域/园所绘本活动次数图表类型：line | bar
 
     pagination: {
         activities: { page: 1, pageSize: 10 },
@@ -38,6 +100,7 @@ const App = {
     filters: {
         activities: { startTime: '', endTime: '', className: '', teacher: '' },
         books: { type: '', name: '', isbn: '' },
+        classes: { name: '', teacher: '' },
         teachers: { name: '' },
         students: { name: '', className: '' },
         devices: { sn: '' },
@@ -291,6 +354,89 @@ const App = {
             if (end && current > end) return false;
             return true;
         });
+    },
+
+    // 当前角色对应的学生 ID 集合（用于阅读记录过滤）；返回 null 表示不过滤
+    getStudentIdsForCurrentRole() {
+        if (this.currentRole === 'admin') return null;
+        if (this.currentRole === 'principal') {
+            const kgId = this.selectedSchool?.id;
+            if (!kgId) return null;
+            const classIds = MockData.classes.filter(c => c.kindergartenId === kgId).map(c => c.id);
+            return MockData.students.filter(s => classIds.includes(s.classId)).map(s => s.id);
+        }
+        if (this.currentRole === 'teacher') {
+            const cid = this.selectedClass?.id;
+            if (cid == null) return null;
+            return MockData.students.filter(s => s.classId === cid).map(s => s.id);
+        }
+        return null;
+    },
+
+    // 大数据总览能力分布：以学生 abilityStats 为准，按角色范围取平均；返回 9 个固定维度
+    computeAbilityDistributionForOverview() {
+        // 9 维定义（颜色固定，跟具体能力绑定）。aliases 兼容现有 mock 的多套键名。
+        const dims = [
+            { name: '品格养成', color: '#f59e0b', aliases: ['品格养成'] },
+            { name: '数学思维', color: '#38bdf8', aliases: ['逻辑思维', '科学认知'] },
+            { name: '社交力',   color: '#a855f7', aliases: ['社交力', '社交能力'] },
+            { name: '口语表达', color: '#ec4899', aliases: ['语言表达'] },
+            { name: '文学欣赏', color: '#06b6d4', aliases: ['文化素养'] },
+            { name: '科学认知', color: '#fb923c', aliases: ['科学认知'] },
+            { name: '情绪管理', color: '#22d3ee', aliases: ['情绪管理', '情感认知'] },
+            { name: '习惯养成', color: '#22c55e', aliases: ['习惯养成'] },
+            { name: '想象力',   color: '#a16207', aliases: ['想象力', '想象创造'] }
+        ];
+
+        const studentIds = this.getStudentIdsForCurrentRole();
+        const pool = (MockData.students || []).filter(s => !studentIds || studentIds.includes(s.id));
+
+        const collectFromStudents = dim => {
+            const vals = [];
+            pool.forEach(s => {
+                const stats = s.abilityStats || {};
+                for (const key of dim.aliases) {
+                    if (typeof stats[key] === 'number') { vals.push(stats[key]); break; }
+                }
+            });
+            return vals;
+        };
+
+        // 没有对应 mock 键时的稳定保底（按维度名 hash 到 55–88）
+        const fallbackByName = name => {
+            let h = 0;
+            for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+            return 55 + (h % 34);
+        };
+
+        const scored = dims.map(dim => {
+            const vals = collectFromStudents(dim);
+            const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : fallbackByName(dim.name);
+            return { name: dim.name, color: dim.color, value: Math.round(avg) };
+        });
+
+        // 沿"左下→右上"对角带散布：大的在左下，小的甩到右上，整体有节奏不规整
+        scored.sort((a, b) => b.value - a.value);
+        const anchors = [
+            { x: 22, y: 70 }, // 1 - 主视觉，左下
+            { x: 46, y: 36 }, // 2 - 中上偏左（视觉次中心）
+            { x: 70, y: 78 }, // 3 - 右下
+            { x: 14, y: 30 }, // 4 - 左上
+            { x: 60, y: 58 }, // 5 - 中右
+            { x: 36, y: 86 }, // 6 - 下偏左
+            { x: 86, y: 40 }, // 7 - 右中
+            { x: 32, y: 16 }, // 8 - 顶部偏左
+            { x: 90, y: 14 }  // 9 - 右上角，最远最小
+        ];
+        // 按排名固定直径（最大 ≈ 4× 最小，对比明显）
+        const sizes = [108, 88, 74, 62, 52, 44, 38, 32, 26];
+
+        return scored.map((item, idx) => ({
+            ...item,
+            x: anchors[idx].x,
+            y: anchors[idx].y,
+            size: sizes[idx]
+        }));
     },
 
     buildDailySeries(activities, valueGetter) {
@@ -800,7 +946,7 @@ const App = {
                 value: Math.max(1, this.scaleNumber(item.value, ratio, activities.length ? 1 : 0))
             })),
             bookTypeTimeSeries: this.buildBookTypeTimeSeries(),
-            abilityDistribution: source.abilityDistribution,
+            abilityDistribution: this.computeAbilityDistributionForOverview(),
             weeklyActivity,
             teacherRanking: this.buildRanking(teacherMap, 10, name => ({
                 class: MockData.teacherRanking.find(item => item.name === name)?.class || ''
@@ -892,21 +1038,85 @@ const App = {
     },
 
     getSchoolOverviewBookRecommendations() {
-        let books = (MockData.schoolData?.books || []).slice();
+        const isPrincipal = this.currentRole === 'principal';
+        const scope = isPrincipal ? '园所' : '本班';
+        const allBooks = (MockData.schoolData?.books || []).slice();
+        let scopedBooks = allBooks;
         if (this.isTeacherScope()) {
             const stats = this.selectedClass.bookTypeStats || {};
-            books = books.filter(b => stats[b.type] != null);
+            scopedBooks = allBooks.filter(b => stats[b.type] != null);
         }
-        books.sort((a, b) => b.readCount - a.readCount);
-        const roleReasonMap = {
-            principal: '园所整体阅读热度较高，适合纳入近期重点推荐。',
-            teacher: '班级活动适配度较高，适合近期课堂共读与互动延展。'
+        const findBookMeta = (name) => allBooks.find(x => x.name === name)
+            || scopedBooks.find(x => x.name === name)
+            || { name, type: '—', readCount: 0 };
+
+        const result = [];
+        const used = new Set();
+        const push = (book, highlight, reason) => {
+            if (!book || used.has(book.name)) return;
+            used.add(book.name);
+            result.push({ ...book, highlight, reason });
         };
-        return books.slice(0, 4).map((book, index) => ({
-            ...book,
-            highlight: index === 0 ? '优先推荐' : index === 1 ? '高热度' : '可延展',
-            reason: roleReasonMap[this.currentRole] || '近期阅读表现较好，建议持续关注。'
-        }));
+
+        // 1) 近 1 个月园所阅读次数最多的绘本 —— 高热度
+        const topRead = [...scopedBooks].sort((a, b) => b.readCount - a.readCount)[0];
+        if (topRead) {
+            push(topRead, '高热度',
+                `${scope}近 1 个月阅读 ${topRead.readCount} 次，位列榜首，覆盖班级广，建议作为下周共读重点书目。`);
+        }
+
+        // 2 / 3) 近 1 个月大模型互动 Top1 / Top2 —— 高互动
+        const interactionMap = new Map();
+        const records = MockData.studentChatRecords || {};
+        Object.values(records).forEach(activities => {
+            (activities || []).forEach(act => {
+                (act.books || []).forEach(b => {
+                    let turns = 0;
+                    (b.conversations || []).forEach(c => { turns += (c.turns || []).length; });
+                    const cur = interactionMap.get(b.bookName) || { name: b.bookName, type: b.bookType, count: 0 };
+                    cur.count += turns;
+                    interactionMap.set(b.bookName, cur);
+                });
+            });
+        });
+        const interactionRanked = [...interactionMap.values()].sort((a, b) => b.count - a.count);
+        let picked = 0;
+        for (const item of interactionRanked) {
+            if (picked >= 2) break;
+            if (used.has(item.name)) continue;
+            const meta = findBookMeta(item.name);
+            push({ ...meta, name: item.name, type: meta.type || item.type }, '高互动',
+                `近 1 个月 AI 共读互动 ${item.count} 轮，孩子们提问活跃，适合扩大共读范围。`);
+            picked++;
+        }
+
+        // 4) 园所读得最少的类型 —— 该类型中（全部绘本）阅读量最多的一本 —— 可拓展
+        const categoryData = this.isTeacherScope()
+            ? Object.entries(this.selectedClass.bookTypeStats || {}).map(([name, readCount]) => ({ name, readCount: Number(readCount) || 0 }))
+            : (MockData.schoolData?.overview?.categoryData || []);
+        if (categoryData.length) {
+            const leastType = [...categoryData].sort((a, b) => a.readCount - b.readCount)[0];
+            const pick = allBooks
+                .filter(b => b.type === leastType.name && !used.has(b.name))
+                .sort((a, b) => b.readCount - a.readCount)[0];
+            if (pick) {
+                push(pick, '可拓展',
+                    `${scope}对「${leastType.name}」类型阅读较少（仅 ${leastType.readCount} 次），全部数据中《${pick.name}》是该类型阅读量最高的一本（${pick.readCount} 次），可作为类型拓展首选。`);
+            }
+        }
+
+        // 兜底：若不足 4 本，按阅读量补齐为「可拓展」
+        if (result.length < 4) {
+            const sortedRead = [...scopedBooks].sort((a, b) => b.readCount - a.readCount);
+            for (const b of sortedRead) {
+                if (result.length >= 4) break;
+                if (used.has(b.name)) continue;
+                push(b, '可拓展',
+                    `阅读 ${b.readCount} 次，可结合「${b.type}」开展延展活动（手工 / 角色扮演 / 亲子共读）。`);
+            }
+        }
+
+        return result.slice(0, 4);
     },
 
     updateSidebarForRole() {
@@ -1119,9 +1329,79 @@ const App = {
         return `<div class="${c} rounded-xl p-3 text-center border"><div class="text-xl font-bold">${value}</div><div class="text-xs text-slate-400 mt-1">${label}</div></div>`;
     },
 
-    // 图表标题
-    chartTitle(title, colorClass = 'bg-blue-500') {
-        return `<h3 class="text-base font-semibold text-white mb-4 flex items-center gap-2"><span class="w-1.5 h-5 ${colorClass} rounded-full"></span>${title}</h3>`;
+    // 图表标题（支持右侧小问号气泡，hover 显示统计/数据来源说明）
+    chartTitle(title, colorClass = 'bg-blue-500', helpText = '') {
+        return `<h3 class="text-base font-semibold text-white mb-4 flex items-center gap-2">
+            <span class="w-1.5 h-5 ${colorClass} rounded-full"></span>
+            <span class="flex items-center gap-1.5">${title}${this.helpIcon(helpText)}</span>
+        </h3>`;
+    },
+
+    // 复用：仅返回小问号气泡（用于自定义 header）
+    helpIcon(helpText = '') {
+        if (!helpText) return '';
+        // tooltip 内容用 data-help 而非内联 span：hover 时由 _showHelpTip 用 fixed 定位投影到 body，
+        // 避免被卡片 overflow:hidden 或窄列裁剪
+        const safe = String(helpText).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        return `<span class="chart-help" tabindex="0" aria-label="规则说明"
+            data-help="${safe}"
+            onmouseenter="App._showHelpTip(this)"
+            onmouseleave="App._hideHelpTip()"
+            onfocus="App._showHelpTip(this)"
+            onblur="App._hideHelpTip()">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><circle cx="12" cy="12" r="9"/></svg>
+        </span>`;
+    },
+
+    _ensureHelpTip() {
+        let tip = document.getElementById('global-help-tip');
+        if (!tip) {
+            tip = document.createElement('div');
+            tip.id = 'global-help-tip';
+            tip.className = 'global-help-tip';
+            document.body.appendChild(tip);
+        }
+        return tip;
+    },
+
+    _showHelpTip(el) {
+        if (!el) return;
+        const text = el.getAttribute('data-help') || '';
+        if (!text) return;
+        const tip = this._ensureHelpTip();
+        tip.textContent = text;
+        tip.style.whiteSpace = 'pre-line';
+
+        // 先显示再测量，再修正位置（避免 0 尺寸）
+        tip.classList.add('show');
+        const r = el.getBoundingClientRect();
+        const tipW = tip.offsetWidth;
+        const tipH = tip.offsetHeight;
+        const margin = 8;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+
+        // 默认在下方居中；超出右边界则右对齐；超出左边界则左对齐
+        let left = r.left + r.width / 2 - tipW / 2;
+        if (left + tipW + margin > vw) left = vw - tipW - margin;
+        if (left < margin) left = margin;
+
+        let top = r.bottom + margin;
+        // 下方放不下则放上方
+        if (top + tipH + margin > vh) {
+            top = r.top - tipH - margin;
+            tip.classList.add('above');
+        } else {
+            tip.classList.remove('above');
+        }
+
+        tip.style.left = `${Math.round(left)}px`;
+        tip.style.top = `${Math.round(top)}px`;
+    },
+
+    _hideHelpTip() {
+        const tip = document.getElementById('global-help-tip');
+        if (tip) tip.classList.remove('show', 'above');
     },
 
     renderAdminClassUsageComparison(data) {
@@ -1129,7 +1409,7 @@ const App = {
             return `
                 <div class="space-y-4">
                     <div class="flex items-center justify-between gap-3">
-                        ${this.chartTitle('园所班均使用对比', 'bg-cyan-500')}
+                        ${this.chartTitle('园所班均使用对比', 'bg-cyan-500', '统计范围：当前所选时间范围内全区园所数据。\n口径：每所园所的指标 = 园所总值 / 班级数（即"班均"）。\n指标含义：班均活动次数、班均活动时长、班均设备使用次数、班均参与人数。\n用途：消除园所规模差异后，横向比较各园所的活跃度。')}
                         <div class="text-xs text-slate-300 px-3 py-1.5 rounded-full border border-slate-400/20 bg-slate-700/30">区域内各园所班均数据</div>
                     </div>
                     <div class="rounded-2xl border border-dashed border-slate-500/30 bg-slate-800/35 px-4 py-10 text-center text-slate-400">
@@ -1220,7 +1500,7 @@ const App = {
         return `
             <div class="space-y-5">
                 <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
-                    ${this.chartTitle('园所班均使用对比', 'bg-cyan-500')}
+                    ${this.chartTitle('园所班均使用对比', 'bg-cyan-500', '统计范围：当前所选时间范围内全区园所数据。\n口径：每所园所的指标 = 园所总值 / 班级数（即"班均"）。\n指标含义：班均活动次数、班均活动时长、班均设备使用次数、班均参与人数。\n用途：消除园所规模差异后，横向比较各园所的活跃度。')}
                     <div class="text-xs text-slate-300 px-3 py-1.5 rounded-full border border-slate-400/20 bg-slate-700/30 w-fit">区域内各园所班均数据</div>
                 </div>
                 <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -1328,7 +1608,7 @@ const App = {
         let scopeBadge = '';
         if (this.currentRole === 'principal') {
             pageTitle = this.selectedSchool ? `${this.selectedSchool.name} 大数据总览` : '本园大数据总览';
-            scopeBadge = `<span class="role-badge principal inline-flex items-center gap-1">${Icons.school()} 园长视角</span>`;
+            scopeBadge = `<span class="role-badge principal inline-flex items-center gap-1">${Icons.school()} 园所数据</span>`;
         } else {
             scopeBadge = `<span class="role-badge admin inline-flex items-center gap-1">${Icons.admin()} 全区数据</span>`;
         }
@@ -1355,25 +1635,25 @@ const App = {
 
             <!-- 图表第一行 -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                ${this.card(this.chartTitle('幼儿阅读绘本类型-次数', 'bg-blue-500') + '<div id="book-type-chart" class="h-72"></div>')}
-                ${this.card(this.chartTitle('幼儿阅读绘本-能力分布', 'bg-emerald-500') + '<div id="ability-distribution-chart" class="h-72"></div>')}
+                ${this.card(this.chartTitle('幼儿阅读绘本类型次数', 'bg-blue-500', '统计范围：当前所选时间范围内全部绘本阅读记录。\n口径：按绘本"类型标签"聚合阅读次数。\n用途：识别园所/班级近期偏好的内容方向，作为选书与活动设计参考。') + '<div id="book-type-chart" class="h-72"></div>')}
+                ${this.card(this.chartTitle('幼儿阅读绘本-能力分布', 'bg-emerald-500', '统计范围：当前所选时间范围内全部阅读记录。\n口径：每本绘本携带 1~多个能力标签（语言/社交/想象/逻辑/情感等），按"次数 × 能力标签"加权累计。\n用途：观察阅读对各能力维度的覆盖均衡度。') + '<div id="ability-distribution-chart" class="h-72"></div>')}
             </div>
 
             <!-- 图表第二行 -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                ${this.card(this.chartTitle(this.currentRole === 'admin' ? '区域绘本活动次数' : '园所绘本活动次数', 'bg-cyan-500') + '<div id="weekly-activity-chart" class="h-72"></div>')}
+                ${this.card(this.renderWeeklyActivityChartHeader() + '<div id="weekly-activity-chart" class="h-72"></div>')}
                 ${this.currentRole === 'admin' 
                     ? this.card(this.renderKindergartenUsageChartHeader() + '<div id="kindergarten-usage-chart" class="h-72"></div>')
-                    : this.card(this.chartTitle('绘本活动次数排名前十教师', 'bg-purple-500') + '<div id="teacher-ranking-chart" class="h-72"></div>')}
+                    : this.card(this.chartTitle('绘本活动次数排名前十教师', 'bg-purple-500', '统计范围：当前所选时间范围内的绘本活动。\n口径：按发起教师聚合活动次数，取 Top 10。\n用途：识别园所内活跃教师，便于经验复盘与帮带。') + '<div id="teacher-ranking-chart" class="h-72"></div>')}
             </div>
 
             <!-- 班级排名（园长端可见） -->
-            ${this.currentRole === 'principal' ? this.card(this.chartTitle('绘本活动次数排名前十班级', 'bg-emerald-500') + '<div id="class-ranking-chart" class="h-72"></div>') : ''}
+            ${this.currentRole === 'principal' ? this.card(this.chartTitle('绘本活动次数排名前十班级', 'bg-emerald-500', '统计范围：当前所选时间范围内园所所有班级的绘本活动。\n口径：按班级聚合活动次数，取 Top 10。\n用途：发现高活跃班级与低活跃班级，针对性指导。') + '<div id="class-ranking-chart" class="h-72"></div>') : ''}
 
             ${this.currentRole === 'admin' ? this.card(this.renderAdminClassUsageComparison(overviewData.classUsageComparison), 'overflow-hidden') : ''}
 
             <!-- 绘本排行表格（管理员不可见） -->
-            ${this.currentRole !== 'admin' ? this.card(this.chartTitle('阅读次数排名前十绘本', 'bg-indigo-500') + '<div id="book-ranking-table-wrap"></div>') : ''}
+            ${this.currentRole !== 'admin' ? this.card(this.chartTitle('阅读次数排名前十绘本', 'bg-indigo-500', '统计范围：当前所选时间范围内园所/班级的绘本阅读记录。\n口径：按绘本聚合阅读次数，取 Top 10。\n用途：识别热门书目，作为选书与采购参考。') + '<div id="book-ranking-table-wrap"></div>') : ''}
         </div>`;
     },
 
@@ -1405,7 +1685,67 @@ const App = {
         wrap.innerHTML = this.tableWrap(headers, rows);
     },
 
-    // 园所使用次数趋势图表头部（带折叠选择器）
+    // 区域/园所绘本活动次数图表头部（带 折线/柱状 切换）
+    renderWeeklyActivityChartHeader() {
+        const isAdmin = this.currentRole === 'admin';
+        const title = isAdmin ? '区域绘本活动次数' : '园所绘本活动次数';
+        const helpText = isAdmin
+            ? '统计范围：当前所选时间范围内全区园所的绘本活动。\n口径：按时间分桶（日/月，由所选范围自动决定）累计活动场次。\n用途：观察全区整体活跃趋势，识别周内/月内波动规律。'
+            : '统计范围：当前所选时间范围内本园所/本班的绘本活动。\n口径：按时间分桶累计活动场次。\n用途：观察活跃趋势，发现规律性高/低谷。';
+        const type = this.weeklyActivityChartType || 'line';
+        const tab = (key, label, icon) => `
+            <button onclick="App.setWeeklyActivityChartType('${key}')"
+                class="px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1
+                    ${type === key
+                        ? 'bg-cyan-400/15 text-cyan-200 border border-cyan-400/30'
+                        : 'text-slate-400 border border-transparent hover:text-slate-200 hover:bg-slate-700/40'}"
+                title="切换到${label}图">
+                ${icon}<span>${label}</span>
+            </button>`;
+        const lineIcon = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 17l6-6 4 4 8-8"/></svg>';
+        const barIcon = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20V10M10 20V4M16 20v-6M22 20H2"/></svg>';
+        return `
+            <div class="flex items-center justify-between gap-3 mb-4">
+                <h3 class="text-base font-semibold text-white flex items-center gap-2">
+                    <span class="w-1.5 h-5 bg-cyan-500 rounded-full"></span>
+                    <span class="flex items-center gap-1.5">${title}${this.helpIcon(helpText)}</span>
+                </h3>
+                <div class="flex items-center gap-1 p-0.5 rounded-lg bg-slate-700/40 border border-slate-500/30">
+                    ${tab('line', '折线', lineIcon)}
+                    ${tab('bar', '柱状', barIcon)}
+                </div>
+            </div>`;
+    },
+
+    // 切换区域/园所活动次数图表类型
+    setWeeklyActivityChartType(type) {
+        if (type !== 'line' && type !== 'bar') return;
+        if (this.weeklyActivityChartType === type) return;
+        this.weeklyActivityChartType = type;
+        // 更新切换按钮状态：直接整段重渲染头部
+        const card = document.querySelector('#weekly-activity-chart')?.closest('div.bg-slate-600\\/50, .card, [class*="rounded-2xl"]');
+        const headerHost = document.querySelector('#weekly-activity-chart')?.parentElement;
+        if (headerHost) {
+            const newHeader = this.renderWeeklyActivityChartHeader();
+            // 头部是 chart 节点的同级第一个元素
+            const oldHeader = headerHost.querySelector('h3')?.closest('.flex.items-center.justify-between');
+            if (oldHeader) {
+                oldHeader.outerHTML = newHeader;
+            }
+        }
+        // 释放旧实例并重画
+        const dom = document.getElementById('weekly-activity-chart');
+        if (dom && typeof echarts !== 'undefined') {
+            const existing = echarts.getInstanceByDom(dom);
+            if (existing && !existing.isDisposed()) {
+                existing.dispose();
+                Charts.instances = Charts.instances.filter(c => c !== existing);
+            }
+        }
+        const data = this._lastWeeklyActivityData || MockData.weeklyActivity;
+        Charts.safeInit(() => Charts.initWeeklyActivityBar(data, this.weeklyActivityChartType));
+    },
+
     renderKindergartenUsageChartHeader() {
         const kindergartens = MockData.kindergartens || [];
         const selectedNames = kindergartens.filter(k => this.selectedKindergartensForLine.includes(k.id)).map(k => k.name);
@@ -1415,7 +1755,7 @@ const App = {
                 <div class="flex items-center justify-between gap-3">
                     <h3 class="text-base font-semibold text-white flex items-center gap-2">
                         <span class="w-1.5 h-5 bg-purple-500 rounded-full"></span>
-                        园所使用次数趋势
+                        <span class="flex items-center gap-1.5">园所使用次数趋势${this.helpIcon('统计范围：当前所选时间范围内的设备使用记录。\n图表组合：\n· 分组柱状图：每个选中园所一组柱，按时间分桶对比\n· 总和折线（橙色）：所选园所的总使用次数（副 Y 轴）\n用途：在多园所之间做横向对比的同时，看到整体趋势走向。')}</span>
                     </h3>
                     <div class="text-xs text-slate-400 px-2 py-1 rounded-full border border-slate-500/30 bg-slate-700/30">
                         已选 ${selectedNames.length} 个园所
@@ -4431,7 +4771,7 @@ ${allQuestionsText || '（无）'}
             scopeSelector = `<span class="role-badge principal inline-flex items-center gap-1">${Icons.school()} ${this.selectedSchool ? this.selectedSchool.name : '本园'}</span>`;
         } else if (this.currentRole === 'teacher') {
             titleText = this.selectedClass ? `${this.selectedClass.name}数据统计` : '班级数据统计';
-            scopeSelector = `<span class="role-badge teacher inline-flex items-center gap-1">${Icons.teacher()} ${this.selectedClass ? this.selectedClass.name : '本班'}</span>`;
+            scopeSelector = `<span class="role-badge teacher inline-flex items-center gap-1">${Icons.teacher()} 班级数据</span>`;
         }
 
         return `
@@ -4572,7 +4912,7 @@ ${allQuestionsText || '（无）'}
                         <input
                             type="text"
                             id="school-search-input"
-                            placeholder="搜索学校名称或区域..."
+                            placeholder="搜索学校或区域（支持首字母，如 yg）..."
                             value="${searchKeyword}"
                             class="w-full bg-slate-800/60 border border-slate-500/30 rounded-lg px-4 py-2.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-400/50 focus:bg-slate-800/80 transition-all"
                             oninput="App.handleSchoolSearch(this.value)"
@@ -4600,9 +4940,9 @@ ${allQuestionsText || '（无）'}
     // 渲染搜索统计信息
     renderSchoolSearchStats(searchKeyword = '') {
         const allSchools = MockData.kindergartens;
-        const keyword = (searchKeyword || '').toLowerCase().trim();
+        const keyword = (searchKeyword || '').trim();
         const schools = keyword
-            ? allSchools.filter(s => s.name.toLowerCase().includes(keyword) || s.district.toLowerCase().includes(keyword))
+            ? allSchools.filter(s => PinyinUtil.match(s.name, keyword) || PinyinUtil.match(s.district, keyword))
             : allSchools;
         const totalCount = allSchools.length;
         const filteredCount = schools.length;
@@ -4617,10 +4957,10 @@ ${allQuestionsText || '（无）'}
         const allSchools = MockData.kindergartens;
         const usageData = MockData.kindergartenClassUsageComparison;
 
-        // 模糊搜索过滤
-        const keyword = (searchKeyword || '').toLowerCase().trim();
+        // 模糊搜索过滤（支持中文/英文/首字母拼音 yg→阳光）
+        const keyword = (searchKeyword || '').trim();
         const schools = keyword
-            ? allSchools.filter(s => s.name.toLowerCase().includes(keyword) || s.district.toLowerCase().includes(keyword))
+            ? allSchools.filter(s => PinyinUtil.match(s.name, keyword) || PinyinUtil.match(s.district, keyword))
             : allSchools;
 
         // 搜索结果为空提示
@@ -4706,14 +5046,53 @@ ${allQuestionsText || '（无）'}
             </div>`;
     },
 
-    // 查看学校详情
+    // 查看学校详情：弹窗展示该园所的"数据概述"内容，右上角"打开详情"跳转完整页
     viewSchoolDetail(schoolId) {
         const school = MockData.kindergartens.find(k => k.id === schoolId);
-        if (school) {
-            this.selectedSchool = school;
-            this.schoolDataTab = 'overview';
-            this.loadPage('schoolData');
-        }
+        if (!school) return;
+
+        // 临时把 selectedSchool 切到目标园所，复用现有 renderSchoolOverview 的渲染
+        const prevSchool = this.selectedSchool;
+        this.selectedSchool = school;
+        const overviewHtml = this.renderSchoolOverview();
+        this.selectedSchool = prevSchool;
+
+        const html = `
+            <div class="p-6 lg:p-8 space-y-5">
+                <!-- 头部：学校信息 + 操作 -->
+                <div class="flex items-start justify-between gap-3 pb-4 border-b border-slate-500/30">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-400/20 to-blue-500/20 border border-cyan-400/20 flex items-center justify-center text-cyan-300">
+                            ${Icons.school('w-6 h-6')}
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-bold text-white">${school.name}</h3>
+                            <p class="text-xs text-slate-400 mt-0.5">${school.district} · 班级 ${school.classCount} · 幼儿 ${school.studentCount} · 教师 ${school.teacherCount}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button onclick="App.openSchoolPage(${school.id})" class="px-3.5 py-1.5 rounded-lg bg-cyan-400/15 border border-cyan-400/30 text-cyan-200 text-sm font-medium hover:bg-cyan-400/25 transition-all flex items-center gap-1.5" title="进入该学校完整数据页">
+                            <span>打开详情</span>
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 3h7v7M10 14L21 3M21 14v7H3V3h7"/></svg>
+                        </button>
+                        <button onclick="App.closeModalDirect()" class="px-2 py-1.5 rounded-lg bg-slate-600/50 border border-slate-500/30 text-slate-300 text-sm hover:bg-slate-500/50 transition-all" title="关闭">✕</button>
+                    </div>
+                </div>
+
+                <!-- 园所数据概述（与"园所数据页-数据概述"一致） -->
+                <div class="school-modal-overview">${overviewHtml}</div>
+            </div>`;
+        this.openModal(html, { size: 'xxwide' });
+    },
+
+    // 弹窗"打开详情"按钮：关闭弹窗并跳到该学校的园所数据页
+    openSchoolPage(schoolId) {
+        const school = MockData.kindergartens.find(k => k.id === schoolId);
+        if (!school) return;
+        this.closeModalDirect();
+        this.selectedSchool = school;
+        this.schoolDataTab = 'overview';
+        this.loadPage('schoolData');
     },
 
     // 返回学校筛选（教育局管理员）
@@ -4789,7 +5168,7 @@ ${allQuestionsText || '（无）'}
         return `
         <div class="space-y-6">
             <div>
-                ${this.chartTitle(scopeLabel + '绘本活动概览', 'bg-blue-500')}
+                ${this.chartTitle(scopeLabel + '绘本活动概览', 'bg-blue-500', '统计范围：当前所选时间范围内 ' + scopeLabel + ' 全部绘本活动。\n指标说明：\n· 绘本活动总次数：发起的绘本活动场次\n· 绘本活动总时长：所有活动累计时长\n· 绘本总数：参与活动覆盖的绘本数（去重）\n· 绘本阅读次数 / 时长：含教师朗读、AI 共读、自由阅读全部触达')}
                 <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
                     ${this.miniStat('绘本活动总次数', d.activityTotal, 'blue')}
                     ${this.miniStat('绘本活动总时长', d.activityDuration + 'h', 'emerald')}
@@ -4799,14 +5178,14 @@ ${allQuestionsText || '（无）'}
                 </div>
             </div>
             <div>
-                ${this.chartTitle(scopeLabel + '大模型使用概况', 'bg-cyan-500')}
+                ${this.chartTitle(scopeLabel + '大模型使用概况', 'bg-cyan-500', '统计范围：当前所选时间范围内的 AI 共读会话。\n指标说明：\n· 大模型绘本数：触发过 AI 互动的不同绘本数（去重）\n· 大模型对话次数：所有 AI 会话的累计轮数\n用途：观察 AI 共读的覆盖广度与互动密度。')}
                 <div class="grid grid-cols-2 gap-3">
                     ${this.miniStat('大模型绘本数', d.llmBookCount, 'cyan')}
                     ${this.miniStat('大模型对话次数', d.llmChatCount, 'purple')}
                 </div>
             </div>
             <div>
-                ${this.chartTitle('绘本分类阅读数据', 'bg-emerald-500')}
+                ${this.chartTitle('绘本分类阅读数据', 'bg-emerald-500', '统计范围：当前所选时间范围内的全部阅读记录。\n口径：按绘本"类型"分组，统计阅读次数和阅读时长。\n用途：识别孩子近期偏好的内容分类，辅助选书与活动设计。')}
                 <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
                     ${d.categoryData.map(cat => `
                         <div class="bg-slate-700/50 rounded-xl p-3 flex items-center justify-between border border-slate-500/30 hover:border-blue-400/30 transition-colors">
@@ -4818,7 +5197,7 @@ ${allQuestionsText || '（无）'}
             </div>
             ${this.isTeacherScope() ? '' : `
             <div>
-                ${this.chartTitle(scopeLabel + '设备概况', 'bg-cyan-500')}
+                ${this.chartTitle(scopeLabel + '设备概况', 'bg-cyan-500', '指标说明：\n· 设备总数：' + scopeLabel + '已绑定的阅读机器人台数\n· 使用次数：当前时间范围内的累计开机/活动次数\n· 使用时长：当前时间范围内的累计在线时长（小时）\n用途：评估设备投入产出与日常使用饱和度。')}
                 <div class="grid grid-cols-3 gap-3">
                     ${this.miniStat('设备总数', d.deviceTotal, 'cyan')}
                     ${this.miniStat('使用次数', d.deviceUseCount, 'cyan')}
@@ -4827,7 +5206,7 @@ ${allQuestionsText || '（无）'}
             </div>`}
             ${this.currentRole !== 'admin' ? this.card(`
                 <div class="flex items-center justify-between gap-3 mb-4">
-                    ${this.chartTitle('绘本推荐栏', 'bg-rose-500')}
+                    ${this.chartTitle('绘本推荐栏', 'bg-rose-500', '推荐规则：固定四张推荐位。\n· 高热度：' + scopeLabel + '近 1 个月阅读次数最多的绘本\n· 高互动：' + scopeLabel + '近 1 个月大模型对话互动最多的两本绘本\n· 可拓展：' + scopeLabel + '近期读得最少的类型，从全部数据中挑出该类型阅读量最高的一本')}
                     <div class="text-xs text-slate-400 px-3 py-1.5 rounded-full border border-rose-500/20 bg-rose-500/10">${this.currentRole === 'principal' ? '园所视角推荐' : '班级视角推荐'}</div>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -4835,7 +5214,7 @@ ${allQuestionsText || '（无）'}
                         <div class="rounded-2xl border border-slate-500/25 bg-slate-800/40 p-4 hover:border-rose-400/30 hover:bg-slate-700/40 transition-all">
                             <div class="flex items-start justify-between gap-3 mb-3">
                                 <div class="w-11 h-14 rounded-xl bg-gradient-to-br from-rose-500/20 to-amber-500/20 border border-rose-500/20 flex items-center justify-center text-lg">📖</div>
-                                ${this.badge(book.highlight, book.highlight === '优先推荐' ? 'red' : book.highlight === '高热度' ? 'amber' : 'purple')}
+                                ${this.badge(book.highlight, book.highlight === '高热度' ? 'red' : book.highlight === '高互动' ? 'amber' : 'purple')}
                             </div>
                             <div class="text-white font-semibold leading-6 mb-2">${book.name}</div>
                             <div class="flex items-center gap-2 text-xs text-slate-400 mb-3">
@@ -4862,7 +5241,7 @@ ${allQuestionsText || '（无）'}
         let data = this.filterActivitiesByGlobalRange(MockData.schoolData.activities);
         if (isTeacher) data = data.filter(a => a.className === this.getTeacherClassName());
         if (f.className) data = data.filter(a => a.className.includes(f.className));
-        if (f.teacher) data = data.filter(a => a.teacher.includes(f.teacher));
+        if (f.teacher) data = data.filter(a => PinyinUtil.match(a.teacher, f.teacher));
         const total = data.length;
         const totalPages = Math.ceil(total / p.pageSize);
         const pageData = data.slice((p.page - 1) * p.pageSize, p.page * p.pageSize);
@@ -4989,9 +5368,19 @@ ${allQuestionsText || '（无）'}
     // 园所数据 - 班级
     renderSchoolClasses() {
         const p = this.pagination.classes;
+        const f = this.filters.classes;
+        const isTeacher = this.isTeacherScope();
         const ratio = this.getSchoolRangeRatio();
         let data = MockData.classes;
-        if (this.isTeacherScope()) data = data.filter(c => c.id === this.selectedClass.id);
+        if (isTeacher) data = data.filter(c => c.id === this.selectedClass.id);
+        // 班级筛选：班级名 / 教师姓名（支持中文 + 拼音首字母）
+        if (!isTeacher) {
+            if (f.name) data = data.filter(c => PinyinUtil.match(c.name, f.name));
+            if (f.teacher) data = data.filter(c => {
+                const teachers = (c.teachers || []).map(t => t.name).concat(c.teacherName || '');
+                return teachers.some(name => PinyinUtil.match(name, f.teacher));
+            });
+        }
         // 全局时间筛选：按比例缩放活动次数/时长/参与人次/设备使用次数
         data = data.map(c => {
             const scaleCount = v => ratio <= 0 ? 0 : Math.max(0, Math.round((Number(v) || 0) * ratio));
@@ -5023,7 +5412,16 @@ ${allQuestionsText || '（无）'}
                 <td class="px-4 py-3 text-center text-slate-300">${c.participantCount}</td>
                 <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewClassDetail(${c.id})">查看</button></td>
             </tr>`).join('');
-        return `<div>${this.tableWrap(headers, rows)}${this.renderPagination(total, p.page, totalPages, 'classes')}</div>`;
+        return `<div>
+            ${isTeacher ? '' : this.filterBar(`
+                ${this.filterInput('班级名称', `placeholder="如 大一班 / dyb" value="${f.name}" oninput="App.filters.classes.name=this.value"`)}
+                ${this.filterInput('教师姓名', `placeholder="如 张晓梅 / zxm" value="${f.teacher}" oninput="App.filters.classes.teacher=this.value"`)}
+                ${this.btnPrimary('查询', "App.pagination.classes.page=1;App.renderSchoolTabContent('classes')")}
+                ${this.btnSecondary('重置', "App.filters.classes={name:'',teacher:''};App.pagination.classes.page=1;App.renderSchoolTabContent('classes')")}
+            `)}
+            ${this.tableWrap(headers, rows)}
+            ${this.renderPagination(total, p.page, totalPages, 'classes')}
+        </div>`;
     },
 
     // 园所数据 - 教师
@@ -5037,7 +5435,7 @@ ${allQuestionsText || '（无）'}
             data = (this.selectedClass.teachers || []).map((t, i) => ({ id: i + 1, ...t }));
         } else {
             data = MockData.schoolData.teachers;
-            if (f.name) data = data.filter(t => t.name.includes(f.name));
+            if (f.name) data = data.filter(t => PinyinUtil.match(t.name, f.name));
         }
         // 全局时间筛选：按比例缩放活动次数与时长
         data = data.map(t => {
@@ -5082,7 +5480,7 @@ ${allQuestionsText || '（无）'}
         const ratio = this.getSchoolRangeRatio();
         let data = MockData.students;
         if (isTeacher) data = data.filter(s => s.classId === this.selectedClass.id);
-        if (f.name) data = data.filter(s => s.name.includes(f.name));
+        if (f.name) data = data.filter(s => PinyinUtil.match(s.name, f.name));
         if (f.className) data = data.filter(s => s.className.includes(f.className));
         // 全局时间筛选：按比例缩放参与活动次数/时长/绘本总数
         data = data.map(s => {
