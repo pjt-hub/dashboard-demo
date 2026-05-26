@@ -248,7 +248,7 @@ const Charts = {
         this.safeInit(() => this.initAbilityRadar(data.abilityDistribution));
         // 缓存活动数据 + 按当前选择类型渲染（折线 / 柱状）
         if (typeof App !== 'undefined') App._lastWeeklyActivityData = data.weeklyActivity;
-        const weeklyTypes = (typeof App !== 'undefined' && App.weeklyActivityChartTypes) || ['line'];
+        const weeklyTypes = (typeof App !== 'undefined' && App.weeklyActivityChartTypes) || ['line', 'bar'];
         this.safeInit(() => this.initWeeklyActivityBar(data.weeklyActivity, weeklyTypes));
         // 管理员显示园所使用次数折线图，园长显示教师排名
         if (App.currentRole === 'admin') {
@@ -460,90 +460,112 @@ const Charts = {
         window.addEventListener('resize', () => chart.resize());
     },
 
-    // 近七日活动 - 柱状图
-    initWeeklyActivityBar(customData = null, chartType = 'line') {
-        // 二道保险：进入前若 dom 上还挂着旧实例（来自上次切换），先 dispose，避免 setOption 残留旧 series
-        const oldDom = document.getElementById('weekly-activity-chart');
-        if (oldDom && typeof echarts !== 'undefined') {
-            const old = echarts.getInstanceByDom(oldDom);
-            if (old && !old.isDisposed()) {
-                old.dispose();
-                this.instances = this.instances.filter(c => c !== old);
-            }
+    // 纯函数：根据 data + types 构造 option（用于 init / 切换时复用同一实例 setOption 重渲）
+    buildWeeklyActivityOption(data, types) {
+        const list = Array.isArray(types) ? types.slice() : [types];
+        const showLine = list.includes('line');
+        const showBar = list.includes('bar');
+        const isMonthly = data && data.granularity === 'month';
+        const dates = (data && data.dates) || [];
+        const values = (data && data.values) || [];
+        const rotate = !isMonthly && dates.length > 14 ? 35 : 0;
+
+        const series = [];
+        if (showBar) {
+            series.push({
+                id: 'bar',
+                name: '柱状',
+                type: 'bar',
+                data: values,
+                barWidth: dates.length > 12 ? '55%' : '40%',
+                z: 1,
+                itemStyle: {
+                    borderRadius: [6, 6, 0, 0],
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#3b82f6' }, { offset: 1, color: '#1e40af' }]),
+                    shadowBlur: 8,
+                    shadowColor: 'rgba(6,182,212,0.2)',
+                    opacity: showLine ? 0.32 : 1
+                }
+            });
         }
-        const chart = this.createChart('weekly-activity-chart');
-        if (!chart) return;
-        const data = customData || MockData.weeklyActivity;
-        const isMonthly = data.granularity === 'month';
-        const rotate = !isMonthly && data.dates.length > 14 ? 35 : 0;
-        // 兼容旧入参：字符串单选 + 新入参：数组多选
-        const types = Array.isArray(chartType) ? chartType : [chartType];
-        const showLine = types.includes('line');
-        const showBar = types.includes('bar') || (!showLine);
-        const baseAxis = {
+        if (showLine) {
+            series.push({
+                id: 'line',
+                name: '折线',
+                type: 'line',
+                data: values,
+                smooth: true,
+                symbol: 'circle',
+                symbolSize: showBar ? 8 : 7,
+                z: 10,
+                lineStyle: {
+                    width: showBar ? 3 : 2.5,
+                    color: '#06b6d4',
+                    shadowBlur: 6,
+                    shadowColor: 'rgba(6,182,212,0.45)'
+                },
+                itemStyle: { color: '#06b6d4', borderColor: '#0891b2', borderWidth: 2 },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: showBar ? 'rgba(6,182,212,0.18)' : 'rgba(6,182,212,0.35)' },
+                        { offset: 1, color: 'rgba(59,130,246,0.02)' }
+                    ])
+                }
+            });
+        }
+
+        return {
             backgroundColor: 'transparent',
             tooltip: { ...this.darkTheme.tooltip, trigger: 'axis', axisPointer: { type: showLine ? 'cross' : 'shadow', shadowStyle: { color: 'rgba(59,130,246,0.05)' }, lineStyle: { color: 'rgba(99,102,241,0.3)' } } },
             grid: { left: 40, right: 20, top: 20, bottom: 30 },
             xAxis: {
                 type: 'category',
                 boundaryGap: showBar,
-                data: data.dates,
+                data: dates,
                 axisLabel: {
                     color: '#8896a6',
                     fontSize: 11,
                     rotate,
-                    interval: data.dates.length > 16 ? 2 : 0
+                    interval: dates.length > 16 ? 2 : 0
                 },
                 axisLine: { lineStyle: { color: 'rgba(85,100,120,0.35)' } },
                 axisTick: { show: false }
             },
-            yAxis: { type: 'value', axisLabel: { color: '#8896a6', fontSize: 11 }, splitLine: { lineStyle: { color: 'rgba(85,100,120,0.3)' } } }
-        };
-
-        const lineSeries = {
-            name: '折线',
-            type: 'line',
-            data: data.values,
-            smooth: true,
-            symbol: 'circle',
-            symbolSize: showBar ? 8 : 7,
-            z: 10,
-            lineStyle: {
-                width: showBar ? 3 : 2.5,
-                color: '#06b6d4',
-                shadowBlur: 6,
-                shadowColor: 'rgba(6,182,212,0.45)'
-            },
-            itemStyle: { color: '#06b6d4', borderColor: '#0891b2', borderWidth: 2 },
-            areaStyle: {
-                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                    { offset: 0, color: showBar ? 'rgba(6,182,212,0.18)' : 'rgba(6,182,212,0.35)' },
-                    { offset: 1, color: 'rgba(59,130,246,0.02)' }
-                ])
-            }
-        };
-
-        const barSeries = {
-            name: '柱状',
-            type: 'bar', data: data.values, barWidth: data.dates.length > 12 ? '55%' : '40%',
-            z: 1,
-            itemStyle: {
-                borderRadius: [6, 6, 0, 0],
-                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#3b82f6' }, { offset: 1, color: '#1e40af' }]),
-                shadowBlur: 8, shadowColor: 'rgba(6,182,212,0.2)',
-                opacity: showLine ? 0.32 : 1
-            }
-        };
-
-        const series = [];
-        if (showBar) series.push(barSeries);
-        if (showLine) series.push(lineSeries);
-
-        chart.setOption({
-            ...baseAxis,
+            yAxis: { type: 'value', axisLabel: { color: '#8896a6', fontSize: 11 }, splitLine: { lineStyle: { color: 'rgba(85,100,120,0.3)' } } },
             series
-        }, true);
+        };
+    },
+
+    // 区域/园所活动次数 - 折线/柱状（支持数组多选）
+    initWeeklyActivityBar(customData = null, chartType = ['line', 'bar']) {
+        const dom = document.getElementById('weekly-activity-chart');
+        if (!dom) return;
+        const data = customData || MockData.weeklyActivity;
+        const types = Array.isArray(chartType) ? chartType : [chartType];
+        // 强制重建实例：避免上次的 series id 残留导致 merge 异常
+        if (typeof echarts !== 'undefined') {
+            const existing = echarts.getInstanceByDom(dom);
+            if (existing && !existing.isDisposed()) {
+                existing.dispose();
+                this.instances = this.instances.filter(c => c !== existing);
+            }
+        }
+        const chart = this.createChart('weekly-activity-chart');
+        if (!chart) return;
+        chart.setOption(this.buildWeeklyActivityOption(data, types), true);
         window.addEventListener('resize', () => chart.resize());
+    },
+
+    // 仅更新 series（不 dispose），由切换按钮调用：保证按钮态与渲染严格一致，无时序窗口
+    updateWeeklyActivityChart(customData = null, chartType = ['line', 'bar']) {
+        const dom = document.getElementById('weekly-activity-chart');
+        if (!dom || typeof echarts === 'undefined') return false;
+        const chart = echarts.getInstanceByDom(dom);
+        if (!chart || chart.isDisposed()) return false;
+        const data = customData || MockData.weeklyActivity;
+        const types = Array.isArray(chartType) ? chartType : [chartType];
+        chart.setOption(this.buildWeeklyActivityOption(data, types), true);
+        return true;
     },
 
     // 教师排名 - 横向柱状图
@@ -576,20 +598,10 @@ const Charts = {
     },
 
     // 园所使用次数趋势（管理员端）。chartType: 字符串 'combo'|'bar'|'line' 或 数组 ['line','bar']
-    initKindergartenUsageLine(customData = null, chartType = ['line', 'bar']) {
-        const oldDom = document.getElementById('kindergarten-usage-chart');
-        if (oldDom && typeof echarts !== 'undefined') {
-            const old = echarts.getInstanceByDom(oldDom);
-            if (old && !old.isDisposed()) {
-                old.dispose();
-                this.instances = this.instances.filter(c => c !== old);
-            }
-        }
-        const chart = this.createChart('kindergarten-usage-chart');
-        if (!chart) return;
-        const data = customData || { dates: [], values: [], series: [], granularity: 'day' };
+    // 纯函数：构造园所使用次数趋势 option
+    buildKindergartenUsageOption(data, chartType) {
         const colors = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1'];
-        const seriesList = data.series || [];
+        const seriesList = (data && data.series) || [];
 
         // 入参规范化（兼容老 'combo'/'bar'/'line' 字符串）
         let types;
@@ -607,6 +619,7 @@ const Charts = {
         const barWidth = `${Math.max(8, Math.floor(60 / groupCount))}%`;
 
         const barSeries = showBar ? seriesList.map((item, index) => ({
+            id: `bar-${index}`,
             name: item.name + (showLine ? ' · 柱状' : ''),
             type: 'bar',
             data: item.values,
@@ -624,6 +637,7 @@ const Charts = {
         })) : [];
 
         const lineSeries = showLine ? seriesList.map((item, index) => ({
+            id: `line-${index}`,
             name: item.name + (showBar ? ' · 折线' : ''),
             type: 'line',
             data: item.values,
@@ -641,7 +655,7 @@ const Charts = {
             }
         })) : [];
 
-        chart.setOption({
+        return {
             backgroundColor: 'transparent',
             tooltip: {
                 ...this.darkTheme.tooltip,
@@ -669,12 +683,12 @@ const Charts = {
             grid: { left: 50, right: 24, top: 36, bottom: 40 },
             xAxis: {
                 type: 'category',
-                data: data.dates,
+                data: (data && data.dates) || [],
                 axisLabel: {
                     color: '#8896a6',
                     fontSize: 11,
-                    rotate: data.dates.length > 14 ? 35 : 0,
-                    interval: data.dates.length > 16 ? 2 : 0
+                    rotate: ((data && data.dates) || []).length > 14 ? 35 : 0,
+                    interval: ((data && data.dates) || []).length > 16 ? 2 : 0
                 },
                 axisLine: { lineStyle: { color: 'rgba(85,100,120,0.35)' } },
                 axisTick: { show: false }
@@ -685,8 +699,35 @@ const Charts = {
                 splitLine: { lineStyle: { color: 'rgba(85,100,120,0.3)' } }
             },
             series: [...barSeries, ...lineSeries]
-        }, true);
+        };
+    },
+
+    initKindergartenUsageLine(customData = null, chartType = ['line', 'bar']) {
+        const dom = document.getElementById('kindergarten-usage-chart');
+        if (!dom) return;
+        if (typeof echarts !== 'undefined') {
+            const existing = echarts.getInstanceByDom(dom);
+            if (existing && !existing.isDisposed()) {
+                existing.dispose();
+                this.instances = this.instances.filter(c => c !== existing);
+            }
+        }
+        const chart = this.createChart('kindergarten-usage-chart');
+        if (!chart) return;
+        const data = customData || { dates: [], values: [], series: [], granularity: 'day' };
+        chart.setOption(this.buildKindergartenUsageOption(data, chartType), true);
         window.addEventListener('resize', () => chart.resize());
+    },
+
+    // 仅更新 series（不 dispose），由切换按钮调用
+    updateKindergartenUsageChart(customData = null, chartType = ['line', 'bar']) {
+        const dom = document.getElementById('kindergarten-usage-chart');
+        if (!dom || typeof echarts === 'undefined') return false;
+        const chart = echarts.getInstanceByDom(dom);
+        if (!chart || chart.isDisposed()) return false;
+        const data = customData || { dates: [], values: [], series: [], granularity: 'day' };
+        chart.setOption(this.buildKindergartenUsageOption(data, chartType), true);
+        return true;
     },
 
     // 班级排名 - 横向柱状图（园长端）

@@ -1356,6 +1356,105 @@ const App = {
         </span>`;
     },
 
+    // 原始语音播放按钮（mock：用 Web Audio 合成一段时长与提问文本相关的"声纹"，模拟点击播放原始录音）
+    _voiceBtnSeq: 0,
+    voicePlayButton(text = '', label = '原始录音') {
+        const safe = String(text || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        const id = `voice-btn-${++this._voiceBtnSeq}`;
+        const seconds = Math.max(1.2, Math.min(4.5, ((text || '').length || 1) * 0.18));
+        const dur = seconds.toFixed(1);
+        return `<button id="${id}" type="button"
+            class="voice-play-btn"
+            data-q="${safe}"
+            data-duration="${dur}"
+            onclick="event.stopPropagation();App.playVoiceFromButton('${id}')"
+            title="${label} · ${dur}s">
+            <svg class="voice-play-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 5v14l11-7z"/></svg>
+            <svg class="voice-pause-icon hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5h2v14H9zM13 5h2v14h-2z"/></svg>
+            <span class="voice-wave" aria-hidden="true">
+                <span></span><span></span><span></span><span></span><span></span>
+            </span>
+            <span class="voice-time">${dur}"</span>
+        </button>`;
+    },
+
+    _voiceCtx: null,
+    _voicePlaying: null, // { id, stop }
+    playVoiceFromButton(id) {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        // 当前正在播的就是它本身 → 停止
+        if (this._voicePlaying && this._voicePlaying.id === id) {
+            this._voicePlaying.stop();
+            return;
+        }
+        // 当前正在播别的 → 先停，再放新的
+        if (this._voicePlaying) {
+            try { this._voicePlaying.stop(); } catch (e) {}
+        }
+        const text = btn.dataset.q || '';
+        const duration = parseFloat(btn.dataset.duration || '2.0') || 2.0;
+        const AudioCtor = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtor) {
+            this.toast?.('当前浏览器不支持 Web Audio，无法播放');
+            return;
+        }
+        if (!this._voiceCtx) this._voiceCtx = new AudioCtor();
+        const ctx = this._voiceCtx;
+        if (ctx.state === 'suspended') ctx.resume();
+        const now = ctx.currentTime;
+
+        // 用文本字符 codepoint 当作"音高种子"，让每条提问声音略不同（模拟童声）
+        const base = 320 + ((text.charCodeAt(0) || 0) % 70); // 320~390Hz
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        osc1.type = 'sine';
+        osc2.type = 'triangle';
+        osc1.frequency.setValueAtTime(base, now);
+        osc2.frequency.setValueAtTime(base * 1.5, now);
+
+        // 简单做一点起伏，让"录音"不像纯蜂鸣
+        const segs = Math.max(3, Math.min(8, Math.round(duration * 2)));
+        for (let i = 0; i < segs; i++) {
+            const t = now + (i / segs) * duration;
+            const f = base * (0.85 + 0.4 * Math.sin(i * 1.7));
+            osc1.frequency.linearRampToValueAtTime(f, t);
+            osc2.frequency.linearRampToValueAtTime(f * 1.5, t);
+        }
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime(0.18, now + 0.05);
+        gain.gain.linearRampToValueAtTime(0.18, now + duration - 0.1);
+        gain.gain.linearRampToValueAtTime(0.0001, now + duration);
+
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(ctx.destination);
+        osc1.start(now);
+        osc2.start(now);
+        osc1.stop(now + duration + 0.05);
+        osc2.stop(now + duration + 0.05);
+
+        btn.classList.add('is-playing');
+        btn.querySelector('.voice-play-icon')?.classList.add('hidden');
+        btn.querySelector('.voice-pause-icon')?.classList.remove('hidden');
+
+        const cleanup = () => {
+            btn.classList.remove('is-playing');
+            btn.querySelector('.voice-play-icon')?.classList.remove('hidden');
+            btn.querySelector('.voice-pause-icon')?.classList.add('hidden');
+            if (this._voicePlaying && this._voicePlaying.id === id) this._voicePlaying = null;
+        };
+        const stop = () => {
+            try { osc1.stop(); osc2.stop(); } catch (e) {}
+            try { gain.disconnect(); } catch (e) {}
+            cleanup();
+        };
+        const timer = setTimeout(cleanup, duration * 1000 + 80);
+        this._voicePlaying = { id, stop: () => { clearTimeout(timer); stop(); } };
+    },
+
     _ensureHelpTip() {
         let tip = document.getElementById('global-help-tip');
         if (!tip) {
@@ -1704,11 +1803,7 @@ const App = {
             return `
             <button onclick="App.toggleWeeklyActivityChartType('${key}')"
                 ${onlyOne ? 'disabled' : ''}
-                class="px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1
-                    ${active
-                        ? 'bg-cyan-400/15 text-cyan-200 border border-cyan-400/30'
-                        : 'text-slate-400 border border-transparent hover:text-slate-200 hover:bg-slate-700/40'}
-                    ${onlyOne ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}"
+                class="chart-toggle-btn ${active ? 'is-active' : 'is-inactive'} ${onlyOne ? 'is-locked' : ''}"
                 title="${onlyOne ? '至少保留一种图形' : (active ? '点击隐藏' + label : '点击显示' + label)}">
                 ${icon}<span>${label}</span>
             </button>`;
@@ -1721,7 +1816,7 @@ const App = {
                     <span class="w-1.5 h-5 bg-cyan-500 rounded-full"></span>
                     <span class="flex items-center gap-1.5">${title}${this.helpIcon(helpText)}</span>
                 </h3>
-                <div class="flex items-center gap-1 p-0.5 rounded-lg bg-slate-700/40 border border-slate-500/30">
+                <div class="chart-toggle-group">
                     ${tab('line', '折线', lineIcon)}
                     ${tab('bar', '柱状', barIcon)}
                 </div>
@@ -1744,27 +1839,18 @@ const App = {
         this.refreshWeeklyActivityChart();
     },
 
-    // 重新渲染区域/园所活动次数图（头部 + 图表）
+    // 仅更新 header 按钮态 + 复用同一 ECharts 实例 setOption（不 dispose 不重建 DOM，按钮态与渲染严格一致）
     refreshWeeklyActivityChart() {
-        // 整段重渲染：拿到 chart dom 的 card 父级，连 header + chart dom 一起重画，
-        // 避免 dispose / outerHTML 顺序导致 echarts 实例残留旧 series 的问题
         const chartDom = document.getElementById('weekly-activity-chart');
-        const card = chartDom?.closest('[class*="rounded-2xl"]') || chartDom?.parentElement;
-        if (chartDom && typeof echarts !== 'undefined') {
-            const existing = echarts.getInstanceByDom(chartDom);
-            if (existing && !existing.isDisposed()) {
-                existing.dispose();
-                Charts.instances = Charts.instances.filter(c => c !== existing);
-            }
-        }
-        if (card) {
-            card.innerHTML = this.renderWeeklyActivityChartHeader() + '<div id="weekly-activity-chart" class="h-72"></div>';
+        if (chartDom && chartDom.previousElementSibling) {
+            chartDom.previousElementSibling.outerHTML = this.renderWeeklyActivityChartHeader();
         }
         const data = this._lastWeeklyActivityData || MockData.weeklyActivity;
-        // 等下一帧让 dom 真正插入完毕再 init，避免 echarts 拿到旧节点
-        requestAnimationFrame(() => {
+        const updated = Charts.updateWeeklyActivityChart(data, this.weeklyActivityChartTypes);
+        if (!updated) {
+            // 实例不存在（首次渲染或被销毁）则正常初始化
             Charts.safeInit(() => Charts.initWeeklyActivityBar(data, this.weeklyActivityChartTypes));
-        });
+        }
     },
 
     // 兼容老入口：保留 setWeeklyActivityChartType（外部如果还有调用，也走多选逻辑）
@@ -1786,11 +1872,7 @@ const App = {
             return `
             <button onclick="App.toggleKindergartenUsageChartType('${key}')"
                 ${onlyOne ? 'disabled' : ''}
-                class="px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1
-                    ${active
-                        ? 'bg-purple-400/15 text-purple-200 border border-purple-400/30'
-                        : 'text-slate-400 border border-transparent hover:text-slate-200 hover:bg-slate-700/40'}
-                    ${onlyOne ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}"
+                class="chart-toggle-btn chart-toggle-btn--purple ${active ? 'is-active' : 'is-inactive'} ${onlyOne ? 'is-locked' : ''}"
                 title="${onlyOne ? '至少保留一种图形' : (active ? '点击隐藏' + label : '点击显示' + label)}">
                 ${icon}<span>${label}</span>
             </button>`;
@@ -1806,7 +1888,7 @@ const App = {
                         <span class="flex items-center gap-1.5">园所使用次数趋势${this.helpIcon('统计范围：当前所选时间范围内的设备使用记录。\n口径：每个选中园所一组数据，按时间分桶展示。\n图形选择：折线/柱状可以同时展示，也可以点击只保留一种（最少保留一种）。')}</span>
                     </h3>
                     <div class="flex items-center gap-2">
-                        <div class="flex items-center gap-1 p-0.5 rounded-lg bg-slate-700/40 border border-slate-500/30">
+                        <div class="chart-toggle-group">
                             ${tab('line', '折线', lineIcon)}
                             ${tab('bar', '柱状', barIcon)}
                         </div>
@@ -1855,14 +1937,14 @@ const App = {
             list.push(type);
         }
         this.kindergartenUsageChartTypes = list;
-        this.refreshKindergartenUsageChart();
+        this.refreshKindergartenUsageChart({ headerOnly: true });
     },
 
     // 兼容老入口
     setKindergartenUsageChartType(type) {
         if (!['line', 'bar'].includes(type)) return;
         this.kindergartenUsageChartTypes = [type];
-        this.refreshKindergartenUsageChart();
+        this.refreshKindergartenUsageChart({ headerOnly: true });
     },
 
     // 切换园所选择（无数量限制）
@@ -1877,13 +1959,36 @@ const App = {
             // 未选中则添加（无数量限制）
             this.selectedKindergartensForLine.push(id);
         }
-        this.refreshKindergartenUsageChart();
+        this.refreshKindergartenUsageChart({ headerOnly: true });
     },
 
     // 刷新园所使用次数趋势图表
-    refreshKindergartenUsageChart() {
+    // headerOnly=true：只替换 header（保留 chart 容器/实例），用 setOption 更新 series — 切换按钮/勾选场景
+    // 否则全量重建（首次渲染或外部强制刷新）
+    refreshKindergartenUsageChart(opts = {}) {
+        const headerOnly = opts && opts.headerOnly;
         const wasOpen = !document.getElementById('kindergarten-dropdown-menu')?.classList.contains('hidden');
         const chartDom = document.getElementById('kindergarten-usage-chart');
+        const data = this.buildKindergartenUsageSeries();
+
+        if (headerOnly && chartDom) {
+            // 头部容器：renderKindergartenUsageChartHeader 顶层是 <div id="kindergarten-usage-header">
+            const headerEl = document.getElementById('kindergarten-usage-header');
+            if (headerEl) {
+                headerEl.outerHTML = this.renderKindergartenUsageChartHeader();
+                if (wasOpen) {
+                    document.getElementById('kindergarten-dropdown-menu')?.classList.remove('hidden');
+                    document.getElementById('kindergarten-dropdown-arrow')?.classList.add('rotate-180');
+                }
+            }
+            const updated = Charts.updateKindergartenUsageChart(data, this.kindergartenUsageChartTypes);
+            if (!updated) {
+                Charts.safeInit(() => Charts.initKindergartenUsageLine(data, this.kindergartenUsageChartTypes));
+            }
+            return;
+        }
+
+        // 全量重建（兼容首次/异常路径）
         const card = chartDom?.closest('[class*="rounded-2xl"]') || chartDom?.parentElement;
         if (chartDom && typeof echarts !== 'undefined') {
             const existing = echarts.getInstanceByDom(chartDom);
@@ -1899,7 +2004,6 @@ const App = {
                 document.getElementById('kindergarten-dropdown-arrow')?.classList.add('rotate-180');
             }
         }
-        const data = this.buildKindergartenUsageSeries();
         requestAnimationFrame(() => {
             Charts.safeInit(() => Charts.initKindergartenUsageLine(data, this.kindergartenUsageChartTypes));
         });
@@ -2562,7 +2666,10 @@ const App = {
                         ${scopeBadge}
                     </div>
                     <div class="bg-amber-500/10 border border-amber-400/20 rounded-lg px-3 py-2 mb-1.5">
-                        <div class="text-[11px] text-amber-300 mb-0.5">小朋友提问</div>
+                        <div class="flex items-center justify-between gap-2 mb-0.5">
+                            <div class="text-[11px] text-amber-300">小朋友提问</div>
+                            ${this.voicePlayButton(t.q || '')}
+                        </div>
                         <div class="text-sm text-amber-100 leading-relaxed">${t.q || ''}</div>
                     </div>
                     <div class="bg-slate-700/40 border border-slate-600/30 rounded-lg px-3 py-2">
@@ -2866,7 +2973,10 @@ const App = {
                     <span class="text-xs text-amber-400 font-semibold shrink-0">第 ${idx + 1} 轮</span>
                 </div>
                 <div class="bg-amber-500/10 border border-amber-400/20 rounded-lg px-3 py-2.5 mb-2">
-                    <div class="text-[11px] text-amber-300 mb-1">小朋友提问</div>
+                    <div class="flex items-center justify-between gap-2 mb-1">
+                        <div class="text-[11px] text-amber-300">小朋友提问</div>
+                        ${this.voicePlayButton(t.q || '')}
+                    </div>
                     <div class="text-sm text-amber-100 leading-relaxed">${t.q || ''}</div>
                 </div>
                 <div class="bg-slate-700/40 border border-slate-600/30 rounded-lg px-3 py-2.5">

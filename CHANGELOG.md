@@ -6,6 +6,26 @@
 
 ## [2026-05-26]
 
+### 新增
+- **AI 总览-阅读对话明细 新增"原始录音"播放按钮** - 每条小朋友提问右侧新增一个胶囊按钮，含"播放图标 + 5 段动效声纹 + 时长（如 2.4"）"。点击模拟播放该提问的原始录音，播放期间声纹会上下脉动、按钮变实色态、图标切到暂停；再次点击或点其他按钮自动停。同时支持 AI 对话详情、活跃幼儿/绘本下钻两类弹窗里所有 q/a 轮次。
+  - 实现：用 Web Audio 合成与文本相关的"童声音色"（OscillatorNode 双声合成 + 时长按文本长度 1.2s~4.5s 缩放 + 字符 codepoint 当音高种子），不需要任何资源文件。原本是"无原始录音存档"，现在有了交互入口，待接真实音频时把 `playVoiceFromButton` 改成读 `t.audioUrl` 即可。
+  - 新增 API：`App.voicePlayButton(text, label?)`、`App.playVoiceFromButton(id)`，全局单例 `_voicePlaying` 保证同一时间只有一个在播。
+  - 新增 CSS：`.voice-play-btn / .voice-wave / @keyframes voice-wave-pulse`，深浅主题各自配色（暖色童趣感）。
+  - 文件：`js/app.js`、`css/style.css`、`index.html`（style.css?v=16、app.js?v=20）
+
+### 修复
+- **折线/柱状切换按钮态难辨识** - 之前活跃态用 `bg-cyan-400/15 + text-cyan-200` 这种浅色调，在浅色主题下"高亮态"反而比"灰态"更淡，用户会误以为按钮态点反了（看图表又确实在变）。改成实色填充+白字+轻微阴影的活跃态、line-through+低透明度的灰态，深浅主题各自配色，按钮态从远处也能 1 秒分辨。
+  - 新增 CSS：`.chart-toggle-group / .chart-toggle-btn / .is-active / .is-inactive / .is-locked / .chart-toggle-btn--purple`
+  - 修改：`renderWeeklyActivityChartHeader / renderKindergartenUsageChartHeader` 用新 class 替换原 Tailwind 内联组合
+  - 文件：`css/style.css`、`js/app.js`、`index.html`（style.css?v=14、app.js?v=19）
+
+### 修复
+- **区域绘本活动次数 / 园所使用次数趋势 切换按钮态与图表渲染不一致** - 之前点"柱状"置灰只剩"折线"高亮时，图表却仍然渲染柱状（series 被旧实例残留污染）。前两版用 dispose+rebuild 都没修干净，这次彻底改为：把 option 构造抽成纯函数 `Charts.buildWeeklyActivityOption / buildKindergartenUsageOption`，切换时复用同一 ECharts 实例 `setOption(opt, true)`（notMerge=true）原地重渲染，不再 dispose/rebuild dom，按钮态与渲染严格 1:1。
+  - 新增：`Charts.buildWeeklyActivityOption`、`Charts.buildKindergartenUsageOption`、`Charts.updateWeeklyActivityChart`、`Charts.updateKindergartenUsageChart`
+  - 修改：`App.refreshWeeklyActivityChart` 优先走 setOption 更新；`App.refreshKindergartenUsageChart({ headerOnly: true })` 切换按钮 / 勾选时只替换 header（保留 chart 容器与实例），首次渲染或异常路径才整段重建
+  - `initDataOverviewCharts` fallback 默认值由 `['line']` → `['line','bar']`，与 state 默认对齐
+  - 文件：`js/charts.js`、`js/app.js`、`index.html`（charts.js?v=15、app.js?v=18）
+
 ### 变更
 - **区域绘本活动次数 / 园所使用次数趋势 改为折线+柱状多选** - 之前是单选切换，现在两个图表都默认折线+柱状同时显示，标题右侧的小按钮可以独立点亮/隐藏（最少保留一种），按钮在仅剩一种时禁用避免误操作。
   - 修改函数：`renderWeeklyActivityChartHeader / toggleWeeklyActivityChartType / refreshWeeklyActivityChart`、`renderKindergartenUsageChartHeader / toggleKindergartenUsageChartType / refreshKindergartenUsageChart`，对应的 `Charts.initWeeklyActivityBar / Charts.initKindergartenUsageLine` 入参改为支持数组（同时兼容老的字符串入参）
