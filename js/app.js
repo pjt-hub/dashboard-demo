@@ -320,6 +320,7 @@ const App = {
             // 全局时间筛选影响所有子页签：刷新当前 tab 内容并更新顶部时间栏 UI
             const filterHost = document.getElementById('school-date-filter');
             if (filterHost) filterHost.innerHTML = this.renderDateFilterBar('schoolOverview');
+            this.updateSchoolOverviewDate();
 
             // 如果班级详情正在显示（弹窗或子页面），需要联动重新渲染
             const modalOpen = !document.getElementById('modal-overlay')?.classList.contains('hidden')
@@ -539,6 +540,19 @@ const App = {
         return this.selectedClass?.name || '';
     },
 
+    // 当前登录用户名（用于 AI 报告"生成者"）。教师->班主任名，园长/管理员->对应角色名
+    getCurrentUserName() {
+        if (this.currentRole === 'teacher') {
+            const cls = this.selectedClass;
+            const t = cls && Array.isArray(cls.teachers) ? cls.teachers[0] : null;
+            return (t && (t.name || t)) ? `${t.name || t} 老师` : '班主任 老师';
+        }
+        if (this.currentRole === 'principal') {
+            return (this.selectedSchool?.principalName) ? `${this.selectedSchool.principalName} 园长` : '园长';
+        }
+        return '管理员';
+    },
+
     getAdminClassUsageComparison() {
         const source = MockData.kindergartenClassUsageComparison || [];
         const schools = source.map(item => {
@@ -579,6 +593,17 @@ const App = {
     // 园所/区域/班级数据页 - 全局时间筛选辅助
     getSchoolDateRange() {
         return this.dateRanges.schoolOverview || {};
+    },
+
+    // 根据当前全局（园所）时间范围长度，映射出兴趣/建议书单展示数量
+    getGlobalBookListSize() {
+        const r = this.dateRanges.schoolOverview || {};
+        if (!r.startDate || !r.endDate) return 5;
+        const ms = new Date(`${r.endDate}T23:59:59`) - new Date(`${r.startDate}T00:00:00`);
+        const days = Math.max(1, Math.round(ms / 86400000));
+        if (days <= 14) return 3;        // ≤2 周 → 3 本
+        if (days <= 60) return 5;        // ≤2 个月 → 5 本
+        return 8;                        // 否则 → 8 本
     },
 
     getSchoolRangeRatio() {
@@ -1132,6 +1157,15 @@ const App = {
                 dataOverviewItem.classList.remove('hidden-role');
             }
         }
+        // 区域数据页已并入大数据总览：admin 角色隐藏侧边栏入口
+        const schoolDataItem = document.getElementById('nav-schoolData');
+        if (schoolDataItem) {
+            if (this.currentRole === 'admin') {
+                schoolDataItem.classList.add('hidden-role');
+            } else {
+                schoolDataItem.classList.remove('hidden-role');
+            }
+        }
         // AI总览：园长和教师都可见
         const aiOverviewItem = document.getElementById('nav-aiOverview');
         if (aiOverviewItem) {
@@ -1141,10 +1175,10 @@ const App = {
                 aiOverviewItem.classList.add('hidden-role');
             }
         }
-        // 教师视角下"园所数据"菜单显示为"班级数据"，教育局管理员显示"区域数据"
+        // 教师视角下"园所数据"菜单显示为"班级数据"
         const schoolDataLabel = document.getElementById('nav-schoolData-label');
         if (schoolDataLabel) {
-            schoolDataLabel.textContent = this.currentRole === 'teacher' ? '班级数据' : this.currentRole === 'admin' ? '区域数据' : '园所数据';
+            schoolDataLabel.textContent = this.currentRole === 'teacher' ? '班级数据' : '园所数据';
         }
     },
 
@@ -1170,6 +1204,10 @@ const App = {
         if (pageName === 'dataOverview' && this.currentRole === 'teacher') {
             pageName = 'schoolData';
         }
+        // 区域数据页已并入大数据总览：admin 未选具体园所时跳回大数据总览
+        if (pageName === 'schoolData' && this.currentRole === 'admin' && !this.selectedSchool) {
+            pageName = 'dataOverview';
+        }
         // 权限检查：AI总览仅园长和教师可见
         if (pageName === 'aiOverview' && this.currentRole !== 'principal' && this.currentRole !== 'teacher') {
             pageName = 'dataOverview';
@@ -1188,21 +1226,30 @@ const App = {
             dataOverview: '首页 / 大数据总览',
             schoolData: this.currentRole === 'teacher'
                 ? '首页 / 班级数据'
-                : this.currentRole === 'admin' ? '首页 / 区域数据' : '首页 / 园所数据',
+                : this.currentRole === 'admin'
+                    ? `首页 / 大数据总览 / ${this.selectedSchool ? this.selectedSchool.name : '园所详情'}`
+                    : '首页 / 园所数据',
             aiOverview: '首页 / AI总览',
         };
         document.getElementById('breadcrumb').textContent = breadcrumbMap[pageName] || '首页';
         Charts.dispose();
         const container = document.getElementById('page-container');
-        switch (pageName) {
-            case 'dataOverview': container.innerHTML = this.renderDataOverviewPage(); break;
-            case 'schoolData': container.innerHTML = this.renderSchoolDataPage(); break;
-            case 'aiOverview': container.innerHTML = this.renderAiOverviewPage(); break;
-            case 'activityDetail': container.innerHTML = this._activityDetailContent || '<div class="p-6 text-center text-slate-500">加载中...</div>'; break;
-            default: container.innerHTML = this.renderDataOverviewPage();
+        // 立刻渲染骨架占位（仅切页时，重渲染同页不重复）
+        if (container && this._lastLoadedPage !== pageName) {
+            container.innerHTML = `<div class="p-2">${this.skeletonFor('overview')}</div>`;
         }
+        this._lastLoadedPage = pageName;
         requestAnimationFrame(() => {
-            requestAnimationFrame(() => this.initPageContent(pageName));
+            switch (pageName) {
+                case 'dataOverview': container.innerHTML = this.renderDataOverviewPage(); break;
+                case 'schoolData': container.innerHTML = this.renderSchoolDataPage(); break;
+                case 'aiOverview': container.innerHTML = this.renderAiOverviewPage(); break;
+                case 'activityDetail': container.innerHTML = this._activityDetailContent || '<div class="p-6 text-center text-slate-500">加载中...</div>'; break;
+                default: container.innerHTML = this.renderDataOverviewPage();
+            }
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => this.initPageContent(pageName));
+            });
         });
     },
 
@@ -1212,8 +1259,29 @@ const App = {
                 const overviewData = this.getOverviewDataForCurrentRange();
                 Charts.initDataOverviewCharts(overviewData);
                 this.renderDataOverviewRankings(overviewData.bookRanking);
-                if (this.currentRole === 'admin' && overviewData.classUsageComparison) {
-                    Charts.initBanjunScatter('banjun-scatter-chart', overviewData.classUsageComparison);
+                if (this.currentRole === 'admin') {
+                    // 园所使用次数趋势（取代原 admin 区域绘本活动次数）
+                    requestAnimationFrame(() => {
+                        const data = this.buildKindergartenUsageSeries();
+                        Charts.safeInit(() => Charts.initKindergartenUsageLine(data, this.kindergartenUsageChartTypes));
+                    });
+                    // 园所横向对比表
+                    const host = document.getElementById('regional-school-compare-host');
+                    if (host) host.innerHTML = this.renderRegionalSchoolCompare();
+                }
+                if (this.currentRole === 'principal') {
+                    // 班级横向对比表
+                    const classHost = document.getElementById('class-compare-host');
+                    if (classHost) classHost.innerHTML = this.renderClassCompare();
+                    // 班级开课情况变化（原来在园所数据 - 数据概述）
+                    const classActHost = document.getElementById('school-class-activity-host');
+                    if (classActHost) {
+                        classActHost.innerHTML = this.renderSchoolClassActivityHeader() + '<div id="school-class-activity-chart" class="h-72"></div>';
+                        requestAnimationFrame(() => {
+                            const data = this.buildSchoolClassUsageSeries();
+                            Charts.safeInit(() => Charts.initSchoolClassActivityChart(data, this.schoolClassChart.types));
+                        });
+                    }
                 }
                 break;
             case 'schoolData': this.initSchoolDataPage(); break;
@@ -1265,27 +1333,53 @@ const App = {
         // 切换弹窗最大宽度（默认 max-w-3xl，可通过 options.size 改为 'wide' / 'xwide'）
         const sizeMap = { default: 'max-w-3xl', wide: 'max-w-4xl', xwide: 'max-w-5xl', xxwide: 'max-w-6xl' };
         const target = sizeMap[options.size] || sizeMap.default;
-        // 移除旧 size 类，再加上新的
         Object.values(sizeMap).forEach(c => content.classList.remove(c));
         content.classList.add(target);
         content.innerHTML = html;
+        // 焦点管理：记录触发元素，焦点移入弹窗，ESC 关闭
+        this._modalReturnFocus = document.activeElement;
         overlay.classList.remove('hidden');
+        overlay.setAttribute('aria-hidden', 'false');
+        // 推迟一帧让浏览器完成布局，再聚焦（兼容动画/transition）
+        requestAnimationFrame(() => {
+            const firstFocusable = content.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+            (firstFocusable || content).focus();
+        });
+        if (!this._modalKeyHandler) {
+            this._modalKeyHandler = (e) => {
+                if (e.key === 'Escape' && !document.getElementById('modal-overlay')?.classList.contains('hidden')) {
+                    this.closeModalDirect();
+                }
+            };
+            document.addEventListener('keydown', this._modalKeyHandler);
+        }
     },
     closeModal(e) {
         if (e && e.target !== document.getElementById('modal-overlay')) return;
-        document.getElementById('modal-overlay').classList.add('hidden');
-        this._currentClassDetailId = null;
-        this._currentStudentReportId = null;
-        this._aiDialogReturnTo = null;
-        this._aiDrilldown = null;
-        this._refreshAiOverviewAfterModal();
+        this._closeModalCore();
     },
     closeModalDirect() {
-        document.getElementById('modal-overlay').classList.add('hidden');
+        this._closeModalCore();
+    },
+    _closeModalCore() {
+        const overlay = document.getElementById('modal-overlay');
+        if (overlay) {
+            overlay.classList.add('hidden');
+            overlay.setAttribute('aria-hidden', 'true');
+        }
         this._currentClassDetailId = null;
         this._currentStudentReportId = null;
         this._aiDialogReturnTo = null;
         this._aiDrilldown = null;
+        // 焦点归位到触发按钮
+        if (this._modalReturnFocus && typeof this._modalReturnFocus.focus === 'function') {
+            try { this._modalReturnFocus.focus(); } catch (e) {}
+        }
+        this._modalReturnFocus = null;
+        if (this._modalKeyHandler) {
+            document.removeEventListener('keydown', this._modalKeyHandler);
+            this._modalKeyHandler = null;
+        }
         this._refreshAiOverviewAfterModal();
     },
     _refreshAiOverviewAfterModal() {
@@ -1321,7 +1415,7 @@ const App = {
                 <div class="w-10 h-10 rounded-xl bg-slate-500/40 flex items-center justify-center ${c.icon} group-hover:scale-110 transition-transform">${icon}</div>
             </div>
             <div class="text-3xl font-bold text-white tracking-tight">${value}</div>
-            ${growth ? `<div class="text-xs ${c.text} mt-1.5 flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path></svg>${growth}</div>` : ''}
+            ${growth ? `<div class="text-xs ${c.text} mt-1.5 flex items-center gap-1"><svg class="w-3 h-3" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path></svg>${growth}</div>` : ''}
         </div>`;
     },
 
@@ -1352,7 +1446,7 @@ const App = {
             onmouseleave="App._hideHelpTip()"
             onfocus="App._showHelpTip(this)"
             onblur="App._hideHelpTip()">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><circle cx="12" cy="12" r="9"/></svg>
+            <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><circle cx="12" cy="12" r="9"/></svg>
         </span>`;
     },
 
@@ -1369,8 +1463,8 @@ const App = {
             data-duration="${dur}"
             onclick="event.stopPropagation();App.playVoiceFromButton('${id}')"
             title="${label} · ${dur}s">
-            <svg class="voice-play-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 5v14l11-7z"/></svg>
-            <svg class="voice-pause-icon hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5h2v14H9zM13 5h2v14h-2z"/></svg>
+            <svg class="voice-play-icon" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 5v14l11-7z"/></svg>
+            <svg class="voice-pause-icon hidden" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5h2v14H9zM13 5h2v14h-2z"/></svg>
             <span class="voice-wave" aria-hidden="true">
                 <span></span><span></span><span></span><span></span><span></span>
             </span>
@@ -1554,16 +1648,19 @@ const App = {
         };
         const renderMetricRanking = config => {
             const accent = accentMap[config.accent];
-            const ranked = [...schools].sort((a, b) => b[config.key] - a[config.key]);
-            const maxValue = ranked[0]?.[config.key] || 1;
+            const fullRanked = [...schools].sort((a, b) => b[config.key] - a[config.key]);
+            const ranked = fullRanked.slice(0, 5);
+            const maxValue = fullRanked[0]?.[config.key] || 1;
             return `
                 <div class="rounded-[24px] border border-slate-600/20 bg-gradient-to-b from-slate-800/60 to-slate-800/50 p-5 shadow-xl">
                     <div class="flex items-center justify-between gap-3 mb-4">
                         <div>
-                            <div class="text-sm font-semibold text-white">${config.title}</div>
+                            <div class="text-sm font-semibold text-white">${config.title} TOP5</div>
                             <div class="text-xs text-slate-400 mt-0.5">区域平均 ${config.avgValue}${config.unit}</div>
                         </div>
-                        <span class="px-2.5 py-1 rounded-full border text-xs ${accent.badge}">${ranked.length} 所园所</span>
+                        <button onclick="App.openSchoolMetricRankingModal('${config.key}')"
+                            class="text-[11px] px-2 py-0.5 rounded-md border border-slate-500/30 text-slate-300 hover:text-white hover:border-cyan-400/40 transition-colors"
+                            title="弹窗查看全部园所，可按列排序">查看全部 →</button>
                     </div>
                     <div class="space-y-3">
                         ${ranked.map((item, index) => {
@@ -1654,6 +1751,95 @@ const App = {
         `;
     },
 
+    // —— 园所班均使用对比 · "查看全部"弹窗 ——
+    schoolMetricModalState: {
+        metric: 'avgActivityCount',
+        sort: { key: 'avgActivityCount', dir: 'desc' }
+    },
+    openSchoolMetricRankingModal(metricKey) {
+        this.schoolMetricModalState.metric = metricKey;
+        this.schoolMetricModalState.sort = { key: metricKey, dir: 'desc' };
+        this.openModal(this.renderSchoolMetricRankingModal(), { size: 'wide' });
+    },
+    setSchoolMetricRankingSort(key) {
+        const s = this.schoolMetricModalState.sort;
+        if (s.key === key) {
+            s.dir = s.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+            s.key = key;
+            s.dir = 'desc';
+        }
+        const host = document.getElementById('modal-content');
+        if (host) host.innerHTML = this.renderSchoolMetricRankingModal();
+    },
+    renderSchoolMetricRankingModal() {
+        const cmp = this.getAdminClassUsageComparison();
+        const schools = (cmp && cmp.schools) || [];
+        const summary = (cmp && cmp.summary) || {};
+        const state = this.schoolMetricModalState;
+        const metricMeta = {
+            avgActivityCount:    { title: '班均活动次数',  unit: '次/班',  avg: summary.avgActivityCount },
+            avgParticipantCount: { title: '班均参与人次',  unit: '人次/班', avg: summary.avgParticipantCount },
+            avgActivityDuration: { title: '班均活动时长',  unit: 'h/班' },
+            avgDeviceUseCount:   { title: '班均设备使用次数', unit: '次/班' }
+        };
+        const meta = metricMeta[state.metric] || metricMeta.avgActivityCount;
+        // 表格列（含 4 个排序口径）
+        const cols = [
+            { key: 'rank', label: '排名', sortable: false, align: 'text-center', width: 'w-16' },
+            { key: 'name', label: '园所', sortable: false, align: 'text-left' },
+            { key: 'district', label: '区域', sortable: false, align: 'text-center' },
+            { key: 'classCount', label: '班级数', sortable: true, align: 'text-center' },
+            { key: 'avgActivityCount', label: '班均活动次数', sortable: true, align: 'text-center' },
+            { key: 'avgActivityDuration', label: '班均活动时长(h)', sortable: true, align: 'text-center' },
+            { key: 'avgParticipantCount', label: '班均参与人次', sortable: true, align: 'text-center' },
+            { key: 'avgDeviceUseCount', label: '班均设备使用次数', sortable: true, align: 'text-center' }
+        ];
+        const sorted = this.sortByKey(schools, state.sort);
+        const renderTh = (c) => {
+            if (!c.sortable) {
+                return `<th class="px-3 py-2.5 ${c.align} ${c.width || ''} text-xs font-medium text-slate-400 uppercase tracking-wider">${c.label}</th>`;
+            }
+            const isActive = state.sort.key === c.key;
+            const arrow = isActive ? (state.sort.dir === 'asc' ? '▲' : '▼') : '↕';
+            const focusCls = c.key === state.metric ? 'text-cyan-300' : 'text-slate-400';
+            return `<th class="px-3 py-2.5 ${c.align} text-xs font-medium uppercase tracking-wider sortable-th ${isActive ? 'is-sorted' : ''} ${focusCls}"
+                onclick="App.setSchoolMetricRankingSort('${c.key}')">${c.label}<span class="sort-arrow">${arrow}</span></th>`;
+        };
+        const rows = sorted.map((s, i) => `
+            <tr class="hover:bg-blue-500/10 transition-colors">
+                <td class="px-3 py-2.5 text-center text-slate-500">${i + 1}</td>
+                <td class="px-3 py-2.5 font-medium text-slate-200">${s.name}</td>
+                <td class="px-3 py-2.5 text-center text-slate-400">${s.district}</td>
+                <td class="px-3 py-2.5 text-center text-slate-300 tabular-nums">${s.classCount || 0}</td>
+                <td class="px-3 py-2.5 text-center tabular-nums ${state.metric === 'avgActivityCount' ? 'text-cyan-300 font-semibold' : 'text-slate-300'}">${s.avgActivityCount ?? '-'}</td>
+                <td class="px-3 py-2.5 text-center tabular-nums ${state.metric === 'avgActivityDuration' ? 'text-cyan-300 font-semibold' : 'text-slate-300'}">${s.avgActivityDuration ?? '-'}</td>
+                <td class="px-3 py-2.5 text-center tabular-nums ${state.metric === 'avgParticipantCount' ? 'text-cyan-300 font-semibold' : 'text-slate-300'}">${s.avgParticipantCount ?? '-'}</td>
+                <td class="px-3 py-2.5 text-center tabular-nums ${state.metric === 'avgDeviceUseCount' ? 'text-cyan-300 font-semibold' : 'text-slate-300'}">${s.avgDeviceUseCount ?? '-'}</td>
+            </tr>`).join('');
+        const avgLine = meta.avg != null ? ` · 区域平均 <span class="text-slate-200 font-semibold">${meta.avg}${meta.unit}</span>` : '';
+        return `
+            <div class="bg-slate-900 rounded-xl p-6 w-full">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-white">园所班均使用对比 · 全部园所</h3>
+                        <p class="text-xs text-slate-400 mt-1">默认按"${meta.title}"降序，点击列头切换其他指标排序${avgLine}</p>
+                    </div>
+                    <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                        <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="overflow-x-auto rounded-xl border border-slate-700/50 max-h-[70vh] overflow-y-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-800/80 border-b border-slate-700/60 sticky top-0 z-10">
+                            <tr>${cols.map(renderTh).join('')}</tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-700/30">${rows || '<tr><td colspan="8" class="text-center text-slate-500 py-10">暂无数据</td></tr>'}</tbody>
+                    </table>
+                </div>
+            </div>`;
+    },
+
     // 筛选器容器
     filterBar(content) {
         return `<div class="flex flex-wrap items-end gap-3 mb-5 bg-slate-700/50 rounded-xl p-4 border border-slate-500/30">${content}</div>`;
@@ -1677,12 +1863,62 @@ const App = {
         return `<button class="bg-slate-700/60 text-slate-300 px-4 py-1.5 rounded-lg text-sm hover:bg-slate-600/60 transition-colors border border-slate-600/30" onclick="${onclick}">${text}</button>`;
     },
     btnSuccess(text, onclick) {
-        return `<button class="bg-gradient-to-r from-emerald-600 to-emerald-500 text-white px-4 py-1.5 rounded-lg text-sm hover:from-emerald-500 hover:to-emerald-400 transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-1" onclick="${onclick}"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>${text}</button>`;
+        return `<button class="bg-gradient-to-r from-emerald-600 to-emerald-500 text-white px-4 py-1.5 rounded-lg text-sm hover:from-emerald-500 hover:to-emerald-400 transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-1" onclick="${onclick}"><svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>${text}</button>`;
     },
 
     // 表格
-    tableWrap(headers, rows) {
-        return `<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="bg-slate-900/50 text-slate-400 border-b border-slate-700/50">${headers.map(h => `<th class="px-4 py-3 ${h.align || 'text-left'} font-medium text-xs uppercase tracking-wider">${h.label}</th>`).join('')}</tr></thead><tbody class="divide-y divide-slate-700/30">${rows}</tbody></table></div>`;
+    tableWrap(headers, rows, options = {}) {
+        const summaryRow = options.summary || '';
+        const renderHeader = h => {
+            if (h.sortKey && h.sortScope) {
+                const state = this.schoolSort?.[h.sortScope];
+                const isActive = state && state.key === h.sortKey;
+                const arrow = isActive ? (state.dir === 'asc' ? '▲' : '▼') : '↕';
+                return `<th class="px-4 py-3 ${h.align || 'text-left'} font-medium text-xs uppercase tracking-wider sortable-th ${isActive ? 'is-sorted' : ''}"
+                    onclick="App.toggleSort('${h.sortScope}','${h.sortKey}')">
+                    ${h.label}<span class="sort-arrow">${arrow}</span>
+                </th>`;
+            }
+            return `<th class="px-4 py-3 ${h.align || 'text-left'} font-medium text-xs uppercase tracking-wider">${h.label}</th>`;
+        };
+        return `<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="bg-slate-900/50 text-slate-400 border-b border-slate-700/50">${headers.map(renderHeader).join('')}</tr>${summaryRow}</thead><tbody class="divide-y divide-slate-700/30">${rows}</tbody></table></div>`;
+    },
+
+    // —— Skeleton（loading 占位） ——
+    // 用法：container.innerHTML = App.skeletonFor('table' | 'overview' | 'chart')
+    skeletonLine(width = '100%', height = 12) {
+        return `<div class="skeleton-line" style="width:${width};height:${height}px"></div>`;
+    },
+    skeletonBlock(height = 80, extraClass = '') {
+        return `<div class="skeleton-block ${extraClass}" style="height:${height}px"></div>`;
+    },
+    skeletonFor(type) {
+        switch (type) {
+            case 'table':
+                return `
+                    <div class="skeleton-stack" aria-hidden="true">
+                        <div class="flex gap-3 mb-4">${this.skeletonBlock(40, 'flex-1')}${this.skeletonBlock(40, 'flex-1')}${this.skeletonBlock(40, 'w-24')}</div>
+                        ${this.skeletonBlock(44)}
+                        ${Array.from({ length: 8 }).map(() => this.skeletonBlock(40)).join('')}
+                    </div>`;
+            case 'chart':
+                return `<div class="skeleton-block" style="height:288px" aria-hidden="true"></div>`;
+            case 'overview':
+                return `
+                    <div class="skeleton-stack" aria-hidden="true">
+                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">${Array.from({ length: 4 }).map(() => this.skeletonBlock(80)).join('')}</div>
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">${this.skeletonBlock(280)}${this.skeletonBlock(280)}</div>
+                    </div>`;
+            case 'compare':
+                return `
+                    <div class="skeleton-stack" aria-hidden="true">
+                        ${this.skeletonBlock(280)}
+                        <div class="flex gap-3">${this.skeletonBlock(40, 'flex-1')}${this.skeletonBlock(40, 'w-72')}</div>
+                        ${Array.from({ length: 6 }).map(() => this.skeletonBlock(40)).join('')}
+                    </div>`;
+            default:
+                return `<div class="skeleton-block" style="height:160px" aria-hidden="true"></div>`;
+        }
     },
 
     // 状态标签
@@ -1690,6 +1926,493 @@ const App = {
         const colorMap = { blue: 'bg-blue-500/15 text-blue-400 border-blue-500/20', green: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20', red: 'bg-red-500/15 text-red-400 border-red-500/20', purple: 'bg-purple-500/15 text-purple-400 border-purple-500/20', amber: 'bg-amber-500/15 text-amber-400 border-amber-500/20' };
         const c = colorMap[color] || colorMap.blue;
         return `<span class="px-2 py-0.5 rounded-full text-xs border ${c}">${text}</span>`;
+    },
+
+    // —— 区域数据页 admin · 园所横向对比表 ——
+    regionalCompareState: {
+        sort: { key: 'totalActivity', dir: 'desc' },
+        keyword: '',
+        district: 'all',
+        showAll: false
+    },
+    regionalCompareSetSort(key) {
+        const s = this.regionalCompareState.sort;
+        if (s.key === key) {
+            s.dir = s.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+            s.key = key;
+            s.dir = 'desc';
+        }
+        this.refreshRegionalCompare();
+    },
+    regionalCompareSetKeyword(v) {
+        this.regionalCompareState.keyword = v || '';
+        this.refreshRegionalCompare();
+        // 恢复搜索框焦点与光标（整段重渲会丢焦）
+        requestAnimationFrame(() => {
+            const input = document.querySelector('#regional-school-compare-host input[type="text"]');
+            if (input) {
+                input.focus();
+                const len = input.value.length;
+                try { input.setSelectionRange(len, len); } catch (e) {}
+            }
+        });
+    },
+    regionalCompareSetDistrict(d) {
+        this.regionalCompareState.district = d || 'all';
+        this.refreshRegionalCompare();
+    },
+    regionalCompareToggleShowAll() {
+        this.regionalCompareState.showAll = !this.regionalCompareState.showAll;
+        this.refreshRegionalCompare();
+    },
+    // 园所横向对比刷新：优先刷新大数据总览页的 host，否则回退到园所数据页 compare tab
+    refreshRegionalCompare() {
+        const host = document.getElementById('regional-school-compare-host');
+        if (host) {
+            host.innerHTML = this.renderRegionalSchoolCompare();
+            return;
+        }
+        if (this.currentPage === 'schoolData') this.renderSchoolTabContent('compare');
+    },
+    buildRegionalSchoolRows() {
+        const cmp = this.getAdminClassUsageComparison();
+        const schools = (cmp && cmp.schools) || [];
+        return schools.map(s => {
+            const classCount = s.classCount || 0;
+            const totalActivity = Math.round((s.avgActivityCount || 0) * classCount);
+            const totalDuration = Math.round((s.avgActivityDuration || 0) * classCount * 10) / 10;
+            const totalParticipant = Math.round((s.avgParticipantCount || 0) * classCount);
+            return {
+                id: s.kindergartenId,
+                name: s.name,
+                district: s.district,
+                classCount,
+                totalActivity,
+                totalDuration,
+                totalParticipant,
+                avgActivity: s.avgActivityCount || 0,
+                avgDeviceUse: s.avgDeviceUseCount || 0
+            };
+        });
+    },
+    renderRegionalSchoolCompare() {
+        const state = this.regionalCompareState;
+        const all = this.buildRegionalSchoolRows();
+        let filtered = all.slice();
+        if (state.keyword) {
+            const kw = state.keyword.trim();
+            filtered = filtered.filter(r => PinyinUtil.match(r.name, kw));
+        }
+        filtered = this.sortByKey(filtered, state.sort);
+
+        // 默认前 5 行；溢出时支持"全部展示/收起"
+        const defaultLimit = 5;
+        const overflow = filtered.length > defaultLimit;
+        const rows = (state.showAll || !overflow) ? filtered : filtered.slice(0, defaultLimit);
+
+        // 求各列最大值（用筛选后的全部）
+        const max = (key) => Math.max(1, ...filtered.map(r => r[key] || 0));
+        const maxAct = max('totalActivity');
+        const maxDur = max('totalDuration');
+        const maxPart = max('totalParticipant');
+        const maxAvg = max('avgActivity');
+        const maxDev = max('avgDeviceUse');
+
+        // 汇总（仍按 filtered 全量）
+        const sum = (key) => filtered.reduce((s, r) => s + (r[key] || 0), 0);
+        const totalSchools = filtered.length;
+        const sumClass = sum('classCount');
+        const sumAct = sum('totalActivity');
+        const sumDur = Math.round(sum('totalDuration') * 10) / 10;
+        const sumPart = sum('totalParticipant');
+        const avgOfAvg = totalSchools ? (filtered.reduce((s, r) => s + r.avgActivity, 0) / totalSchools) : 0;
+        const avgOfDev = totalSchools ? (filtered.reduce((s, r) => s + r.avgDeviceUse, 0) / totalSchools) : 0;
+
+        const sortState = state.sort;
+        const renderTh = (label, key, align = 'text-center') => {
+            const isActive = sortState.key === key;
+            const arrow = isActive ? (sortState.dir === 'asc' ? '▲' : '▼') : '↕';
+            return `<th class="px-3 py-3 ${align} text-xs font-medium uppercase tracking-wider sortable-th ${isActive ? 'is-sorted' : ''}"
+                onclick="App.regionalCompareSetSort('${key}')">${label}<span class="sort-arrow">${arrow}</span></th>`;
+        };
+
+        const summaryRow = `<tr class="compare-summary-row">
+            <td colspan="2" class="text-left"><span class="summary-label">园所数</span><span class="summary-value">${totalSchools}</span></td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumClass}</span></td>
+            <td class="text-center"><span class="summary-label">区域均值</span><span class="summary-value">${avgOfAvg.toFixed(1)}</span></td>
+            <td class="text-center"><span class="summary-label">区域均值</span><span class="summary-value">${avgOfDev.toFixed(1)}</span></td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumAct}</span></td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumDur}h</span></td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumPart}</span></td>
+            <td></td>
+        </tr>`;
+
+        const tbody = rows.map((r, i) => `
+            <tr class="hover:bg-blue-500/10 transition-colors">
+                <td class="px-3 py-3 text-slate-500">${i + 1}</td>
+                <td class="px-3 py-3 font-medium text-slate-200">${r.name}</td>
+                <td class="px-3 py-3 text-center text-slate-300 tabular-nums">${r.classCount}</td>
+                ${this.barCell(r.avgActivity, maxAvg, { format: () => r.avgActivity.toFixed(1) })}
+                ${this.barCell(r.avgDeviceUse, maxDev, { format: () => r.avgDeviceUse.toFixed(1) })}
+                ${this.barCell(r.totalActivity, maxAct)}
+                ${this.barCell(r.totalDuration, maxDur, { format: () => r.totalDuration + 'h' })}
+                ${this.barCell(r.totalParticipant, maxPart)}
+                <td class="px-3 py-3 text-center"><button onclick="App.viewSchoolDetail(${r.id})" class="text-blue-400 hover:text-blue-300 text-sm">打开详情</button></td>
+            </tr>`).join('');
+
+        const empty = filtered.length ? '' : '<tr><td colspan="9" class="text-center text-slate-500 py-10">暂无符合条件的园所</td></tr>';
+
+        const toggleBtn = overflow
+            ? `<div class="flex justify-center pt-2">
+                <button onclick="App.regionalCompareToggleShowAll()"
+                    class="px-4 py-1.5 rounded-lg text-xs border border-cyan-400/30 bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/20 hover:border-cyan-400/50 transition-colors flex items-center gap-1.5">
+                    ${state.showAll
+                        ? `<svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>收起<span class="text-slate-400">（共 ${filtered.length} 条）</span>`
+                        : `<svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>全部展示<span class="text-slate-400">（剩余 ${filtered.length - defaultLimit} 条）</span>`}
+                </button>
+            </div>`
+            : '';
+
+        return `
+            <div class="space-y-5">
+                <div class="space-y-4">
+                    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                        ${this.chartTitle('园所横向对比', 'bg-cyan-500', '统计范围：当前所选时间范围内全区园所数据。\n口径：每行一个园所，对班均活动次数 / 班均设备使用次数 / 活动总次数 / 总时长 / 参与人次做横向对比。\n用法：\n· 列头点击切换排序\n· 默认仅展示前 5 条，点击"全部展示"查看全部\n· 行末"打开详情"进入该园 7 tab 完整下钻')}
+                        <div class="flex items-center gap-2">
+                            <input type="text" value="${state.keyword.replace(/"/g, '&quot;')}"
+                                oninput="App.regionalCompareSetKeyword(this.value)"
+                                placeholder="搜索园所（支持拼音首字母）"
+                                class="px-3 py-1.5 rounded-lg text-xs border border-slate-500/30 bg-slate-700/40 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-400/50 w-72">
+                            <button onclick="App.exportRegionalCompare()" class="px-3 py-1.5 rounded-lg text-xs border border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25 hover:border-emerald-400/60 transition-colors flex items-center gap-1.5" title="导出当前筛选结果为 CSV">
+                                <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                导出
+                            </button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto rounded-xl border border-slate-500/20">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="bg-slate-900/50 text-slate-400 border-b border-slate-700/50">
+                                    <th class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider">序号</th>
+                                    <th class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider">园所</th>
+                                    ${renderTh('班级数', 'classCount')}
+                                    ${renderTh('班均活动次数', 'avgActivity')}
+                                    ${renderTh('班均设备使用次数', 'avgDeviceUse')}
+                                    ${renderTh('活动总次数', 'totalActivity')}
+                                    ${renderTh('活动总时长', 'totalDuration')}
+                                    ${renderTh('参与总人次', 'totalParticipant')}
+                                    <th class="px-3 py-3 text-center text-xs font-medium uppercase tracking-wider">操作</th>
+                                </tr>
+                                ${filtered.length ? summaryRow : ''}
+                            </thead>
+                            <tbody class="divide-y divide-slate-700/30">
+                                ${tbody || empty}
+                            </tbody>
+                        </table>
+                    </div>
+                    ${toggleBtn}
+                </div>
+            </div>`;
+    },
+
+    // 导出园所横向对比（当前筛选/排序结果）为 CSV
+    exportRegionalCompare() {
+        const state = this.regionalCompareState;
+        let rows = this.buildRegionalSchoolRows();
+        if (state.keyword) {
+            const kw = state.keyword.trim();
+            rows = rows.filter(r => PinyinUtil.match(r.name, kw));
+        }
+        rows = this.sortByKey(rows, state.sort);
+
+        const headers = ['序号', '园所', '班级数', '班均活动次数', '班均设备使用次数', '活动总次数', '活动总时长(h)', '参与总人次'];
+        const csvRows = [headers.join(',')];
+        rows.forEach((r, i) => {
+            const cells = [
+                i + 1,
+                `"${(r.name || '').replace(/"/g, '""')}"`,
+                r.classCount,
+                Number(r.avgActivity || 0).toFixed(1),
+                Number(r.avgDeviceUse || 0).toFixed(1),
+                r.totalActivity,
+                r.totalDuration,
+                r.totalParticipant
+            ];
+            csvRows.push(cells.join(','));
+        });
+
+        const ts = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        const fname = `园所横向对比_${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}.csv`;
+        // 加 BOM 让 Excel 正确识别 UTF-8
+        const blob = new Blob(['﻿' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fname;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        if (typeof this.showToast === 'function') this.showToast(`已导出 ${rows.length} 条记录`, 'success');
+    },
+
+    // —— 园长 · 大数据总览 · 班级横向对比表 ——
+    classCompareState: {
+        sort: { key: 'totalActivity', dir: 'desc' },
+        keyword: '',
+        grade: 'all',     // all | 大班 | 中班 | 小班
+        showAll: false    // false 默认前 5 行，true 全部展示
+    },
+    classCompareSetSort(key) {
+        const s = this.classCompareState.sort;
+        if (s.key === key) {
+            s.dir = s.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+            s.key = key;
+            s.dir = 'desc';
+        }
+        const body = document.getElementById('class-compare-tablewrap');
+        if (body) body.innerHTML = this.renderClassCompareTableArea();
+        else this.refreshClassCompare();
+    },
+    classCompareSetKeyword(v) {
+        this.classCompareState.keyword = v || '';
+        // 只刷新表格区域，避免重渲染搜索框导致输入失焦
+        const body = document.getElementById('class-compare-tablewrap');
+        if (body) {
+            body.innerHTML = this.renderClassCompareTableArea();
+        } else {
+            this.refreshClassCompare();
+        }
+    },
+    classCompareSetGrade(g) {
+        this.classCompareState.grade = g || 'all';
+        this.refreshClassCompare();
+    },
+    classCompareToggleShowAll() {
+        this.classCompareState.showAll = !this.classCompareState.showAll;
+        // 只刷新表格区域，避免整段重渲
+        const body = document.getElementById('class-compare-tablewrap');
+        if (body) body.innerHTML = this.renderClassCompareTableArea();
+        else this.refreshClassCompare();
+    },
+    refreshClassCompare() {
+        const host = document.getElementById('class-compare-host');
+        if (host) host.innerHTML = this.renderClassCompare();
+    },
+    // 从班级名解析班级段：大班 / 中班 / 小班 / 其他
+    classGradeOf(name) {
+        const n = String(name || '');
+        if (n.startsWith('大')) return '大班';
+        if (n.startsWith('中')) return '中班';
+        if (n.startsWith('小')) return '小班';
+        return '其他';
+    },
+    buildClassCompareRows() {
+        const classes = MockData.classes || [];
+        // 园长视角默认看本园，按 selectedSchool 过滤；缺省时取全部本园数据
+        const kgId = this.selectedSchool?.id;
+        const list = kgId ? classes.filter(c => c.kindergartenId === kgId) : classes;
+        return list.map(c => {
+            const totalActivity = c.activityCount || 0;
+            const totalDuration = parseFloat(c.activityDuration) || 0;
+            const totalParticipant = c.participantCount || 0;
+            const deviceUseCount = c.deviceUseCount || 0;
+            const studentCount = c.studentCount || 0;
+            return {
+                id: c.id,
+                name: c.name,
+                grade: this.classGradeOf(c.name),
+                studentCount,
+                teacherCount: c.teacherCount || 0,
+                totalActivity,
+                totalDuration: Math.round(totalDuration * 10) / 10,
+                totalParticipant,
+                deviceUseCount
+            };
+        });
+    },
+    renderClassCompare() {
+        const state = this.classCompareState;
+        const all = this.buildClassCompareRows();
+
+        // 段 chips：基于全部数据（不随当前筛选变化）显示数量
+        const grades = ['all', '大班', '中班', '小班'];
+        const gradeChips = grades.map(g => {
+            const isActive = state.grade === g;
+            const cnt = g === 'all' ? all.length : all.filter(r => r.grade === g).length;
+            const label = g === 'all' ? `全部 ${cnt}` : `${g} ${cnt}`;
+            return `<button onclick="App.classCompareSetGrade('${g}')"
+                class="px-2.5 py-1 rounded-full text-xs border transition-colors
+                    ${isActive
+                        ? 'bg-cyan-400/15 text-cyan-200 border-cyan-400/40'
+                        : 'bg-slate-700/30 text-slate-400 border-slate-500/25 hover:text-slate-200 hover:border-slate-400/40'}">${label}</button>`;
+        }).join('');
+
+        return `
+            <div class="space-y-5">
+                <div class="space-y-4">
+                    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                        ${this.chartTitle('班级横向对比', 'bg-cyan-500', '统计范围：当前所选时间范围内本园全部班级数据。\n口径：每行一个班级，对班级人数 / 设备使用次数 / 活动总次数 / 总时长 / 参与人次做横向对比。\n用法：\n· 列头点击切换排序\n· 顶部段筛选可只看大/中/小班\n· 默认仅展示前 5 条，点击"全部展示"查看全部\n· 行末"打开详情"进入该班完整数据')}
+                        <div class="flex items-center gap-2">
+                            <input type="text" value="${state.keyword.replace(/"/g, '&quot;')}"
+                                oninput="App.classCompareSetKeyword(this.value)"
+                                placeholder="搜索班级（支持拼音首字母）"
+                                class="px-3 py-1.5 rounded-lg text-xs border border-slate-500/30 bg-slate-700/40 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-400/50 w-72">
+                            <button onclick="App.exportClassCompare()" class="px-3 py-1.5 rounded-lg text-xs border border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25 hover:border-emerald-400/60 transition-colors flex items-center gap-1.5" title="导出当前筛选结果为 CSV">
+                                <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                导出
+                            </button>
+                        </div>
+                    </div>
+                    <div id="class-compare-gradechips" class="flex flex-wrap gap-1.5">${gradeChips}</div>
+                    <div id="class-compare-tablewrap">${this.renderClassCompareTableArea()}</div>
+                </div>
+            </div>`;
+    },
+    // 表格区域（受 关键字/段/排序/展开 影响，单独渲染以便局部刷新、避免搜索框失焦）
+    renderClassCompareTableArea() {
+        const state = this.classCompareState;
+        const all = this.buildClassCompareRows();
+
+        // 1) 段筛选
+        let filtered = all.slice();
+        if (state.grade !== 'all') filtered = filtered.filter(r => r.grade === state.grade);
+
+        // 2) 搜索
+        if (state.keyword) {
+            const kw = state.keyword.trim();
+            filtered = filtered.filter(r => PinyinUtil.match(r.name, kw));
+        }
+
+        // 3) 排序
+        filtered = this.sortByKey(filtered, state.sort);
+
+        // 4) "默认前 5 / 全部展示"切换（汇总仍按全部 filtered 计算，更直观）
+        const defaultLimit = 5;
+        const overflow = filtered.length > defaultLimit;
+        const rows = (state.showAll || !overflow) ? filtered : filtered.slice(0, defaultLimit);
+
+        const max = (key) => Math.max(1, ...filtered.map(r => r[key] || 0));
+        const maxAct = max('totalActivity');
+        const maxDur = max('totalDuration');
+        const maxPart = max('totalParticipant');
+        const maxDev = max('deviceUseCount');
+
+        const sum = (key) => filtered.reduce((s, r) => s + (r[key] || 0), 0);
+        const totalClasses = filtered.length;
+        const sumStu = sum('studentCount');
+        const sumAct = sum('totalActivity');
+        const sumDur = Math.round(sum('totalDuration') * 10) / 10;
+        const sumPart = sum('totalParticipant');
+        const sumDev = sum('deviceUseCount');
+
+        const sortState = state.sort;
+        const renderTh = (label, key, align = 'text-center') => {
+            const isActive = sortState.key === key;
+            const arrow = isActive ? (sortState.dir === 'asc' ? '▲' : '▼') : '↕';
+            return `<th class="px-3 py-3 ${align} text-xs font-medium uppercase tracking-wider sortable-th ${isActive ? 'is-sorted' : ''}"
+                onclick="App.classCompareSetSort('${key}')">${label}<span class="sort-arrow">${arrow}</span></th>`;
+        };
+
+        const summaryRow = `<tr class="compare-summary-row">
+            <td colspan="2" class="text-left"><span class="summary-label">班级数</span><span class="summary-value">${totalClasses}</span></td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumStu}</span></td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumDev}</span></td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumAct}</span></td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumDur}h</span></td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumPart}</span></td>
+            <td></td>
+        </tr>`;
+
+        const tbody = rows.map((r, i) => `
+            <tr class="hover:bg-blue-500/10 transition-colors">
+                <td class="px-3 py-3 text-slate-500">${i + 1}</td>
+                <td class="px-3 py-3 font-medium text-slate-200">${r.name}</td>
+                <td class="px-3 py-3 text-center text-slate-300 tabular-nums">${r.studentCount}</td>
+                ${this.barCell(r.deviceUseCount, maxDev)}
+                ${this.barCell(r.totalActivity, maxAct)}
+                ${this.barCell(r.totalDuration, maxDur, { format: () => r.totalDuration + 'h' })}
+                ${this.barCell(r.totalParticipant, maxPart)}
+                <td class="px-3 py-3 text-center"><button onclick="App.viewClassDetail(${r.id})" class="text-blue-400 hover:text-blue-300 text-sm">打开详情</button></td>
+            </tr>`).join('');
+
+        const empty = filtered.length ? '' : '<tr><td colspan="8" class="text-center text-slate-500 py-10">暂无符合条件的班级</td></tr>';
+
+        // 折叠按钮：仅当有溢出（>5）时显示
+        const toggleBtn = overflow
+            ? `<div class="flex justify-center pt-2">
+                <button onclick="App.classCompareToggleShowAll()"
+                    class="px-4 py-1.5 rounded-lg text-xs border border-cyan-400/30 bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/20 hover:border-cyan-400/50 transition-colors flex items-center gap-1.5">
+                    ${state.showAll
+                        ? `<svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>收起<span class="text-slate-400">（共 ${filtered.length} 条）</span>`
+                        : `<svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>全部展示<span class="text-slate-400">（剩余 ${filtered.length - defaultLimit} 条）</span>`}
+                </button>
+            </div>`
+            : '';
+
+        return `
+            <div class="overflow-x-auto rounded-xl border border-slate-500/20">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-900/50 text-slate-400 border-b border-slate-700/50">
+                            <th class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider">序号</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider">班级</th>
+                            ${renderTh('班级人数', 'studentCount')}
+                            ${renderTh('设备使用次数', 'deviceUseCount')}
+                            ${renderTh('活动总次数', 'totalActivity')}
+                            ${renderTh('活动总时长', 'totalDuration')}
+                            ${renderTh('参与总人次', 'totalParticipant')}
+                            <th class="px-3 py-3 text-center text-xs font-medium uppercase tracking-wider">操作</th>
+                        </tr>
+                        ${filtered.length ? summaryRow : ''}
+                    </thead>
+                    <tbody class="divide-y divide-slate-700/30">
+                        ${tbody || empty}
+                    </tbody>
+                </table>
+            </div>
+            ${toggleBtn}`;
+    },
+    exportClassCompare() {
+        const state = this.classCompareState;
+        let rows = this.buildClassCompareRows();
+        if (state.grade !== 'all') rows = rows.filter(r => r.grade === state.grade);
+        if (state.keyword) {
+            const kw = state.keyword.trim();
+            rows = rows.filter(r => PinyinUtil.match(r.name, kw));
+        }
+        rows = this.sortByKey(rows, state.sort);
+
+        const headers = ['序号', '班级', '班级人数', '设备使用次数', '活动总次数', '活动总时长(h)', '参与总人次'];
+        const csvRows = [headers.join(',')];
+        rows.forEach((r, i) => {
+            csvRows.push([
+                i + 1,
+                `"${(r.name || '').replace(/"/g, '""')}"`,
+                r.studentCount,
+                r.deviceUseCount,
+                r.totalActivity,
+                r.totalDuration,
+                r.totalParticipant
+            ].join(','));
+        });
+
+        const ts = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        const fname = `班级横向对比_${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}.csv`;
+        const blob = new Blob(['﻿' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fname;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        if (typeof this.showToast === 'function') this.showToast(`已导出 ${rows.length} 条记录`, 'success');
     },
 
     // ============================================================
@@ -1700,10 +2423,10 @@ const App = {
         const overviewData = this.getOverviewDataForCurrentRange();
         const stats = overviewData.stats;
         const rangeTitle = this.getDateRangeTitle('dataOverview');
-        const iconBook = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>';
-        const iconClock = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
-        const iconUsers = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>';
-        const iconBolt = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>';
+        const iconBook = '<svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>';
+        const iconClock = '<svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
+        const iconUsers = '<svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>';
+        const iconBolt = '<svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>';
 
         // 根据角色显示不同的标题
         let pageTitle = '安徽省合肥市蜀山区大数据总览';
@@ -1717,9 +2440,10 @@ const App = {
 
         return `
         <div class="space-y-6 w-full max-w-[1480px] mx-auto">
-            <div class="relative overflow-hidden rounded-[28px] border border-cyan-400/15 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_28%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.18),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.92))] p-6 lg:p-7 shadow-[0_24px_80px_rgba(2,6,23,0.35)] flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                <h2 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">${pageTitle}</h2>
-                <div class="flex flex-wrap items-center gap-3 lg:justify-end">
+            <div class="relative overflow-hidden rounded-[28px] border border-cyan-400/15 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_28%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.18),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.92))] p-6 lg:p-7 shadow-[0_24px_80px_rgba(2,6,23,0.35)] flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
+                <div class="school-hero-grid absolute inset-0 opacity-20 pointer-events-none" style="background-image:linear-gradient(rgba(148,163,184,0.12) 1px, transparent 1px),linear-gradient(90deg, rgba(148,163,184,0.12) 1px, transparent 1px);background-size:24px 24px;"></div>
+                <h2 class="relative text-2xl lg:text-3xl font-bold bg-gradient-to-r from-white via-cyan-100 to-blue-200 bg-clip-text text-transparent">${pageTitle}</h2>
+                <div class="relative flex flex-wrap items-center gap-3 lg:justify-end">
                     ${scopeBadge}
                     <div class="text-sm text-slate-500" id="overview-date"></div>
                 </div>
@@ -1735,27 +2459,39 @@ const App = {
                 ${this.statCard('绘本阅读时长', stats.readingDuration + 'h', iconBolt, 'amber', '较上一周期增长 8.7%')}
             </div>
 
+            ${this.currentRole === 'admin' ? '<div id="regional-school-compare-host"></div>' : ''}
+
+            ${this.currentRole === 'principal' ? '<div id="class-compare-host"></div>' : ''}
+
+            ${this.currentRole === 'principal'
+                ? `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+                    ${this.card('<div id="school-class-activity-host"></div>')}
+                    ${this.card('<div class="flex flex-col h-full">' + this.renderWeeklyActivityChartHeader() + '<div class="mt-auto"><div id="weekly-activity-chart" class="h-72"></div></div></div>')}
+                  </div>`
+                : ''}
+
+            ${this.currentRole === 'admin'
+                ? `<div class="grid grid-cols-1 gap-6">
+                    ${this.card(this.renderKindergartenUsageChartHeader() + '<div id="kindergarten-usage-chart" class="h-72 mt-3"></div>')}
+                  </div>`
+                : ''}
+
             <!-- 图表第一行 -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                ${this.card(this.chartTitle('幼儿阅读绘本类型次数', 'bg-blue-500', '统计范围：当前所选时间范围内全部绘本阅读记录。\n口径：按绘本"类型标签"聚合阅读次数。\n用途：识别园所/班级近期偏好的内容方向，作为选书与活动设计参考。') + '<div id="book-type-chart" class="h-72"></div>')}
+                ${this.card(this.chartTitle('幼儿绘本阅读类型占比', 'bg-blue-500', '统计范围：当前所选时间范围内全部绘本阅读记录。\n口径：按绘本"类型标签"聚合阅读次数后计算占比。\n用途：识别园所/班级近期偏好的内容方向，作为选书与活动设计参考。') + '<div id="book-type-chart" class="h-72"></div>')}
                 ${this.card(this.chartTitle('幼儿阅读绘本-能力分布', 'bg-emerald-500', '统计范围：当前所选时间范围内全部阅读记录。\n口径：每本绘本携带 1~多个能力标签（语言/社交/想象/逻辑/情感等），按"次数 × 能力标签"加权累计。\n用途：观察阅读对各能力维度的覆盖均衡度。') + '<div id="ability-distribution-chart" class="h-72"></div>')}
             </div>
 
-            <!-- 图表第二行 -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            ${this.currentRole === 'teacher' ? `
+            <!-- 教师图表行 -->
+            <div class="grid grid-cols-1 gap-6">
                 ${this.card(this.renderWeeklyActivityChartHeader() + '<div id="weekly-activity-chart" class="h-72"></div>')}
-                ${this.currentRole === 'admin' 
-                    ? this.card(this.renderKindergartenUsageChartHeader() + '<div id="kindergarten-usage-chart" class="h-72"></div>')
-                    : this.card(this.chartTitle('绘本活动次数排名前十教师', 'bg-purple-500', '统计范围：当前所选时间范围内的绘本活动。\n口径：按发起教师聚合活动次数，取 Top 10。\n用途：识别园所内活跃教师，便于经验复盘与帮带。') + '<div id="teacher-ranking-chart" class="h-72"></div>')}
-            </div>
+            </div>` : ''}
 
-            <!-- 班级排名（园长端可见） -->
-            ${this.currentRole === 'principal' ? this.card(this.chartTitle('绘本活动次数排名前十班级', 'bg-emerald-500', '统计范围：当前所选时间范围内园所所有班级的绘本活动。\n口径：按班级聚合活动次数，取 Top 10。\n用途：发现高活跃班级与低活跃班级，针对性指导。') + '<div id="class-ranking-chart" class="h-72"></div>') : ''}
+            <!-- 园所班均使用对比已移除 -->
 
-            ${this.currentRole === 'admin' ? this.card(this.renderAdminClassUsageComparison(overviewData.classUsageComparison), 'overflow-hidden') : ''}
-
-            <!-- 绘本排行表格（管理员不可见） -->
-            ${this.currentRole !== 'admin' ? this.card(this.chartTitle('阅读次数排名前十绘本', 'bg-indigo-500', '统计范围：当前所选时间范围内园所/班级的绘本阅读记录。\n口径：按绘本聚合阅读次数，取 Top 10。\n用途：识别热门书目，作为选书与采购参考。') + '<div id="book-ranking-table-wrap"></div>') : ''}
+            <!-- 阅读 TOP10 绘本（仅教师端保留；园长端去重，明细去"园所数据-绘本"tab 看） -->
+            ${this.currentRole === 'teacher' ? this.card(this.chartTitle('阅读次数排名前十绘本', 'bg-indigo-500', '统计范围：当前所选时间范围内本班的绘本阅读记录。\n口径：按绘本聚合阅读次数，取 Top 10。\n用途：识别本班热门书目。') + '<div id="book-ranking-table-wrap"></div>') : ''}
         </div>`;
     },
 
@@ -1776,7 +2512,7 @@ const App = {
         ];
         const bookRanking = customBookRanking || MockData.bookRanking;
         const rows = bookRanking.map((book, i) => `
-            <tr class="hover:bg-blue-500/5 transition-colors cursor-pointer">
+            <tr class="hover:bg-blue-500/10 transition-colors cursor-pointer">
                 <td class="px-4 py-3 text-center"><span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${i < 3 ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700/50 text-slate-400'}">${book.rank}</span></td>
                 <td class="px-4 py-3 font-medium text-slate-200">《${book.name}》</td>
                 <td class="px-4 py-3">${this.badge(book.type)}</td>
@@ -1808,8 +2544,8 @@ const App = {
                 ${icon}<span>${label}</span>
             </button>`;
         };
-        const lineIcon = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 17l6-6 4 4 8-8"/></svg>';
-        const barIcon = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20V10M10 20V4M16 20v-6M22 20H2"/></svg>';
+        const lineIcon = '<svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 17l6-6 4 4 8-8"/></svg>';
+        const barIcon = '<svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20V10M10 20V4M16 20v-6M22 20H2"/></svg>';
         return `
             <div class="flex items-center justify-between gap-3 mb-4">
                 <h3 class="text-base font-semibold text-white flex items-center gap-2">
@@ -1877,8 +2613,8 @@ const App = {
                 ${icon}<span>${label}</span>
             </button>`;
         };
-        const lineIcon = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 17l6-6 4 4 8-8"/></svg>';
-        const barIcon = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20V10M10 20V4M16 20v-6M22 20H2"/></svg>';
+        const lineIcon = '<svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 17l6-6 4 4 8-8"/></svg>';
+        const barIcon = '<svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20V10M10 20V4M16 20v-6M22 20H2"/></svg>';
 
         return `
             <div class="space-y-3" id="kindergarten-usage-header">
@@ -1900,13 +2636,13 @@ const App = {
                 <div class="relative" id="kindergarten-dropdown-container">
                     <button onclick="event.stopPropagation();App.toggleKindergartenDropdown()" class="flex items-center justify-between w-full px-3 py-2 rounded-lg text-xs transition-all border bg-slate-700/40 text-slate-300 border-slate-500/30 hover:border-purple-400/30">
                         <span class="truncate">${selectedNames.length > 0 ? selectedNames.join('、') : '请选择园所'}</span>
-                        <svg class="w-4 h-4 transition-transform" id="kindergarten-dropdown-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        <svg class="w-4 h-4 transition-transform" width="16" height="16" id="kindergarten-dropdown-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                     </button>
                     <div id="kindergarten-dropdown-menu" class="hidden absolute top-full left-0 right-0 mt-1 bg-slate-800/95 border border-slate-500/30 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto">
                         ${kindergartens.map(k => `
                             <div onclick="event.stopPropagation();App.toggleKindergartenForLine(${k.id})" class="flex items-center gap-2 px-3 py-2 text-xs cursor-pointer transition-all hover:bg-purple-500/10 ${this.selectedKindergartensForLine.includes(k.id) ? 'bg-purple-500/15 text-purple-300' : 'text-slate-300'}">
                                 <span class="w-4 h-4 rounded border flex items-center justify-center ${this.selectedKindergartensForLine.includes(k.id) ? 'bg-purple-500 border-purple-500' : 'border-slate-500'}">
-                                    ${this.selectedKindergartensForLine.includes(k.id) ? '<svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : ''}
+                                    ${this.selectedKindergartensForLine.includes(k.id) ? '<svg class="w-3 h-3 text-white" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : ''}
                                 </span>
                                 <span class="truncate">${k.name}</span>
                             </div>
@@ -2148,7 +2884,8 @@ const App = {
         const pageSub = isTeacher
             ? `仅展示「${teacherClassName}」的绘本大模型互动数据`
             : '汇总园所内绘本大模型相关数据，洞察孩子的好奇心与互动偏好';
-        const trendTitle = isTeacher ? `${teacherClassName} AI 对话次数变化` : '各班级 AI 对话次数变化';
+        // 默认展开"班级数据"卡
+        if (this._aiActiveMetric == null) this._aiActiveMetric = 'classData';
         return `
         <div class="space-y-6">
             <div class="flex items-center justify-between">
@@ -2157,50 +2894,294 @@ const App = {
                     <p class="text-xs text-slate-400 mt-1">${pageSub}</p>
                 </div>
                 <div class="flex items-center gap-3">
-                    <button onclick="App.startAiClassAnalysis()" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-200 text-xs border border-amber-400/40 transition-colors flex items-center gap-1.5">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
-                        班级 AI 分析
-                    </button>
                     ${isTeacher ? `<span class="px-3 py-1.5 rounded-full bg-cyan-500/15 text-cyan-300 text-xs border border-cyan-400/30">👩‍🏫 ${teacherClassName}</span>` : ''}
                 </div>
             </div>
 
             <div id="ai-date-filter">${this.renderDateFilterBar('aiOverview')}</div>
 
-            <!-- 3 张指标卡（可点击展开明细） -->
-            <div id="ai-summary-grid" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <!-- 4 张并列卡片：班级数据 + 活跃幼儿数 + 互动绘本数 + 累计 AI 对话次数 -->
+            <div id="ai-summary-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                 ${this.renderAiSummaryCards(summary)}
             </div>
             <div id="ai-metric-panel-wrapper" class="${this._aiActiveMetric ? '' : 'hidden'}">
                 ${this._aiActiveMetric ? this.renderAiMetricPanel(this._aiActiveMetric) : ''}
             </div>
-
-            <!-- AI 对话次数变化 与 绘本互动排行 并列 -->
-            <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-slate-500/35 p-5">
-                    <div class="flex items-center justify-between mb-3">
-                        <div class="flex items-center gap-2">
-                            <span class="w-1.5 h-4 bg-cyan-400 rounded"></span>
-                            <h3 class="text-sm font-semibold text-slate-200">${trendTitle}</h3>
-                        </div>
-                        <span class="text-[11px] text-slate-500">${this.buildAiOverviewTimeline().granularity === 'month' ? '月' : '日'}</span>
-                    </div>
-                    <div id="ai-class-dialog-chart" class="h-80"></div>
-                </div>
-                <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-slate-500/35 p-5">
-                    <div class="flex items-center gap-2 mb-3">
-                        <span class="w-1.5 h-4 bg-emerald-400 rounded"></span>
-                        <h3 class="text-sm font-semibold text-slate-200">绘本互动排行 TOP10</h3>
-                    </div>
-                    <div id="ai-book-interaction-chart" class="h-80"></div>
-                </div>
-            </div>
         </div>`;
+    },
+
+    // 历史列表中的"生成中"占位项（不可点击，生成完成后会被替换为正式记录）
+    renderAiGeneratingHistoryItem(icon, name, nameClass, report) {
+        const rangeLabel = this.formatAiRangeLabel(report.rangeKey);
+        const author = report.author || this.getCurrentUserName();
+        return `
+            <div class="rounded-xl border border-cyan-400/40 bg-cyan-500/5 p-3 flex items-start justify-between gap-3 cursor-not-allowed opacity-90" title="正在生成中，请稍候…">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 mb-1 flex-wrap">
+                        <span class="text-sm font-semibold ${nameClass} truncate">${icon} ${name}</span>
+                        ${rangeLabel ? `<span class="text-[10px] px-1.5 py-0.5 rounded border border-slate-500/30 text-slate-400">${rangeLabel}</span>` : ''}
+                        <span class="text-[10px] px-1.5 py-0.5 rounded border border-cyan-500/30 text-cyan-300">生成者：${author}</span>
+                    </div>
+                    <div class="text-xs text-cyan-300 leading-5 flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-cyan-300 animate-pulse"></span>
+                        正在生成 AI 分析报告，请稍候…
+                    </div>
+                </div>
+                <span class="shrink-0 px-2 py-1 rounded-md text-[10px] text-cyan-300 border border-cyan-400/30 flex items-center gap-1">
+                    <svg class="w-3 h-3 animate-spin" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8V2.5"/></svg>
+                    生成中
+                </span>
+            </div>`;
+    },
+
+    // 启动生成时：向历史列表插入一条"生成中"占位，返回其唯一 id
+    insertGeneratingReport(kind, key, rangeKey) {
+        const store = { book: '_aiBookReports', student: '_aiStudentReports', class: '_aiClassReports' }[kind];
+        if (!this[store]) this[store] = {};
+        const list = this[store][key] || (this[store][key] = []);
+        const id = this.genAiReportId();
+        list.unshift({
+            id, generating: true, rangeKey,
+            author: this.getCurrentUserName(),
+            generatedAt: this.formatNowDateTime()
+        });
+        this._refreshAiHistoryPanel(kind);
+        return id;
+    },
+    _refreshAiHistoryPanel(kind) {
+        if (kind === 'book') this.refreshAiBookAnalysisHistory();
+        else if (kind === 'student') this.refreshAiStudentAnalysisHistory();
+        else if (kind === 'class') this.refreshAiClassAnalysisHistory();
+    },
+    _aiReportStore(kind) {
+        return { book: '_aiBookReports', student: '_aiStudentReports', class: '_aiClassReports' }[kind];
+    },
+    // 生成完成：把"生成中"占位替换为正式记录（保留占位 id 与列表位置）
+    finalizeGeneratingReport(kind, key, placeholderId, report) {
+        const store = this._aiReportStore(kind);
+        if (!this[store]) this[store] = {};
+        const list = this[store][key] || (this[store][key] = []);
+        const snap = this.cloneAiReport(report);
+        snap.generating = false;
+        snap.id = placeholderId || snap.id || this.genAiReportId();
+        const idx = list.findIndex(r => r.id === placeholderId);
+        if (idx >= 0) list[idx] = snap; else list.unshift(snap);
+        this._persistAiReports(kind);
+        this._refreshAiHistoryPanel(kind);
+    },
+    // 生成失败：移除"生成中"占位，避免列表里留下永久 loading 项
+    removeGeneratingReport(kind, key, placeholderId) {
+        const store = this._aiReportStore(kind);
+        const list = (this[store] || {})[key];
+        if (!list) return;
+        const idx = list.findIndex(r => r.id === placeholderId);
+        if (idx >= 0) list.splice(idx, 1);
+        this._persistAiReports(kind);
+        this._refreshAiHistoryPanel(kind);
+    },
+    _persistAiReports(kind) {
+        if (kind === 'book' && this.persistAiReports) this.persistAiReports();
+        else if (kind === 'student' && this.persistAiStudentReports) this.persistAiStudentReports();
+        else if (kind === 'class' && this.persistAiClassReports) this.persistAiClassReports();
+    },
+
+    // AI 分析栏内联历史列表的搜索关键词
+    _aiInlineHistKeyword: { class: '', student: '', book: '' },
+    setAiInlineHistKeyword(kind, kw) {
+        if (!this._aiInlineHistKeyword) this._aiInlineHistKeyword = { class: '', student: '', book: '' };
+        this._aiInlineHistKeyword[kind] = kw;
+        if (kind === 'class') this.refreshAiClassAnalysisHistory();
+        else if (kind === 'student') this.refreshAiStudentAnalysisHistory();
+        else if (kind === 'book') this.refreshAiBookAnalysisHistory();
+    },
+    _aiInlineHistMatch(kind, name) {
+        const kw = ((this._aiInlineHistKeyword || {})[kind] || '').trim().toLowerCase();
+        if (!kw) return true;
+        const n = String(name || '').toLowerCase();
+        if (n.includes(kw)) return true;
+        if (window.PinyinUtil && PinyinUtil.match) { try { return PinyinUtil.match(name, kw); } catch (e) {} }
+        return false;
+    },
+    // AI 分析栏标题旁的搜索框（搜索该栏历史报告）
+    renderAiInlineHistSearch(kind, ph) {
+        const kw = ((this._aiInlineHistKeyword || {})[kind] || '').replace(/"/g, '&quot;');
+        return `<div class="relative">
+            <input type="text" value="${kw}" placeholder="${ph}"
+                oninput="App.setAiInlineHistKeyword('${kind}', this.value)"
+                class="w-44 pl-7 pr-2 py-1.5 rounded-lg bg-slate-800/70 border border-slate-600/50 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-400/60">
+            <svg class="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
+        </div>`;
+    },
+
+    // 班级 AI 分析历史记录列表（左侧栏中默认展示）
+    renderAiClassAnalysisHistoryPanel() {
+        const reports = this._aiClassReports || {};
+        // 平铺所有班级的历史报告，按生成时间倒序
+        const flat = [];
+        Object.keys(reports).forEach(cls => {
+            const list = reports[cls] || [];
+            list.forEach(r => flat.push({ className: cls, report: r }));
+        });
+        flat.sort((a, b) => {
+            const ta = new Date(a.report.generatedAt || 0).getTime();
+            const tb = new Date(b.report.generatedAt || 0).getTime();
+            return tb - ta;
+        });
+        // 教师视角只看自己班
+        let scoped = flat;
+        if (this.isTeacherScope()) {
+            const tn = this.getTeacherClassName();
+            scoped = flat.filter(x => x.className === tn);
+        } else if (this.selectedSchool) {
+            const ids = (MockData.classes || []).filter(c => c.kindergartenId === this.selectedSchool.id).map(c => c.name);
+            const set = new Set(ids);
+            scoped = flat.filter(x => set.has(x.className));
+        }
+        scoped = scoped.filter(x => this._aiInlineHistMatch('class', x.className));
+        if (!scoped.length) {
+            return `<div class="rounded-xl border border-dashed border-slate-500/30 bg-slate-800/30 px-4 py-8 text-center text-xs text-slate-500">
+                ${((this._aiInlineHistKeyword || {}).class || '').trim() ? '没有匹配的历史报告' : '暂无历史 AI 分析记录，点击右上角"新增 AI 分析"开始第一份报告'}
+            </div>`;
+        }
+        const fmt = ts => {
+            if (!ts) return '-';
+            try {
+                const d = new Date(ts);
+                const pad = n => String(n).padStart(2, '0');
+                return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            } catch (e) { return ts; }
+        };
+        const items = scoped.slice(0, 10).map(({ className, report }) => {
+            if (report.generating) return this.renderAiGeneratingHistoryItem('🏫', className, 'text-amber-200', report);
+            const escName = className.replace(/'/g, "\\'");
+            const escTs = String(report.id || report.generatedAt || '').replace(/'/g, "\\'");
+            const summaryText = report.summary || report.profile || '已生成班级 AI 分析报告';
+            const truncated = String(summaryText).slice(0, 60);
+            const rangeLabel = this.formatAiRangeLabel(report.rangeKey);
+            const author = report.author || this.getCurrentUserName();
+            return `
+                <div class="rounded-xl border border-slate-600/30 bg-slate-800/40 hover:border-amber-400/40 hover:bg-slate-800/55 transition-colors p-3 flex items-start justify-between gap-3 cursor-pointer"
+                    onclick="App.loadHistoricalClassReport('${escName}', '${escTs}')">
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2 mb-1 flex-wrap">
+                            <span class="text-sm font-semibold text-amber-200 truncate">🏫 ${className}</span>
+                            ${rangeLabel ? `<span class="text-[10px] px-1.5 py-0.5 rounded border border-slate-500/30 text-slate-400">${rangeLabel}</span>` : ''}
+                            <span class="text-[10px] px-1.5 py-0.5 rounded border border-cyan-500/30 text-cyan-300">生成者：${author}</span>
+                        </div>
+                        <div class="text-xs text-slate-400 leading-5 line-clamp-2">${truncated}${String(summaryText).length > 60 ? '…' : ''}</div>
+                        <div class="text-[10px] text-slate-500 mt-1">${report.generatedAt || '-'}</div>
+                    </div>
+                    <button class="shrink-0 px-2 py-1 rounded-md text-[10px] text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 border border-slate-600/30 hover:border-rose-400/40 transition-colors"
+                        onclick="event.stopPropagation();App.deleteAiClassReport('${escName}', '${escTs}')" title="删除">删除</button>
+                </div>
+            `;
+        }).join('');
+        return `<div class="space-y-2 max-h-[440px] overflow-y-auto pr-1">${items}</div>`;
+    },
+
+    refreshAiClassAnalysisHistory() {
+        const host = document.getElementById('ai-class-analysis-history');
+        if (host) host.innerHTML = this.renderAiClassAnalysisHistoryPanel();
+    },
+
+    // 幼儿 AI 分析历史记录列表（活跃幼儿明细下方）
+    renderAiStudentAnalysisHistoryPanel() {
+        const reports = this._aiStudentReports || {};
+        const flat = [];
+        Object.keys(reports).forEach(stu => {
+            (reports[stu] || []).forEach(r => flat.push({ student: stu, report: r }));
+        });
+        flat.sort((a, b) => new Date(b.report.generatedAt || 0) - new Date(a.report.generatedAt || 0));
+        const flatF = flat.filter(x => this._aiInlineHistMatch('student', x.student));
+        if (!flatF.length) {
+            return `<div class="rounded-xl border border-dashed border-slate-500/30 bg-slate-800/30 px-4 py-8 text-center text-xs text-slate-500">
+                ${((this._aiInlineHistKeyword || {}).student || '').trim() ? '没有匹配的历史报告' : '暂无历史 AI 分析记录，点击右上角"新增 AI 分析"开始第一份报告'}
+            </div>`;
+        }
+        const items = flatF.slice(0, 10).map(({ student, report }) => {
+            if (report.generating) return this.renderAiGeneratingHistoryItem('👶', student, 'text-emerald-200', report);
+            const escName = student.replace(/'/g, "\\'");
+            const escTs = String(report.id || report.generatedAt || '').replace(/'/g, "\\'");
+            const summaryText = report.summary || report.profile || '已生成幼儿 AI 分析报告';
+            const truncated = String(summaryText).slice(0, 60);
+            const rangeLabel = this.formatAiRangeLabel(report.rangeKey);
+            const author = report.author || this.getCurrentUserName();
+            return `
+                <div class="rounded-xl border border-slate-600/30 bg-slate-800/40 hover:border-emerald-400/40 hover:bg-slate-800/55 transition-colors p-3 flex items-start justify-between gap-3 cursor-pointer"
+                    onclick="App.loadHistoricalStudentReport('${escName}', '${escTs}')">
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2 mb-1 flex-wrap">
+                            <span class="text-sm font-semibold text-emerald-200 truncate">👶 ${student}</span>
+                            ${rangeLabel ? `<span class="text-[10px] px-1.5 py-0.5 rounded border border-slate-500/30 text-slate-400">${rangeLabel}</span>` : ''}
+                            <span class="text-[10px] px-1.5 py-0.5 rounded border border-cyan-500/30 text-cyan-300">生成者：${author}</span>
+                        </div>
+                        <div class="text-xs text-slate-400 leading-5 line-clamp-2">${truncated}${String(summaryText).length > 60 ? '…' : ''}</div>
+                        <div class="text-[10px] text-slate-500 mt-1">${report.generatedAt || '-'}</div>
+                    </div>
+                    <button class="shrink-0 px-2 py-1 rounded-md text-[10px] text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 border border-slate-600/30 hover:border-rose-400/40 transition-colors"
+                        onclick="event.stopPropagation();App.deleteAiStudentReport('${escName}', '${escTs}')" title="删除">删除</button>
+                </div>`;
+        }).join('');
+        return `<div class="space-y-2 max-h-[440px] overflow-y-auto pr-1">${items}</div>`;
+    },
+    refreshAiStudentAnalysisHistory() {
+        const host = document.getElementById('ai-student-analysis-history');
+        if (host) host.innerHTML = this.renderAiStudentAnalysisHistoryPanel();
+    },
+
+    // 绘本 AI 分析历史记录列表（互动绘本明细下方）
+    renderAiBookAnalysisHistoryPanel() {
+        const reports = this._aiBookReports || {};
+        const flat = [];
+        Object.keys(reports).forEach(bk => {
+            (reports[bk] || []).forEach(r => flat.push({ book: bk, report: r }));
+        });
+        flat.sort((a, b) => new Date(b.report.generatedAt || 0) - new Date(a.report.generatedAt || 0));
+        const flatF = flat.filter(x => this._aiInlineHistMatch('book', x.book));
+        if (!flatF.length) {
+            return `<div class="rounded-xl border border-dashed border-slate-500/30 bg-slate-800/30 px-4 py-8 text-center text-xs text-slate-500">
+                ${((this._aiInlineHistKeyword || {}).book || '').trim() ? '没有匹配的历史报告' : '暂无历史 AI 分析记录，点击右上角"新增 AI 分析"开始第一份报告'}
+            </div>`;
+        }
+        const items = flatF.slice(0, 10).map(({ book, report }) => {
+            if (report.generating) return this.renderAiGeneratingHistoryItem('📖', `《${book}》`, 'text-cyan-200', report);
+            const escName = book.replace(/'/g, "\\'");
+            const escTs = String(report.id || report.generatedAt || '').replace(/'/g, "\\'");
+            const summaryText = report.summary || report.profile || '已生成绘本 AI 分析报告';
+            const truncated = String(summaryText).slice(0, 60);
+            const rangeLabel = this.formatAiRangeLabel(report.rangeKey);
+            const author = report.author || this.getCurrentUserName();
+            return `
+                <div class="rounded-xl border border-slate-600/30 bg-slate-800/40 hover:border-cyan-400/40 hover:bg-slate-800/55 transition-colors p-3 flex items-start justify-between gap-3 cursor-pointer"
+                    onclick="App.loadHistoricalReport('${escName}', '${escTs}')">
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2 mb-1 flex-wrap">
+                            <span class="text-sm font-semibold text-cyan-200 truncate">📖 《${book}》</span>
+                            ${rangeLabel ? `<span class="text-[10px] px-1.5 py-0.5 rounded border border-slate-500/30 text-slate-400">${rangeLabel}</span>` : ''}
+                            <span class="text-[10px] px-1.5 py-0.5 rounded border border-cyan-500/30 text-cyan-300">生成者：${author}</span>
+                        </div>
+                        <div class="text-xs text-slate-400 leading-5 line-clamp-2">${truncated}${String(summaryText).length > 60 ? '…' : ''}</div>
+                        <div class="text-[10px] text-slate-500 mt-1">${report.generatedAt || '-'}</div>
+                    </div>
+                    <button class="shrink-0 px-2 py-1 rounded-md text-[10px] text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 border border-slate-600/30 hover:border-rose-400/40 transition-colors"
+                        onclick="event.stopPropagation();App.deleteAiReport('${escName}', '${escTs}')" title="删除">删除</button>
+                </div>`;
+        }).join('');
+        return `<div class="space-y-2 max-h-[440px] overflow-y-auto pr-1">${items}</div>`;
+    },
+    refreshAiBookAnalysisHistory() {
+        const host = document.getElementById('ai-book-analysis-history');
+        if (host) host.innerHTML = this.renderAiBookAnalysisHistoryPanel();
     },
 
     renderAiSummaryCards(summary) {
         const active = this._aiActiveMetric;
+        const isTeacher = this.isTeacherScope();
+        const classDataLabel = isTeacher ? '班级 AI 数据' : '园所 AI 数据';
+        // 班级数据卡：value 显示该范围下班级数（管理员园所内 / 教师固定 1）
+        const classCount = isTeacher ? 1 : ((this.selectedSchool && (MockData.classes || []).filter(c => c.kindergartenId === this.selectedSchool.id).length) || (MockData.classes || []).length);
         const cards = [
+            { key: 'classData', label: classDataLabel, value: classCount, unit: isTeacher ? '班' : '班', icon: Icons.school('w-5 h-5'), color: 'from-violet-500/30 to-fuchsia-500/10 border-violet-400/30', accent: 'text-violet-300' },
             { key: 'students', label: '活跃幼儿数', value: summary.activeStudents, unit: '人', icon: Icons.student('w-5 h-5'), color: 'from-emerald-500/30 to-teal-500/10 border-emerald-400/30', accent: 'text-emerald-300' },
             { key: 'books', label: '互动绘本数', value: summary.totalBooks, unit: '本', icon: Icons.book('w-5 h-5'), color: 'from-cyan-500/30 to-blue-500/10 border-cyan-400/30', accent: 'text-cyan-300' },
             { key: 'chats', label: '累计 AI 对话次数', value: summary.totalChats, unit: '次', icon: Icons.chat('w-5 h-5'), color: 'from-amber-500/30 to-orange-500/10 border-amber-400/30', accent: 'text-amber-300' }
@@ -2217,8 +3198,8 @@ const App = {
                         <span class="text-xs text-slate-400">${c.unit}</span>
                     </div>
                     <span class="text-[11px] text-slate-400 flex items-center gap-0.5">
-                        ${active === c.key ? '收起' : '展开'}
-                        <svg class="w-3 h-3 transition-transform ${active === c.key ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        ${active === c.key ? '已展开' : '展开'}
+                        <svg class="w-3 h-3 transition-transform ${active === c.key ? 'rotate-180' : ''}" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                     </span>
                 </div>
             </div>
@@ -2226,22 +3207,23 @@ const App = {
     },
 
     toggleAiMetric(key) {
-        this._aiActiveMetric = (this._aiActiveMetric === key) ? null : key;
-        // 切换卡片时重置分页到第 1 页
+        // 必须始终保持一个卡片展开：点击当前激活的卡片不折叠
+        if (this._aiActiveMetric === key) return;
+        this._aiActiveMetric = key;
         if (!this._aiMetricPages) this._aiMetricPages = { chats: 1, books: 1, students: 1 };
-        if (this._aiActiveMetric) this._aiMetricPages[this._aiActiveMetric] = 1;
-        // 重新渲染卡片高亮状态
+        if (this._aiActiveMetric && this._aiActiveMetric !== 'classData') this._aiMetricPages[this._aiActiveMetric] = 1;
         const grid = document.getElementById('ai-summary-grid');
         if (grid) grid.innerHTML = this.renderAiSummaryCards(this.getAiOverviewSummary());
-        // 切换明细面板
         const wrapper = document.getElementById('ai-metric-panel-wrapper');
         if (wrapper) {
-            if (this._aiActiveMetric) {
-                wrapper.classList.remove('hidden');
-                wrapper.innerHTML = this.renderAiMetricPanel(this._aiActiveMetric);
-            } else {
-                wrapper.classList.add('hidden');
-                wrapper.innerHTML = '';
+            wrapper.classList.remove('hidden');
+            wrapper.innerHTML = this.renderAiMetricPanel(this._aiActiveMetric);
+            // 班级数据面板包含 ECharts 图，需要在 DOM 就绪后初始化
+            if (this._aiActiveMetric === 'classData') {
+                requestAnimationFrame(() => {
+                    Charts.safeInit(() => Charts.initAiClassDialogTrend(this.getAiClassDialogTrend()));
+                    Charts.safeInit(() => Charts.initAiBookInteractionBar(this.getAiBookInteractionsByRange()));
+                });
             }
         }
     },
@@ -2277,13 +3259,61 @@ const App = {
 
     // 明细面板渲染（按类型分发）
     renderAiMetricPanel(key) {
+        if (key === 'classData') return this.renderAiClassDataPanel();
         if (key === 'chats') return this.renderAiChatsDetailPanel();
         if (key === 'books') return this.renderAiBooksDetailPanel();
         if (key === 'students') return this.renderAiStudentsDetailPanel();
         return '';
     },
 
-    _aiMetricPageSize: 20,
+    // 班级数据面板：包含 各班级 AI 对话次数变化 + 绘本互动排行 TOP10 + 班级 AI 分析（历史 + 新增）
+    renderAiClassDataPanel() {
+        const isTeacher = this.isTeacherScope();
+        const teacherClassName = isTeacher ? this.getTeacherClassName() : '';
+        const trendTitle = isTeacher ? `${teacherClassName} AI 对话次数变化` : '各班级 AI 对话次数变化';
+        const granularity = this.buildAiOverviewTimeline().granularity === 'month' ? '月' : '日';
+        return `
+            <div class="space-y-6">
+                <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-slate-500/35 p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <span class="w-1.5 h-4 bg-cyan-400 rounded"></span>
+                                <h3 class="text-sm font-semibold text-slate-200">${trendTitle}</h3>
+                            </div>
+                            <span class="text-[11px] text-slate-500">${granularity}</span>
+                        </div>
+                        <div id="ai-class-dialog-chart" class="h-72"></div>
+                    </div>
+                    <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-slate-500/35 p-5">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-1.5 h-4 bg-emerald-400 rounded"></span>
+                            <h3 class="text-sm font-semibold text-slate-200">绘本互动排行 TOP10</h3>
+                        </div>
+                        <div id="ai-book-interaction-chart" class="h-72"></div>
+                    </div>
+                </div>
+                <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-slate-500/35 p-5">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-2">
+                            <span class="w-1.5 h-4 bg-amber-400 rounded"></span>
+                            <h3 class="text-sm font-semibold text-slate-200">班级 AI 分析历史报告</h3>
+                        </div>
+                        <div class="flex items-center gap-2">
+                        ${this.renderAiInlineHistSearch('class', '搜索班级名…')}
+                        <button onclick="App.startAiClassAnalysis()" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-200 text-xs border border-amber-400/40 transition-colors flex items-center gap-1.5" title="新增一次 AI 分析">
+                            <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            新增 AI 分析
+                        </button>
+                        </div>
+                    </div>
+                    <div id="ai-class-analysis-history">${this.renderAiClassAnalysisHistoryPanel()}</div>
+                </div>
+            </div>
+        `;
+    },
+
+    _aiMetricPageSize: 10,
 
     getAiMetricCurrentPage(key) {
         if (!this._aiMetricPages) this._aiMetricPages = { chats: 1, books: 1, students: 1 };
@@ -2412,11 +3442,11 @@ const App = {
             const escBook = r.book.replace(/'/g, "\\'");
             const bookHash = this.hashStr(r.book);
             const histBtn = history.length
-                ? `<button data-ai-hist-trigger="${bookHash}" onclick="event.stopPropagation();App.toggleAiBookHistoryPopover('${escBook}')" class="ml-1 px-2 py-1 rounded-lg bg-slate-700/50 hover:bg-slate-600/60 text-slate-200 text-xs border border-slate-500/40 transition-colors" title="查看历史报告">📚 ${history.length}</button>`
+                ? `<button onclick="App.openAiBookReportsHistory('${escBook}')" class="px-2 py-1 rounded-lg bg-slate-700/50 hover:bg-slate-600/60 text-slate-200 text-xs border border-slate-500/40 transition-colors whitespace-nowrap" title="查看该绘本的全部历史报告">📚 查看历史报告</button>`
                 : '';
             const analysisCell = hasReport
-                ? `<div class="inline-flex items-center"><button onclick="App.openAiBookAnalysis('${escBook}')" class="px-2 py-1 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 text-xs border border-violet-400/30 transition-colors">📊 打开AI分析</button>${histBtn}</div>`
-                : `<button onclick="App.startAiBookAnalysis('${escBook}')" class="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs border border-amber-400/30 transition-colors">✨ 生成AI分析</button>`;
+                ? `<div class="flex flex-col items-stretch gap-1"><button onclick="App.openAiBookAnalysis('${escBook}')" class="px-2 py-1 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 text-xs border border-violet-400/30 transition-colors whitespace-nowrap">📊 查看最新报告</button>${histBtn}</div>`
+                : `<button onclick="App.startAiBookAnalysis('${escBook}')" class="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs border border-amber-400/30 transition-colors whitespace-nowrap">✨ 生成AI分析</button>`;
             return `
             <tr class="border-b border-slate-700/40 hover:bg-slate-700/30">
                 <td class="px-3 py-2.5 text-center text-xs text-slate-400 w-12">${baseIdx + idx + 1}</td>
@@ -2445,7 +3475,7 @@ const App = {
             { label: '涉及班级', align: 'center', width: '8%' },
             { label: '对话类型分布', align: 'center', width: '18%' },
             { label: '最近互动', align: 'center', width: '11%' },
-            { label: '热点问题分析', align: 'center', width: '16%' },
+            { label: 'AI分析', align: 'center', width: '16%' },
             { label: '操作', align: 'center', width: '6%' }
         ];
         return `
@@ -2463,6 +3493,22 @@ const App = {
                     </table>
                 </div>
                 ${this.renderAiMetricPagination('books', total, currentPage, totalPages)}
+            </div>
+            <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-slate-500/35 p-5 mt-4">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="w-1.5 h-4 bg-cyan-400 rounded"></span>
+                        <h3 class="text-sm font-semibold text-slate-200">绘本 AI 分析历史报告</h3>
+                    </div>
+                    <div class="flex items-center gap-2">
+                    ${this.renderAiInlineHistSearch('book', '搜索绘本名…')}
+                    <button onclick="App.startAiBookAnalysisPick()" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 text-cyan-200 text-xs border border-cyan-400/40 transition-colors flex items-center gap-1.5" title="新增一次 AI 分析">
+                        <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                        新增 AI 分析
+                    </button>
+                    </div>
+                </div>
+                <div id="ai-book-analysis-history">${this.renderAiBookAnalysisHistoryPanel()}</div>
             </div>
         `;
     },
@@ -2498,11 +3544,11 @@ const App = {
             const escStudent = r.student.replace(/'/g, "\\'");
             const studentHash = this.hashStr(r.student);
             const histBtn = history.length
-                ? `<button data-ai-stu-hist-trigger="${studentHash}" onclick="event.stopPropagation();App.toggleAiStudentHistoryPopover('${escStudent}')" class="ml-1 px-2 py-1 rounded-lg bg-slate-700/50 hover:bg-slate-600/60 text-slate-200 text-xs border border-slate-500/40 transition-colors" title="查看历史报告">📚 ${history.length}</button>`
+                ? `<button onclick="App.openAiStudentReportsHistory('${escStudent}')" class="px-2 py-1 rounded-lg bg-slate-700/50 hover:bg-slate-600/60 text-slate-200 text-xs border border-slate-500/40 transition-colors whitespace-nowrap" title="查看该幼儿的全部历史报告">📚 查看历史报告</button>`
                 : '';
             const analysisCell = hasReport
-                ? `<div class="inline-flex items-center"><button onclick="App.openAiStudentAnalysis('${escStudent}')" class="px-2 py-1 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 text-xs border border-violet-400/30 transition-colors">📊 打开AI分析</button>${histBtn}</div>`
-                : `<button onclick="App.startAiStudentAnalysis('${escStudent}')" class="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs border border-amber-400/30 transition-colors">✨ 生成AI分析</button>`;
+                ? `<div class="flex flex-col items-stretch gap-1"><button onclick="App.openAiStudentAnalysis('${escStudent}')" class="px-2 py-1 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 text-xs border border-violet-400/30 transition-colors whitespace-nowrap">📊 查看最新报告</button>${histBtn}</div>`
+                : `<button onclick="App.startAiStudentAnalysis('${escStudent}')" class="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs border border-amber-400/30 transition-colors whitespace-nowrap">✨ 生成AI分析</button>`;
             return `
             <tr class="border-b border-slate-700/40 hover:bg-slate-700/30">
                 <td class="px-3 py-2.5 text-center text-xs text-slate-400 w-12">${baseIdx + idx + 1}</td>
@@ -2532,9 +3578,9 @@ const App = {
             { label: '互动绘本', align: 'center', width: '7%' },
             { label: '对话类型分布', align: 'center', width: '15%' },
             { label: '最近对话', align: 'center', width: '11%' },
-            { label: '最近绘本', align: 'left', width: '13%' },
-            { label: '兴趣画像分析', align: 'center', width: '12%' },
-            { label: '操作', align: 'center', width: '6%' }
+            { label: '最近绘本', align: 'left', width: '11%' },
+            { label: 'AI分析', align: 'center', width: '15%' },
+            { label: '操作', align: 'center', width: '5%' }
         ];
         return `
             <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-emerald-400/25 p-4 mt-4">
@@ -2552,10 +3598,24 @@ const App = {
                 </div>
                 ${this.renderAiMetricPagination('students', total, currentPage, totalPages)}
             </div>
+            <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-slate-500/35 p-5 mt-4">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="w-1.5 h-4 bg-emerald-400 rounded"></span>
+                        <h3 class="text-sm font-semibold text-slate-200">幼儿 AI 分析历史报告</h3>
+                    </div>
+                    <div class="flex items-center gap-2">
+                    ${this.renderAiInlineHistSearch('student', '搜索幼儿姓名…')}
+                    <button onclick="App.startAiStudentAnalysisPick()" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500/20 to-teal-500/20 hover:from-emerald-500/30 hover:to-teal-500/30 text-emerald-200 text-xs border border-emerald-400/40 transition-colors flex items-center gap-1.5" title="新增一次 AI 分析">
+                        <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                        新增 AI 分析
+                    </button>
+                    </div>
+                </div>
+                <div id="ai-student-analysis-history">${this.renderAiStudentAnalysisHistoryPanel()}</div>
+            </div>
         `;
     },
-
-    // 按 aiOverview 时间筛选过滤 mock 对话历史（教师视角下仅返回所带班级的数据）
     getAiHistoryByRange() {
         const range = this.dateRanges.aiOverview || {};
         const start = range?.startDate ? new Date(`${range.startDate}T00:00:00`).getTime() : null;
@@ -2699,11 +3759,11 @@ const App = {
                     <h3 class="text-lg font-bold text-white">📖 阅读对话明细</h3>
                     <div class="flex items-center">
                         <button onclick="App.returnFromAiDrilldownSession()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors mr-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                            <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
                             返回
                         </button>
                         <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
                     </div>
                 </div>
@@ -2769,9 +3829,9 @@ const App = {
             <div class="flex flex-wrap items-center gap-2 mb-4">
                 <span class="text-xs text-slate-400">搜索小朋友：</span>
                 <div class="relative">
-                    <svg class="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <svg class="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     <input id="ai-drilldown-student-search" type="text" value="${studentFilterRaw.replace(/"/g, '&quot;')}" oninput="App.filterAiDrilldownStudent(this.value)" placeholder="输入小朋友姓名..." class="pl-8 pr-8 py-1.5 bg-slate-700/40 border border-slate-600/40 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-400/50 w-56">
-                    ${studentFilter ? `<button onclick="App.filterAiDrilldownStudent('')" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white" title="清除"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>` : ''}
+                    ${studentFilter ? `<button onclick="App.filterAiDrilldownStudent('')" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white" title="清除"><svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>` : ''}
                 </div>
                 ${studentFilter ? `<span class="text-xs text-cyan-300">已筛选 "${studentFilter}" · 命中 ${filteredGroups.length} 条</span>` : `<span class="text-xs text-slate-500">共 ${sortedGroups.length} 次阅读活动</span>`}
             </div>`;
@@ -2839,7 +3899,7 @@ const App = {
                         <div class="text-xs text-slate-400 mt-1">${studentFilter ? `${studentFilter} · ` : ''}${filteredGroups.length} 次阅读活动 · ${filteredChats} 次对话 · ${filteredTurns} 轮</div>
                     </div>
                     <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                 </div>
                 ${filterBar}
@@ -2987,7 +4047,7 @@ const App = {
         `).join('');
         const backBtn = this._aiDialogReturnTo === 'drilldown'
             ? `<button onclick="App.returnFromAiDialogDetail()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors mr-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                    <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
                     返回
                 </button>`
             : '';
@@ -2998,7 +4058,7 @@ const App = {
                     <div class="flex items-center">
                         ${backBtn}
                         <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
                     </div>
                 </div>
@@ -3093,11 +4153,11 @@ const App = {
                     <h3 class="text-lg font-bold text-white">📖 阅读对话明细</h3>
                     <div class="flex items-center">
                         <button onclick="App.returnFromAiDialogDetail()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors mr-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                            <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
                             返回
                         </button>
                         <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
                     </div>
                 </div>
@@ -3130,11 +4190,180 @@ const App = {
     },
 
     _aiBookAnalysisRangeOptions: [
-        { key: '7d', label: '近7天', days: 7 },
-        { key: '1m', label: '近1个月', days: 30 },
-        { key: '6m', label: '近半年', days: 183 },
-        { key: 'all', label: '历史累积数据', days: null }
+        { key: '7d', label: '7天', cnLabel: '近七日', days: 7 },
+        { key: '1m', label: '1个月', cnLabel: '近一个月', days: 30 },
+        { key: '6m', label: '半年', cnLabel: '近半年', days: 183 },
+        { key: '1y', label: '一年', cnLabel: '近一年', days: 365 },
+        { key: 'custom', label: '自选时间', cnLabel: '自选时间', days: null }
     ],
+
+    // chip 标题：含义 + 具体时间段，如"近七日（2026年5月5日-2026年5月11日）"
+    formatAiRangeChipLabel(rangeKey) {
+        const opt = this._aiBookAnalysisRangeOptions.find(o => o.key === rangeKey);
+        if (!opt) return rangeKey;
+        if (rangeKey === 'custom') {
+            const c = this._aiAnalysisCustomRange || {};
+            if (!c.startDate || !c.endDate) return opt.cnLabel;
+            return `${opt.cnLabel}（${this._toCnDate(c.startDate)}-${this._toCnDate(c.endDate)}）`;
+        }
+        const { startDate, endDate } = this.getAiAnalysisRangeBounds(rangeKey);
+        if (!startDate || !endDate) return opt.cnLabel;
+        return `${opt.cnLabel}（${this._toCnDate(startDate)}-${this._toCnDate(endDate)}）`;
+    },
+
+    // 计算具体的时间范围（基于最近 AI 历史日期），用于 chip 副标题与 custom 实际取数
+    getAiAnalysisRangeBounds(rangeKey) {
+        if (rangeKey === 'custom') {
+            const c = this._aiAnalysisCustomRange || {};
+            return { startDate: c.startDate || null, endDate: c.endDate || null };
+        }
+        const opt = this._aiBookAnalysisRangeOptions.find(o => o.key === rangeKey);
+        if (!opt || opt.days == null) return { startDate: null, endDate: null };
+        const latest = this.getLatestAiHistoryDate();
+        const end = new Date(latest);
+        end.setHours(0, 0, 0, 0);
+        const start = new Date(end);
+        start.setDate(start.getDate() - opt.days + 1);
+        const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return { startDate: fmt(start), endDate: fmt(end) };
+    },
+    // 把 yyyy-mm-dd 转为 "yyyy年m月d日"
+    _toCnDate(isoDate) {
+        if (!isoDate) return '';
+        const [y, m, d] = isoDate.split('-').map(Number);
+        return `${y}年${m}月${d}日`;
+    },
+    formatAiRangeLabel(rangeKey) {
+        const opt = this._aiBookAnalysisRangeOptions.find(o => o.key === rangeKey);
+        if (!opt) return rangeKey;
+        if (rangeKey === 'custom') {
+            const c = this._aiAnalysisCustomRange || {};
+            if (!c.startDate || !c.endDate) return `${opt.label}`;
+            return `${this._toCnDate(c.startDate)}-${this._toCnDate(c.endDate)}`;
+        }
+        const { startDate, endDate } = this.getAiAnalysisRangeBounds(rangeKey);
+        if (!startDate || !endDate) return opt.label;
+        return `${this._toCnDate(startDate)}-${this._toCnDate(endDate)}`;
+    },
+    // 从一组对话记录中汇总统计：对话次数 / 累计轮次 / 互动绘本 / 涉及幼儿 / 涉及班级 / 对话类型分布
+    computeAiDialogueStats(dialogues) {
+        const list = dialogues || [];
+        const books = new Set();
+        const students = new Set();
+        const classes = new Set();
+        let turns = 0;
+        let typeRead = 0;   // scope==='page' 阅读中
+        let typeAfter = 0;  // 其它（full）阅读后
+        list.forEach(h => {
+            turns += (h.session?.length || 0);
+            if (h.book) books.add(h.book);
+            if (h.student) students.add(h.student);
+            if (h.className) classes.add(h.className);
+            if (h.scope === 'page') typeRead += 1; else typeAfter += 1;
+        });
+        return {
+            chatCount: list.length,
+            turns,
+            bookCount: books.size,
+            books: [...books],
+            studentCount: students.size,
+            students: [...students],
+            classCount: classes.size,
+            classes: [...classes],
+            typeRead,
+            typeAfter
+        };
+    },
+    // "对话类型分布"的小标签 HTML（阅读中/阅读后）
+    renderAiTypeDistribution(stats) {
+        const r = stats?.typeRead || 0;
+        const a = stats?.typeAfter || 0;
+        return `<span class="inline-flex items-center gap-1">
+            <span class="px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-400/30">阅读中 ${r}</span>
+            <span class="px-1.5 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">阅读后 ${a}</span>
+        </span>`;
+    },
+    // 可用对话样本统计行：与对应明细列表展示范围一致
+    // fields 取值：chat/turns/books/students/classes/type
+    renderAiSampleStatsRow(dialogues, fields, accentTextClass = 'text-cyan-300') {
+        const stats = this.computeAiDialogueStats(dialogues);
+        const labelMap = {
+            chat: ['对话次数', stats.chatCount],
+            turns: ['累计轮次', stats.turns],
+            books: ['互动绘本', stats.bookCount],
+            students: ['涉及幼儿', stats.studentCount],
+            classes: ['涉及班级', stats.classCount],
+        };
+        const cells = fields.filter(f => f !== 'type').map(f => {
+            const [label, val] = labelMap[f];
+            return `<div class="bg-slate-800/60 border border-slate-600/30 rounded-lg px-3 py-2">
+                <span class="text-slate-500">${label}</span>
+                <div class="${accentTextClass} font-semibold">${val}</div>
+            </div>`;
+        });
+        let typeCell = '';
+        if (fields.includes('type')) {
+            typeCell = `<div class="bg-slate-800/60 border border-slate-600/30 rounded-lg px-3 py-2">
+                <span class="text-slate-500">对话类型分布</span>
+                <div class="mt-1">${this.renderAiTypeDistribution(stats)}</div>
+            </div>`;
+        }
+        return `<div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs mb-5">${cells.join('')}${typeCell}</div>`;
+    },
+    // 自选时间状态（共用）：{ startDate, endDate } yyyy-mm-dd
+    _aiAnalysisCustomRange: { startDate: '', endDate: '' },
+    setAiAnalysisCustomRange(field, value) {
+        if (!this._aiAnalysisCustomRange) this._aiAnalysisCustomRange = { startDate: '', endDate: '' };
+        this._aiAnalysisCustomRange[field] = value;
+        // 校验跨度不超过一年
+        const c = this._aiAnalysisCustomRange;
+        if (c.startDate && c.endDate) {
+            const s = new Date(`${c.startDate}T00:00:00`).getTime();
+            const e = new Date(`${c.endDate}T00:00:00`).getTime();
+            if (e < s) {
+                this.showToast?.('结束日期不能早于开始日期', 'error');
+                this._aiAnalysisCustomRange.endDate = '';
+            } else if ((e - s) / 86400000 > 366) {
+                this.showToast?.('自选时间跨度不能超过一年', 'error');
+                this._aiAnalysisCustomRange.endDate = '';
+            }
+        }
+    },
+    // 共用渲染：3 个 AI 分析弹窗的"选择数据时间范围"选择器
+    // selectFn 为字符串类似 "App.selectAiBookAnalysisRange"
+    renderAiAnalysisRangeChips(rangeKey, selectFnName) {
+        const c = this._aiAnalysisCustomRange || { startDate: '', endDate: '' };
+        return `
+            <div class="mb-4">
+                <div class="text-sm text-slate-300 mb-3">选择数据时间范围</div>
+                <div class="grid grid-cols-2 gap-3">
+                    ${this._aiBookAnalysisRangeOptions.map(opt => {
+                        const active = rangeKey === opt.key;
+                        const label = this.formatAiRangeChipLabel(opt.key);
+                        return `
+                            <label class="cursor-pointer">
+                                <input type="radio" name="ai-range-${selectFnName}" value="${opt.key}" ${active ? 'checked' : ''} class="hidden peer" onchange="${selectFnName}('${opt.key}')">
+                                <div class="px-4 py-3 rounded-xl border transition-all ${active ? 'border-amber-400/60 bg-amber-500/15 text-amber-200' : 'border-slate-600/40 bg-slate-800/40 text-slate-300 hover:border-slate-500/60'}">
+                                    <div class="text-sm font-medium">${label}</div>
+                                </div>
+                            </label>
+                        `;
+                    }).join('')}
+                </div>
+                ${rangeKey === 'custom' ? `
+                    <div class="mt-3 flex flex-wrap items-center gap-2">
+                        <label class="text-xs text-slate-400">开始</label>
+                        <input type="date" value="${c.startDate}" max="${c.endDate || ''}" onchange="App.setAiAnalysisCustomRange('startDate', this.value);${selectFnName}('custom')"
+                            class="bg-slate-800/60 border border-slate-600/40 text-slate-200 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-amber-400/50">
+                        <label class="text-xs text-slate-400">结束</label>
+                        <input type="date" value="${c.endDate}" min="${c.startDate || ''}" onchange="App.setAiAnalysisCustomRange('endDate', this.value);${selectFnName}('custom')"
+                            class="bg-slate-800/60 border border-slate-600/40 text-slate-200 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-amber-400/50">
+                        <span class="text-[11px] text-slate-500">跨度不超过一年</span>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    },
 
     // ---------- AI 报告 localStorage 持久化 ----------
     _aiReportsStorageKey: 'aiBookReports',
@@ -3153,7 +4382,7 @@ const App = {
         Object.keys(this._aiBookReports).forEach(book => {
             const list = this._aiBookReports[book];
             if (Array.isArray(list) && list.length) {
-                this._aiBookAnalysis[book] = list[0];
+                this._aiBookAnalysis[book] = this.cloneAiReport(list[0]);
             }
         });
     },
@@ -3170,6 +4399,7 @@ const App = {
         const list = this._aiBookReports[book] || [];
         // 拷贝快照，避免后续修改污染历史条目
         const snapshot = JSON.parse(JSON.stringify(report));
+        if (!snapshot.id) snapshot.id = this.genAiReportId();
         list.unshift(snapshot);
         if (list.length > this._aiReportsMaxPerBook) list.length = this._aiReportsMaxPerBook;
         this._aiBookReports[book] = list;
@@ -3183,10 +4413,10 @@ const App = {
         if (wrapper) wrapper.innerHTML = this.renderAiMetricPanel(this._aiActiveMetric);
     },
 
-    deleteAiReport(book, generatedAt) {
+    deleteAiReport(book, reportId) {
         const list = (this._aiBookReports || {})[book];
         if (!list) return;
-        const idx = list.findIndex(r => r.generatedAt === generatedAt);
+        const idx = list.findIndex(r => (r.id || r.generatedAt) === reportId);
         if (idx < 0) return;
         list.splice(idx, 1);
         if (list.length === 0) {
@@ -3194,7 +4424,7 @@ const App = {
             if (this._aiBookAnalysis) delete this._aiBookAnalysis[book];
         } else {
             // 若删的是当前展示版本，则回退到最新一份
-            this._aiBookAnalysis[book] = list[0];
+            this._aiBookAnalysis[book] = this.cloneAiReport(list[0]);
         }
         this.persistAiReports();
         // 刷新历史 popover 与底层表格
@@ -3202,14 +4432,256 @@ const App = {
         this.refreshAiMetricPanel();
     },
 
-    loadHistoricalReport(book, generatedAt) {
+    loadHistoricalReport(book, reportId) {
         const list = (this._aiBookReports || {})[book] || [];
-        const found = list.find(r => r.generatedAt === generatedAt);
+        const found = list.find(r => (r.id || r.generatedAt) === reportId);
         if (!found) return;
         if (!this._aiBookAnalysis) this._aiBookAnalysis = {};
-        this._aiBookAnalysis[book] = found;
+        this._aiBookAnalysis[book] = this.cloneAiReport(found);
         this._aiBookAnalysisCtx = { book, rangeKey: found.rangeKey };
         this.openModal(this.renderAiBookAnalysisModal('done'), { size: 'xwide' });
+    },
+
+    // —— AI 历史报告：全局遮罩弹框列表（绘本 / 幼儿 / 班级） ——
+    _aiHistFmtTime(ts) {
+        if (!ts) return '-';
+        return ts; // 生成时报告时间已是 yyyy/M/d H:mm 文本
+    },
+    _aiHistRangeLabel(r) {
+        // 历史条目里有 rangeLabel（旧）或 rangeKey；优先用 formatAiRangeLabel 重算
+        if (r.rangeKey) return this.formatAiRangeLabel(r.rangeKey);
+        return r.rangeLabel || '-';
+    },
+    _aiHistStats(r) {
+        return r.stats || this.computeAiDialogueStats([]);
+    },
+
+    _aiReportsHistoryKeyword: { book: '', student: '', class: '' },
+    openAiBookReportsHistory(prefilter) {
+        this._aiReportsHistoryKeyword.book = prefilter || '';
+        this._aiReportsHistoryPages.book = 1;
+        this.openModal(this.renderAiReportsHistoryModal('book'), { size: 'xxwide' });
+    },
+    openAiStudentReportsHistory(prefilter) {
+        this._aiReportsHistoryKeyword.student = prefilter || '';
+        this._aiReportsHistoryPages.student = 1;
+        this.openModal(this.renderAiReportsHistoryModal('student'), { size: 'xxwide' });
+    },
+    openAiClassReportsHistory(prefilter) {
+        this._aiReportsHistoryKeyword.class = prefilter || '';
+        this._aiReportsHistoryPages.class = 1;
+        this.openModal(this.renderAiReportsHistoryModal('class'), { size: 'xxwide' });
+    },
+    setAiReportsHistoryKeyword(kind, kw) {
+        if (!this._aiReportsHistoryKeyword) this._aiReportsHistoryKeyword = { book: '', student: '', class: '' };
+        this._aiReportsHistoryKeyword[kind] = kw;
+        this._aiReportsHistoryPages[kind] = 1;
+        // 局部刷新表格 + 分页，保留搜索框焦点
+        const wrap = document.getElementById('ai-reports-history-body-wrap');
+        if (wrap) wrap.innerHTML = this.renderAiReportsHistoryBody(kind);
+    },
+
+    // 收集并按生成时间倒序排列某一类的全部历史报告（带当前角色过滤）
+    collectAiReportsFlat(kind) {
+        const out = [];
+        const teacherClass = this.isTeacherScope() ? this.getTeacherClassName() : null;
+        const schoolClassSet = (!teacherClass && this.selectedSchool)
+            ? new Set((MockData.classes || []).filter(c => c.kindergartenId === this.selectedSchool.id).map(c => c.name))
+            : null;
+        const inScopeClass = (className) => {
+            if (teacherClass) return className === teacherClass;
+            if (schoolClassSet) return className == null || schoolClassSet.has(className);
+            return true;
+        };
+        if (kind === 'book') {
+            const reports = this._aiBookReports || {};
+            Object.keys(reports).forEach(book => (reports[book] || []).forEach(r => {
+                const st = this._aiHistStats(r);
+                // 教师视角：仅当该报告涉及的班级包含本班
+                if (teacherClass && st.classes && st.classes.length && !st.classes.includes(teacherClass)) return;
+                out.push({ kind, key: book, report: r });
+            }));
+        } else if (kind === 'student') {
+            const reports = this._aiStudentReports || {};
+            Object.keys(reports).forEach(student => (reports[student] || []).forEach(r => {
+                if (!inScopeClass(r.className)) return;
+                out.push({ kind, key: student, report: r });
+            }));
+        } else {
+            const reports = this._aiClassReports || {};
+            Object.keys(reports).forEach(className => (reports[className] || []).forEach(r => {
+                if (!inScopeClass(className)) return;
+                out.push({ kind, key: className, report: r });
+            }));
+        }
+        out.sort((a, b) => {
+            const ta = new Date(a.report.generatedAt || 0).getTime();
+            const tb = new Date(b.report.generatedAt || 0).getTime();
+            return tb - ta;
+        });
+        return out;
+    },
+
+    _aiReportsHistoryPages: { book: 1, student: 1, class: 1 },
+    setAiReportsHistoryPage(kind, page) {
+        if (!this._aiReportsHistoryPages) this._aiReportsHistoryPages = { book: 1, student: 1, class: 1 };
+        this._aiReportsHistoryPages[kind] = page;
+        this.refreshAiReportsHistoryModal(kind);
+    },
+    renderAiReportsHistoryBody(kind) {
+        let allRows = this.collectAiReportsFlat(kind);
+
+        // 搜索过滤：按对象名（班级/幼儿/绘本名）匹配
+        const kw = ((this._aiReportsHistoryKeyword || {})[kind] || '').trim().toLowerCase();
+        if (kw) {
+            allRows = allRows.filter(item => {
+                const name = String(item.key || '').toLowerCase();
+                if (name.includes(kw)) return true;
+                if (window.PinyinUtil && PinyinUtil.match) { try { return PinyinUtil.match(item.key, kw); } catch (e) {} }
+                return false;
+            });
+        }
+
+        // 分页：每页最多 10 条
+        const pageSize = 10;
+        if (!this._aiReportsHistoryPages) this._aiReportsHistoryPages = { book: 1, student: 1, class: 1 };
+        const totalPages = Math.max(1, Math.ceil(allRows.length / pageSize));
+        let curPage = this._aiReportsHistoryPages[kind] || 1;
+        if (curPage > totalPages) { curPage = totalPages; this._aiReportsHistoryPages[kind] = curPage; }
+        const pageStartIdx = (curPage - 1) * pageSize;
+        const rows = allRows.slice(pageStartIdx, pageStartIdx + pageSize);
+
+        // 表头定义
+        let headers;
+        if (kind === 'class') {
+            headers = ['序号', '班级', '时间范围', '对话次数', '累计轮次', '互动绘本', '对话类型分布', '生成报告时间', '生成者', '操作'];
+        } else if (kind === 'student') {
+            headers = ['序号', '幼儿', '班级', '时间范围', '对话次数', '累计轮次', '互动绘本', '对话类型分布', '生成报告时间', '生成者', '操作'];
+        } else {
+            headers = ['序号', '绘本', '时间范围', '对话次数', '累计轮次', '涉及幼儿', '涉及班级', '对话类型分布', '生成报告时间', '生成者', '操作'];
+        }
+
+        const body = rows.length ? rows.map((item, i) => {
+            const r = item.report;
+            if (r.generating) {
+                const nameCell = kind === 'class' ? `🏫 ${item.key}` : kind === 'student' ? item.key : `《${item.key}》`;
+                const nameClr = kind === 'class' ? 'text-amber-200' : kind === 'student' ? 'text-emerald-200' : 'text-cyan-200';
+                const spanCols = headers.length - 2;
+                return `<tr class="border-b border-slate-700/30 bg-cyan-500/5">
+                    <td class="px-3 py-3 text-slate-500">${pageStartIdx + i + 1}</td>
+                    <td class="px-3 py-3 font-medium ${nameClr}">${nameCell}</td>
+                    <td class="px-3 py-3 text-cyan-300 text-xs" colspan="${spanCols}">
+                        <span class="inline-flex items-center gap-1.5">
+                            <svg class="w-3 h-3 animate-spin" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8V2.5"/></svg>
+                            正在生成 AI 分析报告，请稍候…
+                        </span>
+                    </td>
+                    <td class="px-3 py-3 text-center"><span class="px-2 py-1 rounded text-[11px] text-cyan-300 border border-cyan-400/30">生成中</span></td>
+                </tr>`;
+            }
+            const st = this._aiHistStats(r);
+            const ts = String(r.id || r.generatedAt || '').replace(/'/g, "\\'");
+            const key = (item.key || '').replace(/'/g, "\\'");
+            const rangeLabel = this._aiHistRangeLabel(r);
+            const typeDist = this.renderAiTypeDistribution(st);
+            const author = r.author || this.getCurrentUserName();
+            const authorCell = `<td class="px-3 py-3 text-cyan-300 text-xs whitespace-nowrap">${author}</td>`;
+            let viewFn, cells;
+            if (kind === 'class') {
+                viewFn = `App.loadHistoricalClassReport('${key}', '${ts}')`;
+                cells = [
+                    `<td class="px-3 py-3 text-slate-500">${pageStartIdx + i + 1}</td>`,
+                    `<td class="px-3 py-3 font-medium text-amber-200">🏫 ${item.key}</td>`,
+                    `<td class="px-3 py-3 text-slate-300 text-xs">${rangeLabel}</td>`,
+                    `<td class="px-3 py-3 text-center text-slate-300">${st.chatCount}</td>`,
+                    `<td class="px-3 py-3 text-center text-slate-300">${st.turns}</td>`,
+                    `<td class="px-3 py-3 text-center text-slate-300">${st.bookCount}</td>`,
+                    `<td class="px-3 py-3 text-center">${typeDist}</td>`,
+                    `<td class="px-3 py-3 text-slate-400 text-xs whitespace-nowrap">${this._aiHistFmtTime(r.generatedAt)}</td>`,
+                    authorCell
+                ];
+            } else if (kind === 'student') {
+                viewFn = `App.loadHistoricalStudentReport('${key}', '${ts}')`;
+                cells = [
+                    `<td class="px-3 py-3 text-slate-500">${pageStartIdx + i + 1}</td>`,
+                    `<td class="px-3 py-3 font-medium text-emerald-200">${item.key}</td>`,
+                    `<td class="px-3 py-3 text-slate-300">${r.className || '-'}</td>`,
+                    `<td class="px-3 py-3 text-slate-300 text-xs">${rangeLabel}</td>`,
+                    `<td class="px-3 py-3 text-center text-slate-300">${st.chatCount}</td>`,
+                    `<td class="px-3 py-3 text-center text-slate-300">${st.turns}</td>`,
+                    `<td class="px-3 py-3 text-center text-slate-300">${st.bookCount}</td>`,
+                    `<td class="px-3 py-3 text-center">${typeDist}</td>`,
+                    `<td class="px-3 py-3 text-slate-400 text-xs whitespace-nowrap">${this._aiHistFmtTime(r.generatedAt)}</td>`,
+                    authorCell
+                ];
+            } else {
+                viewFn = `App.loadHistoricalReport('${key}', '${ts}')`;
+                cells = [
+                    `<td class="px-3 py-3 text-slate-500">${pageStartIdx + i + 1}</td>`,
+                    `<td class="px-3 py-3 font-medium text-cyan-200">《${item.key}》</td>`,
+                    `<td class="px-3 py-3 text-slate-300 text-xs">${rangeLabel}</td>`,
+                    `<td class="px-3 py-3 text-center text-slate-300">${st.chatCount}</td>`,
+                    `<td class="px-3 py-3 text-center text-slate-300">${st.turns}</td>`,
+                    `<td class="px-3 py-3 text-center text-slate-300">${st.studentCount}</td>`,
+                    `<td class="px-3 py-3 text-center text-slate-300">${st.classCount}</td>`,
+                    `<td class="px-3 py-3 text-center">${typeDist}</td>`,
+                    `<td class="px-3 py-3 text-slate-400 text-xs whitespace-nowrap">${this._aiHistFmtTime(r.generatedAt)}</td>`,
+                    authorCell
+                ];
+            }
+            const delFn = kind === 'class'
+                ? `App.deleteAiClassReport('${key}', '${ts}')`
+                : kind === 'student'
+                    ? `App.deleteAiStudentReport('${key}', '${ts}')`
+                    : `App.deleteAiReport('${key}', '${ts}')`;
+            const opCell = `<td class="px-3 py-3 text-center whitespace-nowrap">
+                <button onclick="${viewFn}" class="px-2 py-1 rounded text-[11px] bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 border border-violet-400/30 mr-1">查看</button>
+                <button onclick="${delFn};App.refreshAiReportsHistoryModal('${kind}')" class="px-2 py-1 rounded text-[11px] bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-400/30">删除</button>
+            </td>`;
+            return `<tr class="hover:bg-white/5 transition-colors border-b border-slate-700/30">${cells.join('')}${opCell}</tr>`;
+        }).join('') : `<tr><td colspan="${headers.length}" class="px-3 py-12 text-center text-slate-500 text-sm">暂无历史分析报告</td></tr>`;
+
+        const pager = totalPages > 1 ? `
+            <div class="flex items-center justify-between mt-3 text-xs text-slate-400">
+                <span>共 ${allRows.length} 条 · 第 ${curPage}/${totalPages} 页</span>
+                <div class="flex items-center gap-1">
+                    <button ${curPage <= 1 ? 'disabled' : ''} onclick="App.setAiReportsHistoryPage('${kind}', ${curPage - 1})" class="px-2.5 py-1 rounded border ${curPage <= 1 ? 'border-slate-700 text-slate-600 cursor-not-allowed' : 'border-slate-600 text-slate-300 hover:bg-slate-700/50'}">上一页</button>
+                    <button ${curPage >= totalPages ? 'disabled' : ''} onclick="App.setAiReportsHistoryPage('${kind}', ${curPage + 1})" class="px-2.5 py-1 rounded border ${curPage >= totalPages ? 'border-slate-700 text-slate-600 cursor-not-allowed' : 'border-slate-600 text-slate-300 hover:bg-slate-700/50'}">下一页</button>
+                </div>
+            </div>` : '';
+
+        return `
+            <div id="ai-reports-history-table" class="flex-1 min-h-0 overflow-auto rounded-xl border border-slate-700/40">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-800/70 sticky top-0 z-10">
+                        <tr>${headers.map(h => `<th class="px-3 py-2.5 text-left text-xs font-medium text-slate-400 whitespace-nowrap">${h}</th>`).join('')}</tr>
+                    </thead>
+                    <tbody>${body}</tbody>
+                </table>
+            </div>
+            <div class="shrink-0">${pager}</div>
+        `;
+    },
+    renderAiReportsHistoryModal(kind) {
+        const titleMap = { book: '绘本 AI 分析历史报告', student: '幼儿 AI 分析历史报告', class: '班级 AI 分析历史报告' };
+        const accentMap = { book: 'text-cyan-300', student: 'text-emerald-300', class: 'text-amber-300' };
+        return `
+            <div class="w-full max-h-[86vh] flex flex-col">
+                <div class="flex items-center justify-between mb-4 gap-3 shrink-0">
+                    <h3 class="text-lg font-semibold ${accentMap[kind]}">${titleMap[kind]}</h3>
+                    <button onclick="App.closeModal()" class="text-slate-400 hover:text-white text-lg">✕</button>
+                </div>
+                <div id="ai-reports-history-body-wrap" class="flex-1 min-h-0 overflow-hidden flex flex-col">${this.renderAiReportsHistoryBody(kind)}</div>
+            </div>
+        `;
+    },
+    refreshAiReportsHistoryModal(kind) {
+        const wrap = document.getElementById('ai-reports-history-body-wrap');
+        if (wrap) { wrap.innerHTML = this.renderAiReportsHistoryBody(kind); return; }
+        const host = document.getElementById('ai-reports-history-table');
+        if (!host) return;
+        const modalBody = host.closest('.w-\\[min\\(96vw\\,1100px\\)\\]') || host.parentElement;
+        if (modalBody) modalBody.outerHTML = this.renderAiReportsHistoryModal(kind);
     },
 
     toggleAiBookHistoryPopover(book) {
@@ -3269,8 +4741,8 @@ const App = {
                         <div class="text-xs text-slate-200 truncate">${dateStr} - ${bookLabel}</div>
                         <div class="text-[11px] text-slate-500 mt-0.5">分析维度：${scopeLabel} · ${rangeLabel} · 样本：${sample}</div>
                     </div>
-                    <button onclick="App.loadHistoricalReport('${escBook}', '${(r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-400/30">查看</button>
-                    <button onclick="App.deleteAiReport('${escBook}', '${(r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-400/30">删除</button>
+                    <button onclick="App.loadHistoricalReport('${escBook}', '${String(r.id || r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-400/30">查看</button>
+                    <button onclick="App.deleteAiReport('${escBook}', '${String(r.id || r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-400/30">删除</button>
                 </div>
             `;
         }).join('');
@@ -3331,13 +4803,14 @@ const App = {
         const book = ctx.book || '';
         const rangeKey = ctx.rangeKey || '7d';
         const roleLabel = this.isTeacherScope() ? `本班「${this.getTeacherClassName()}」` : '本园';
-        const sampleCount = this.collectAiBookDialogues(book, rangeKey).length;
+        const dialogues = this.collectAiBookDialogues(book, rangeKey);
+        const sampleCount = dialogues.length;
         return `
             <div class="bg-slate-900 rounded-xl p-6 w-full">
                 <div class="flex items-center justify-between mb-5">
                     <h3 class="text-lg font-bold text-white">✨ 生成 AI 热点问题分析</h3>
                     <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                 </div>
                 <div class="bg-slate-800/60 border border-slate-600/30 rounded-xl p-4 mb-5">
@@ -3345,23 +4818,12 @@ const App = {
                     <div class="text-cyan-300 font-medium">《${book}》</div>
                     <div class="text-xs text-slate-500 mt-2">将提取 <span class="text-amber-300">${roleLabel}</span> 在所选时间范围内关于本书的全部对话发送给大模型进行分析。</div>
                 </div>
-                <div class="mb-4">
-                    <div class="text-sm text-slate-300 mb-3">选择上传数据时间</div>
-                    <div class="grid grid-cols-2 gap-3">
-                        ${this._aiBookAnalysisRangeOptions.map(opt => `
-                            <label class="cursor-pointer">
-                                <input type="radio" name="ai-book-range" value="${opt.key}" ${rangeKey === opt.key ? 'checked' : ''} class="hidden peer" onchange="App.selectAiBookAnalysisRange('${opt.key}')">
-                                <div class="px-4 py-3 rounded-xl border transition-all ${rangeKey === opt.key ? 'border-amber-400/60 bg-amber-500/15 text-amber-200' : 'border-slate-600/40 bg-slate-800/40 text-slate-300 hover:border-slate-500/60'}">
-                                    <div class="text-sm font-medium">${opt.label}</div>
-                                </div>
-                            </label>
-                        `).join('')}
-                    </div>
-                </div>
-                <div class="text-xs text-slate-500 mb-5">当前可用对话样本：<span class="text-cyan-300">${sampleCount}</span> 次</div>
+                ${this.renderAiAnalysisRangeChips(rangeKey, 'App.selectAiBookAnalysisRange')}
+                <div class="text-xs text-slate-500 mb-2">当前可用对话样本（与绘本明细展示范围一致）：</div>
+                ${this.renderAiSampleStatsRow(dialogues, ['chat', 'turns', 'students', 'classes', 'type'], 'text-cyan-300')}
                 <div class="flex items-center justify-end gap-3">
                     <button onclick="App.closeModalDirect()" class="px-4 py-2 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors">取消</button>
-                    <button onclick="App.confirmAiBookAnalysis()" ${sampleCount === 0 ? 'disabled' : ''} class="px-4 py-2 rounded-lg ${sampleCount === 0 ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white'} text-sm transition-colors">开始分析</button>
+                    <button onclick="App.confirmAiBookAnalysis()" ${sampleCount === 0 ? 'disabled' : ''} class="px-4 py-2 rounded-lg text-sm font-medium transition-colors ${sampleCount === 0 ? 'cursor-not-allowed' : 'hover:opacity-90'}" style="${sampleCount === 0 ? 'background:#334155;color:#94a3b8;' : 'background:linear-gradient(to right,#f59e0b,#f97316);color:#ffffff;'}">开始分析</button>
                 </div>
             </div>
         `;
@@ -3371,21 +4833,17 @@ const App = {
     collectAiBookDialogues(book, rangeKey) {
         const all = MockData.aiOverview?.history || [];
         const teacherClassName = this.isTeacherScope() ? this.getTeacherClassName() : null;
-        const opt = this._aiBookAnalysisRangeOptions.find(o => o.key === rangeKey);
-        let startMs = null;
-        if (opt && opt.days != null) {
-            const latest = this.getLatestAiHistoryDate();
-            const start = new Date(latest);
-            start.setDate(start.getDate() - opt.days + 1);
-            start.setHours(0, 0, 0, 0);
-            startMs = start.getTime();
-        }
+        const bounds = this.getAiAnalysisRangeBounds(rangeKey);
+        const startMs = bounds.startDate ? new Date(`${bounds.startDate}T00:00:00`).getTime() : null;
+        const endMs = bounds.endDate ? new Date(`${bounds.endDate}T23:59:59`).getTime() : null;
         return all.filter(h => {
             if (h.book !== book) return false;
             if (teacherClassName && h.className !== teacherClassName) return false;
-            if (startMs !== null) {
+            if (startMs !== null || endMs !== null) {
                 const t = this.parseActivityDate(h.time).getTime();
-                if (Number.isNaN(t) || t < startMs) return false;
+                if (Number.isNaN(t)) return false;
+                if (startMs !== null && t < startMs) return false;
+                if (endMs !== null && t > endMs) return false;
             }
             return true;
         });
@@ -3410,6 +4868,14 @@ const App = {
         this.runAiBookAnalysis(book, rangeKey);
     },
 
+    // +新增：返回时间范围选择弹窗，让用户重选时间后再生成新报告
+    addAiBookAnalysis() {
+        const book = this._aiBookAnalysisCtx?.book;
+        if (!book) return;
+        this._aiBookAnalysisCtx = { book, rangeKey: '7d' };
+        this.openModal(this.renderAiBookAnalysisRangeModal(), { size: 'wide' });
+    },
+
     async runAiBookAnalysis(book, rangeKey) {
         const dialogues = this.collectAiBookDialogues(book, rangeKey);
         // 本地字面量统计 TOP10 作为 fallback（模型聚类失败时使用）
@@ -3422,14 +4888,16 @@ const App = {
             .sort((a, b) => b.count - a.count)
             .slice(0, 10);
 
-        const rangeLabel = this._aiBookAnalysisRangeOptions.find(o => o.key === rangeKey)?.label || rangeKey;
+        const rangeLabel = this.formatAiRangeLabel(rangeKey);
         const roleLabel = this.isTeacherScope() ? `班级「${this.getTeacherClassName()}」` : '园内';
 
         if (!this._aiBookAnalysis) this._aiBookAnalysis = {};
         this._aiBookAnalysis[book] = {
             book, rangeKey, rangeLabel, roleLabel,
             generatedAt: '',
+            author: this.getCurrentUserName(),
             sampleCount: dialogues.length,
+            stats: this.computeAiDialogueStats(dialogues),
             topQuestions: fallbackTop,
             clusterMode: 'fallback',
             analysis: '',
@@ -3437,6 +4905,8 @@ const App = {
             generating: true
         };
         this._aiBookAnalysisCtx = { book, rangeKey };
+        const placeholderId = this.insertGeneratingReport('book', book, rangeKey);
+        if (this._aiBookAnalysis[book]) this._aiBookAnalysis[book].id = placeholderId;
         this.openModal(this.renderAiBookAnalysisModal(), { size: 'xwide' });
 
         const allQuestionsText = dialogues
@@ -3508,8 +4978,8 @@ ${allQuestionsText || '（无）'}
                     entry.generating = false;
                     entry.generatedAt = this.formatNowDateTime();
                     this.refreshAiBookAnalysisModal('done');
-                    // 4) 保存历史
-                    this.saveAiReport(book, entry);
+                    // 4) 保存历史（替换"生成中"占位）
+                    this.finalizeGeneratingReport('book', book, placeholderId, entry);
                     // 5) 刷新底层表格（让"📚 N"数字增加）
                     this.refreshAiMetricPanel();
                 },
@@ -3518,6 +4988,7 @@ ${allQuestionsText || '（无）'}
                     if (!entry) return;
                     entry.error = String(err?.message || err || '生成失败');
                     entry.generating = false;
+                    this.removeGeneratingReport('book', book, placeholderId);
                     this.refreshAiBookAnalysisModal('error');
                 }
             });
@@ -3526,6 +4997,7 @@ ${allQuestionsText || '（无）'}
             if (entry) {
                 entry.error = String(e?.message || e || '生成失败');
                 entry.generating = false;
+                this.removeGeneratingReport('book', book, placeholderId);
                 this.refreshAiBookAnalysisModal('error');
             }
         }
@@ -3534,7 +5006,16 @@ ${allQuestionsText || '（无）'}
     formatNowDateTime() {
         const d = new Date();
         const pad = n => String(n).padStart(2, '0');
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${pad(d.getMinutes())}`;
+    },
+    // 为每份 AI 报告生成唯一 id（显示时间精度只到分钟，不能当唯一键，否则同分钟重新生成会互相覆盖）
+    genAiReportId() {
+        return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    },
+    // 深拷贝一份报告快照，切断与历史列表的引用，避免后续修改污染历史记录
+    cloneAiReport(report) {
+        if (!report) return report;
+        try { return JSON.parse(JSON.stringify(report)); } catch (e) { return { ...report }; }
     },
 
     async streamLlmAnalysis({ book, systemPrompt, userPrompt, onDelta, onDone, onError }) {
@@ -3688,13 +5169,17 @@ ${allQuestionsText || '（无）'}
                     ? '<span class="px-2 py-0.5 rounded text-[11px] bg-red-500/20 text-red-300 border border-red-400/30">生成失败</span>'
                     : '';
         const regenBtn = isDone || hasError
-            ? `<button onclick="App.regenerateAiBookAnalysis()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs border border-amber-400/30 transition-colors mr-2">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            ? `<button onclick="App.regenerateAiBookAnalysis()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 text-xs border border-violet-400/30 transition-colors mr-2" title="按当前报告所选时间范围重新生成">
+                    <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                     重新生成
+                </button>
+                <button onclick="App.addAiBookAnalysis()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs border border-amber-400/30 transition-colors mr-2" title="选择新的时间范围生成新报告">
+                    <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                    新增
                 </button>`
             : '';
         const exportBtn = isDone
-            ? `<button onclick="App.exportAiReport('book', App._aiBookAnalysisCtx?.book)" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs border border-emerald-400/30 transition-colors mr-2" title="导出报告"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>导出</button>`
+            ? `<button onclick="App.exportAiReport('book', App._aiBookAnalysisCtx?.book)" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs border border-emerald-400/30 transition-colors mr-2" title="导出报告"><svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>导出</button>`
             : '';
         const errorHtml = hasError
             ? `<div class="bg-red-500/10 border border-red-400/30 rounded-lg p-3 text-sm text-red-300 mb-3">生成失败：${entry.error}。请检查网络或稍后重试。</div>`
@@ -3716,12 +5201,12 @@ ${allQuestionsText || '（无）'}
                         ${exportBtn}
                         ${regenBtn}
                         <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
                     </div>
                 </div>
                 <div class="grid grid-cols-3 gap-3 text-xs text-slate-400 mb-4">
-                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">范围</span><div class="text-slate-200">${entry.roleLabel || '-'} · ${entry.rangeLabel || '-'}</div></div>
+                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">范围</span><div class="text-slate-200">${entry.roleLabel || '-'} · ${entry.rangeKey ? this.formatAiRangeLabel(entry.rangeKey) : (entry.rangeLabel || '-')}</div></div>
                     <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">样本</span><div class="text-cyan-300">${entry.sampleCount || 0} 次对话</div></div>
                     <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">生成时间</span><div class="text-slate-200">${entry.generatedAt || '—'}</div></div>
                 </div>
@@ -3819,7 +5304,7 @@ ${analysis}
                 <div class="flex items-center justify-between mb-5">
                     <h3 class="text-lg font-bold text-slate-900">📥 导出 AI 分析报告</h3>
                     <button class="text-slate-400 hover:text-slate-700" onclick="App.closeModalDirect()">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                 </div>
                 <div class="space-y-3">
@@ -3946,7 +5431,7 @@ ${bodyHtml}
         Object.keys(this._aiStudentReports).forEach(student => {
             const list = this._aiStudentReports[student];
             if (Array.isArray(list) && list.length) {
-                this._aiStudentAnalysis[student] = list[0];
+                this._aiStudentAnalysis[student] = this.cloneAiReport(list[0]);
             }
         });
     },
@@ -3962,35 +5447,36 @@ ${bodyHtml}
         if (!this._aiStudentReports) this._aiStudentReports = {};
         const list = this._aiStudentReports[student] || [];
         const snapshot = JSON.parse(JSON.stringify(report));
+        if (!snapshot.id) snapshot.id = this.genAiReportId();
         list.unshift(snapshot);
         if (list.length > this._aiStudentReportsMaxPerStudent) list.length = this._aiStudentReportsMaxPerStudent;
         this._aiStudentReports[student] = list;
         this.persistAiStudentReports();
     },
 
-    deleteAiStudentReport(student, generatedAt) {
+    deleteAiStudentReport(student, reportId) {
         const list = (this._aiStudentReports || {})[student];
         if (!list) return;
-        const idx = list.findIndex(r => r.generatedAt === generatedAt);
+        const idx = list.findIndex(r => (r.id || r.generatedAt) === reportId);
         if (idx < 0) return;
         list.splice(idx, 1);
         if (list.length === 0) {
             delete this._aiStudentReports[student];
             if (this._aiStudentAnalysis) delete this._aiStudentAnalysis[student];
         } else {
-            this._aiStudentAnalysis[student] = list[0];
+            this._aiStudentAnalysis[student] = this.cloneAiReport(list[0]);
         }
         this.persistAiStudentReports();
         this.refreshAiStudentHistoryPopover(student);
         this.refreshAiMetricPanel();
     },
 
-    loadHistoricalStudentReport(student, generatedAt) {
+    loadHistoricalStudentReport(student, reportId) {
         const list = (this._aiStudentReports || {})[student] || [];
-        const found = list.find(r => r.generatedAt === generatedAt);
+        const found = list.find(r => (r.id || r.generatedAt) === reportId);
         if (!found) return;
         if (!this._aiStudentAnalysis) this._aiStudentAnalysis = {};
-        this._aiStudentAnalysis[student] = found;
+        this._aiStudentAnalysis[student] = this.cloneAiReport(found);
         this._aiStudentAnalysisCtx = { student, rangeKey: found.rangeKey };
         this.openModal(this.renderAiStudentAnalysisModal('done'), { size: 'xwide' });
     },
@@ -4050,8 +5536,8 @@ ${bodyHtml}
                         <div class="text-xs text-slate-200 truncate">${dateStr} - ${stuLabel}</div>
                         <div class="text-[11px] text-slate-500 mt-0.5">分析维度：${scopeLabel} · ${rangeLabel} · 样本：${sample}</div>
                     </div>
-                    <button onclick="App.loadHistoricalStudentReport('${escStudent}', '${(r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/30">查看</button>
-                    <button onclick="App.deleteAiStudentReport('${escStudent}', '${(r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-400/30">删除</button>
+                    <button onclick="App.loadHistoricalStudentReport('${escStudent}', '${String(r.id || r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/30">查看</button>
+                    <button onclick="App.deleteAiStudentReport('${escStudent}', '${String(r.id || r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-400/30">删除</button>
                 </div>
             `;
         }).join('');
@@ -4089,7 +5575,7 @@ ${bodyHtml}
                 <div class="flex items-center justify-between mb-5">
                     <h3 class="text-lg font-bold text-white">✨ 生成 AI 兴趣画像分析</h3>
                     <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                 </div>
                 <div class="bg-slate-800/60 border border-slate-600/30 rounded-xl p-4 mb-5">
@@ -4097,23 +5583,12 @@ ${bodyHtml}
                     <div class="text-emerald-300 font-medium">${student} · ${className}</div>
                     <div class="text-xs text-slate-500 mt-2">将提取 <span class="text-amber-300">${roleLabel}</span> 在所选时间范围内的全部 AI 对话发送给大模型，生成兴趣画像与教学建议。</div>
                 </div>
-                <div class="mb-4">
-                    <div class="text-sm text-slate-300 mb-3">选择上传数据时间</div>
-                    <div class="grid grid-cols-2 gap-3">
-                        ${this._aiBookAnalysisRangeOptions.map(opt => `
-                            <label class="cursor-pointer">
-                                <input type="radio" name="ai-stu-range" value="${opt.key}" ${rangeKey === opt.key ? 'checked' : ''} class="hidden peer" onchange="App.selectAiStudentAnalysisRange('${opt.key}')">
-                                <div class="px-4 py-3 rounded-xl border transition-all ${rangeKey === opt.key ? 'border-amber-400/60 bg-amber-500/15 text-amber-200' : 'border-slate-600/40 bg-slate-800/40 text-slate-300 hover:border-slate-500/60'}">
-                                    <div class="text-sm font-medium">${opt.label}</div>
-                                </div>
-                            </label>
-                        `).join('')}
-                    </div>
-                </div>
-                <div class="text-xs text-slate-500 mb-5">当前可用对话样本：<span class="text-emerald-300">${sampleCount}</span> 次</div>
+                ${this.renderAiAnalysisRangeChips(rangeKey, 'App.selectAiStudentAnalysisRange')}
+                <div class="text-xs text-slate-500 mb-2">当前可用对话样本（与幼儿明细展示范围一致）：</div>
+                ${this.renderAiSampleStatsRow(dialogues, ['chat', 'turns', 'books', 'type'], 'text-emerald-300')}
                 <div class="flex items-center justify-end gap-3">
                     <button onclick="App.closeModalDirect()" class="px-4 py-2 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors">取消</button>
-                    <button onclick="App.confirmAiStudentAnalysis()" ${sampleCount === 0 ? 'disabled' : ''} class="px-4 py-2 rounded-lg ${sampleCount === 0 ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white'} text-sm transition-colors">开始分析</button>
+                    <button onclick="App.confirmAiStudentAnalysis()" ${sampleCount === 0 ? 'disabled' : ''} class="px-4 py-2 rounded-lg text-sm font-medium transition-colors ${sampleCount === 0 ? 'cursor-not-allowed' : 'hover:opacity-90'}" style="${sampleCount === 0 ? 'background:#334155;color:#94a3b8;' : 'background:linear-gradient(to right,#f59e0b,#f97316);color:#ffffff;'}">开始分析</button>
                 </div>
             </div>
         `;
@@ -4122,21 +5597,17 @@ ${bodyHtml}
     collectAiStudentDialogues(student, rangeKey) {
         const all = MockData.aiOverview?.history || [];
         const teacherClassName = this.isTeacherScope() ? this.getTeacherClassName() : null;
-        const opt = this._aiBookAnalysisRangeOptions.find(o => o.key === rangeKey);
-        let startMs = null;
-        if (opt && opt.days != null) {
-            const latest = this.getLatestAiHistoryDate();
-            const start = new Date(latest);
-            start.setDate(start.getDate() - opt.days + 1);
-            start.setHours(0, 0, 0, 0);
-            startMs = start.getTime();
-        }
+        const bounds = this.getAiAnalysisRangeBounds(rangeKey);
+        const startMs = bounds.startDate ? new Date(`${bounds.startDate}T00:00:00`).getTime() : null;
+        const endMs = bounds.endDate ? new Date(`${bounds.endDate}T23:59:59`).getTime() : null;
         return all.filter(h => {
             if ((h.student || '匿名') !== student) return false;
             if (teacherClassName && h.className !== teacherClassName) return false;
-            if (startMs !== null) {
+            if (startMs !== null || endMs !== null) {
                 const t = this.parseActivityDate(h.time).getTime();
-                if (Number.isNaN(t) || t < startMs) return false;
+                if (Number.isNaN(t)) return false;
+                if (startMs !== null && t < startMs) return false;
+                if (endMs !== null && t > endMs) return false;
             }
             return true;
         });
@@ -4159,6 +5630,14 @@ ${bodyHtml}
         this.runAiStudentAnalysis(student, rangeKey);
     },
 
+    // +新增：返回时间范围选择弹窗
+    addAiStudentAnalysis() {
+        const student = this._aiStudentAnalysisCtx?.student;
+        if (!student) return;
+        this._aiStudentAnalysisCtx = { student, rangeKey: '7d' };
+        this.openModal(this.renderAiStudentAnalysisRangeModal(), { size: 'wide' });
+    },
+
     async runAiStudentAnalysis(student, rangeKey) {
         const dialogues = this.collectAiStudentDialogues(student, rangeKey);
         const className = (dialogues[0]?.className) || '-';
@@ -4173,14 +5652,16 @@ ${bodyHtml}
             .sort((a, b) => b.count - a.count)
             .slice(0, 10);
 
-        const rangeLabel = this._aiBookAnalysisRangeOptions.find(o => o.key === rangeKey)?.label || rangeKey;
+        const rangeLabel = this.formatAiRangeLabel(rangeKey);
         const roleLabel = `小朋友「${student}」（${className}）`;
 
         if (!this._aiStudentAnalysis) this._aiStudentAnalysis = {};
         this._aiStudentAnalysis[student] = {
             student, className, rangeKey, rangeLabel, roleLabel,
             generatedAt: '',
+            author: this.getCurrentUserName(),
             sampleCount: dialogues.length,
+            stats: this.computeAiDialogueStats(dialogues),
             topQuestions: fallbackTop,
             clusterMode: 'fallback',
             analysis: '',
@@ -4188,6 +5669,8 @@ ${bodyHtml}
             generating: true
         };
         this._aiStudentAnalysisCtx = { student, rangeKey };
+        const placeholderId = this.insertGeneratingReport('student', student, rangeKey);
+        if (this._aiStudentAnalysis[student]) this._aiStudentAnalysis[student].id = placeholderId;
         this.openModal(this.renderAiStudentAnalysisModal(), { size: 'xwide' });
 
         const allQuestionsText = dialogues
@@ -4256,7 +5739,7 @@ ${allQuestionsText || '（无）'}
                     entry.generating = false;
                     entry.generatedAt = this.formatNowDateTime();
                     this.refreshAiStudentAnalysisModal('done');
-                    this.saveAiStudentReport(student, entry);
+                    this.finalizeGeneratingReport('student', student, placeholderId, entry);
                     this.refreshAiMetricPanel();
                 },
                 onError: (err) => {
@@ -4264,6 +5747,7 @@ ${allQuestionsText || '（无）'}
                     if (!entry) return;
                     entry.error = String(err?.message || err || '生成失败');
                     entry.generating = false;
+                    this.removeGeneratingReport('student', student, placeholderId);
                     this.refreshAiStudentAnalysisModal('error');
                 }
             });
@@ -4272,6 +5756,7 @@ ${allQuestionsText || '（无）'}
             if (entry) {
                 entry.error = String(e?.message || e || '生成失败');
                 entry.generating = false;
+                this.removeGeneratingReport('student', student, placeholderId);
                 this.refreshAiStudentAnalysisModal('error');
             }
         }
@@ -4300,13 +5785,17 @@ ${allQuestionsText || '（无）'}
                     ? '<span class="px-2 py-0.5 rounded text-[11px] bg-red-500/20 text-red-300 border border-red-400/30">生成失败</span>'
                     : '';
         const regenBtn = isDone || hasError
-            ? `<button onclick="App.regenerateAiStudentAnalysis()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs border border-amber-400/30 transition-colors mr-2">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            ? `<button onclick="App.regenerateAiStudentAnalysis()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 text-xs border border-violet-400/30 transition-colors mr-2" title="按当前报告所选时间范围重新生成">
+                    <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                     重新生成
+                </button>
+                <button onclick="App.addAiStudentAnalysis()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs border border-amber-400/30 transition-colors mr-2" title="选择新的时间范围生成新报告">
+                    <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                    新增
                 </button>`
             : '';
         const exportBtn = isDone
-            ? `<button onclick="App.exportAiReport('student', App._aiStudentAnalysisCtx?.student)" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs border border-emerald-400/30 transition-colors mr-2" title="导出报告"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>导出</button>`
+            ? `<button onclick="App.exportAiReport('student', App._aiStudentAnalysisCtx?.student)" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs border border-emerald-400/30 transition-colors mr-2" title="导出报告"><svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>导出</button>`
             : '';
         const errorHtml = hasError
             ? `<div class="bg-red-500/10 border border-red-400/30 rounded-lg p-3 text-sm text-red-300 mb-3">生成失败：${entry.error}。请检查网络或稍后重试。</div>`
@@ -4328,12 +5817,12 @@ ${allQuestionsText || '（无）'}
                         ${exportBtn}
                         ${regenBtn}
                         <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
                     </div>
                 </div>
                 <div class="grid grid-cols-3 gap-3 text-xs text-slate-400 mb-4">
-                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">范围</span><div class="text-slate-200">${entry.roleLabel || '-'} · ${entry.rangeLabel || '-'}</div></div>
+                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">范围</span><div class="text-slate-200">${entry.roleLabel || '-'} · ${entry.rangeKey ? this.formatAiRangeLabel(entry.rangeKey) : (entry.rangeLabel || '-')}</div></div>
                     <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">样本</span><div class="text-emerald-300">${entry.sampleCount || 0} 次对话</div></div>
                     <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">生成时间</span><div class="text-slate-200">${entry.generatedAt || '—'}</div></div>
                 </div>
@@ -4398,7 +5887,7 @@ ${allQuestionsText || '（无）'}
         Object.keys(this._aiClassReports).forEach(cls => {
             const list = this._aiClassReports[cls];
             if (Array.isArray(list) && list.length) {
-                this._aiClassAnalysis[cls] = list[0];
+                this._aiClassAnalysis[cls] = this.cloneAiReport(list[0]);
             }
         });
     },
@@ -4414,35 +5903,38 @@ ${allQuestionsText || '（无）'}
         if (!this._aiClassReports) this._aiClassReports = {};
         const list = this._aiClassReports[className] || [];
         const snapshot = JSON.parse(JSON.stringify(report));
+        if (!snapshot.id) snapshot.id = this.genAiReportId();
         list.unshift(snapshot);
         if (list.length > this._aiClassReportsMaxPerClass) list.length = this._aiClassReportsMaxPerClass;
         this._aiClassReports[className] = list;
         this.persistAiClassReports();
+        this.refreshAiClassAnalysisHistory();
     },
 
-    deleteAiClassReport(className, generatedAt) {
+    deleteAiClassReport(className, reportId) {
         const list = (this._aiClassReports || {})[className];
         if (!list) return;
-        const idx = list.findIndex(r => r.generatedAt === generatedAt);
+        const idx = list.findIndex(r => (r.id || r.generatedAt) === reportId);
         if (idx < 0) return;
         list.splice(idx, 1);
         if (list.length === 0) {
             delete this._aiClassReports[className];
             if (this._aiClassAnalysis) delete this._aiClassAnalysis[className];
         } else {
-            this._aiClassAnalysis[className] = list[0];
+            this._aiClassAnalysis[className] = this.cloneAiReport(list[0]);
         }
         this.persistAiClassReports();
         this.refreshAiClassPickerHistory();
         this.refreshAiClassHistoryPopover(className);
+        this.refreshAiClassAnalysisHistory();
     },
 
-    loadHistoricalClassReport(className, generatedAt) {
+    loadHistoricalClassReport(className, reportId) {
         const list = (this._aiClassReports || {})[className] || [];
-        const found = list.find(r => r.generatedAt === generatedAt);
+        const found = list.find(r => (r.id || r.generatedAt) === reportId);
         if (!found) return;
         if (!this._aiClassAnalysis) this._aiClassAnalysis = {};
-        this._aiClassAnalysis[className] = found;
+        this._aiClassAnalysis[className] = this.cloneAiReport(found);
         this._aiClassAnalysisCtx = { className, rangeKey: found.rangeKey };
         this.openModal(this.renderAiClassAnalysisModal('done'), { size: 'xwide' });
     },
@@ -4496,7 +5988,7 @@ ${allQuestionsText || '（无）'}
                 <div class="flex items-center justify-between mb-5">
                     <h3 class="text-lg font-bold text-white">🏫 选择班级进行 AI 分析</h3>
                     <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                 </div>
                 <div class="text-xs text-slate-400 mb-3">将基于该班级在 AI 总览所选时间范围内的全部对话数据，分析班级整体兴趣画像与教学建议。</div>
@@ -4505,7 +5997,7 @@ ${allQuestionsText || '（无）'}
                 </div>
                 <div class="flex items-center justify-end gap-3 mt-5">
                     <button onclick="App.closeModalDirect()" class="px-4 py-2 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors">取消</button>
-                    <button onclick="App.confirmAiClassPick()" ${ctx.className ? '' : 'disabled'} class="px-4 py-2 rounded-lg ${ctx.className ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white' : 'bg-slate-700 text-slate-500 cursor-not-allowed'} text-sm transition-colors">下一步</button>
+                    <button onclick="App.confirmAiClassPick()" ${ctx.className ? '' : 'disabled'} class="px-4 py-2 rounded-lg text-sm font-medium transition-colors ${ctx.className ? 'hover:opacity-90' : 'cursor-not-allowed'}" style="${ctx.className ? 'background:linear-gradient(to right,#f59e0b,#f97316);color:#ffffff;' : 'background:#334155;color:#94a3b8;'}">下一步</button>
                 </div>
             </div>
         `;
@@ -4530,6 +6022,90 @@ ${allQuestionsText || '（无）'}
         const ctx = this._aiClassAnalysisCtx;
         if (!ctx || !ctx.className) return;
         this.openModal(this.renderAiClassAnalysisRangeModal(), { size: 'wide' });
+    },
+
+    // —— 幼儿 AI 分析：先选幼儿，再进入时间范围弹窗 ——
+    startAiStudentAnalysisPick() {
+        this.openModal(this.renderAiStudentPickerModal(), { size: 'wide' });
+    },
+    getAiStudentCandidates() {
+        const map = new Map();
+        this.getAiHistoryByRange().forEach(item => {
+            const key = item.student || '匿名';
+            if (!map.has(key)) map.set(key, { student: key, className: item.className || '-', chatCount: 0 });
+            map.get(key).chatCount += 1;
+        });
+        return [...map.values()].sort((a, b) => b.chatCount - a.chatCount);
+    },
+    renderAiStudentPickerModal() {
+        const cands = this.getAiStudentCandidates();
+        const items = cands.map(c => {
+            const escName = c.student.replace(/'/g, "\\'");
+            const histLen = ((this._aiStudentReports || {})[c.student] || []).length;
+            const histBadge = histLen ? `<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-400/30">📚 ${histLen}</span>` : '';
+            return `
+                <div onclick="App.closeModalDirect();App.startAiStudentAnalysis('${escName}')" class="cursor-pointer text-left px-4 py-3 rounded-xl border border-slate-600/40 bg-slate-800/40 text-slate-200 hover:border-emerald-400/60 hover:bg-emerald-500/10 transition-all">
+                    <div class="flex items-center justify-between">
+                        <div class="text-sm font-medium flex items-center">👶 ${c.student}${histBadge}</div>
+                        <div class="text-[11px] text-slate-400">${c.className} · ${c.chatCount} 次对话</div>
+                    </div>
+                </div>`;
+        }).join('');
+        return `
+            <div class="bg-slate-900 rounded-xl p-6 w-full">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="text-lg font-bold text-white">👶 选择幼儿进行 AI 分析</h3>
+                    <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                        <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="text-xs text-slate-400 mb-3">将基于该幼儿在 AI 总览所选时间范围内的全部对话数据，分析兴趣画像与阅读建议。</div>
+                <div class="grid grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
+                    ${items || '<div class="text-sm text-slate-500 col-span-2 text-center py-6">当前范围内暂无幼儿对话数据</div>'}
+                </div>
+            </div>`;
+    },
+
+    // —— 绘本 AI 分析：先选绘本，再进入时间范围弹窗 ——
+    startAiBookAnalysisPick() {
+        this.openModal(this.renderAiBookPickerModal(), { size: 'wide' });
+    },
+    getAiBookCandidates() {
+        const map = new Map();
+        this.getAiHistoryByRange().forEach(item => {
+            if (!item.book) return;
+            if (!map.has(item.book)) map.set(item.book, { book: item.book, chatCount: 0 });
+            map.get(item.book).chatCount += 1;
+        });
+        return [...map.values()].sort((a, b) => b.chatCount - a.chatCount);
+    },
+    renderAiBookPickerModal() {
+        const cands = this.getAiBookCandidates();
+        const items = cands.map(c => {
+            const escName = c.book.replace(/'/g, "\\'");
+            const histLen = ((this._aiBookReports || {})[c.book] || []).length;
+            const histBadge = histLen ? `<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-400/30">📚 ${histLen}</span>` : '';
+            return `
+                <div onclick="App.closeModalDirect();App.startAiBookAnalysis('${escName}')" class="cursor-pointer text-left px-4 py-3 rounded-xl border border-slate-600/40 bg-slate-800/40 text-slate-200 hover:border-cyan-400/60 hover:bg-cyan-500/10 transition-all">
+                    <div class="flex items-center justify-between">
+                        <div class="text-sm font-medium flex items-center">📖 《${c.book}》${histBadge}</div>
+                        <div class="text-[11px] text-slate-400">${c.chatCount} 次对话</div>
+                    </div>
+                </div>`;
+        }).join('');
+        return `
+            <div class="bg-slate-900 rounded-xl p-6 w-full">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="text-lg font-bold text-white">📖 选择绘本进行 AI 分析</h3>
+                    <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                        <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="text-xs text-slate-400 mb-3">将基于该绘本在 AI 总览所选时间范围内的全部对话数据，分析热点问题与延伸建议。</div>
+                <div class="grid grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
+                    ${items || '<div class="text-sm text-slate-500 col-span-2 text-center py-6">当前范围内暂无绘本对话数据</div>'}
+                </div>
+            </div>`;
     },
 
     selectAiClassAnalysisRange(rangeKey) {
@@ -4560,7 +6136,7 @@ ${allQuestionsText || '（无）'}
                     <div class="flex items-center">
                         ${histBtn}
                         <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
                     </div>
                 </div>
@@ -4569,27 +6145,12 @@ ${allQuestionsText || '（无）'}
                     <div class="text-amber-300 font-medium">🏫 ${className}</div>
                     <div class="text-xs text-slate-500 mt-2">将提取本班在所选时间范围内的全部 AI 对话数据发送给大模型，生成班级整体兴趣画像、关注热点与教学建议。</div>
                 </div>
-                <div class="mb-4">
-                    <div class="text-sm text-slate-300 mb-3">选择上传数据时间</div>
-                    <div class="grid grid-cols-2 gap-3">
-                        ${this._aiBookAnalysisRangeOptions.map(opt => `
-                            <label class="cursor-pointer">
-                                <input type="radio" name="ai-class-range" value="${opt.key}" ${rangeKey === opt.key ? 'checked' : ''} class="hidden peer" onchange="App.selectAiClassAnalysisRange('${opt.key}')">
-                                <div class="px-4 py-3 rounded-xl border transition-all ${rangeKey === opt.key ? 'border-amber-400/60 bg-amber-500/15 text-amber-200' : 'border-slate-600/40 bg-slate-800/40 text-slate-300 hover:border-slate-500/60'}">
-                                    <div class="text-sm font-medium">${opt.label}</div>
-                                </div>
-                            </label>
-                        `).join('')}
-                    </div>
-                </div>
-                <div class="grid grid-cols-3 gap-3 text-xs text-slate-400 mb-5">
-                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">对话样本</span><div class="text-amber-300">${sampleCount} 次</div></div>
-                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">涉及幼儿</span><div class="text-emerald-300">${studentSet.size} 人</div></div>
-                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">涉及绘本</span><div class="text-cyan-300">${bookSet.size} 本</div></div>
-                </div>
+                ${this.renderAiAnalysisRangeChips(rangeKey, 'App.selectAiClassAnalysisRange')}
+                <div class="text-xs text-slate-500 mb-2">当前可用对话样本（与班级明细展示范围一致）：</div>
+                ${this.renderAiSampleStatsRow(dialogues, ['chat', 'turns', 'books', 'type'], 'text-amber-300')}
                 <div class="flex items-center justify-end gap-3">
                     <button onclick="App.closeModalDirect()" class="px-4 py-2 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors">取消</button>
-                    <button onclick="App.confirmAiClassAnalysis()" ${sampleCount === 0 ? 'disabled' : ''} class="px-4 py-2 rounded-lg ${sampleCount === 0 ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white'} text-sm transition-colors">开始分析</button>
+                    <button onclick="App.confirmAiClassAnalysis()" ${sampleCount === 0 ? 'disabled' : ''} class="px-4 py-2 rounded-lg text-sm font-medium transition-colors ${sampleCount === 0 ? 'cursor-not-allowed' : 'hover:opacity-90'}" style="${sampleCount === 0 ? 'background:#334155;color:#94a3b8;' : 'background:linear-gradient(to right,#f59e0b,#f97316);color:#ffffff;'}">开始分析</button>
                 </div>
             </div>
         `;
@@ -4597,20 +6158,16 @@ ${allQuestionsText || '（无）'}
 
     collectAiClassDialogues(className, rangeKey) {
         const all = MockData.aiOverview?.history || [];
-        const opt = this._aiBookAnalysisRangeOptions.find(o => o.key === rangeKey);
-        let startMs = null;
-        if (opt && opt.days != null) {
-            const latest = this.getLatestAiHistoryDate();
-            const start = new Date(latest);
-            start.setDate(start.getDate() - opt.days + 1);
-            start.setHours(0, 0, 0, 0);
-            startMs = start.getTime();
-        }
+        const bounds = this.getAiAnalysisRangeBounds(rangeKey);
+        const startMs = bounds.startDate ? new Date(`${bounds.startDate}T00:00:00`).getTime() : null;
+        const endMs = bounds.endDate ? new Date(`${bounds.endDate}T23:59:59`).getTime() : null;
         return all.filter(h => {
             if (h.className !== className) return false;
-            if (startMs !== null) {
+            if (startMs !== null || endMs !== null) {
                 const t = this.parseActivityDate(h.time).getTime();
-                if (Number.isNaN(t) || t < startMs) return false;
+                if (Number.isNaN(t)) return false;
+                if (startMs !== null && t < startMs) return false;
+                if (endMs !== null && t > endMs) return false;
             }
             return true;
         });
@@ -4633,6 +6190,14 @@ ${allQuestionsText || '（无）'}
         this.runAiClassAnalysis(className, rangeKey);
     },
 
+    // +新增：返回时间范围选择弹窗
+    addAiClassAnalysis() {
+        const className = this._aiClassAnalysisCtx?.className;
+        if (!className) return;
+        this._aiClassAnalysisCtx = { className, rangeKey: '7d' };
+        this.openModal(this.renderAiClassAnalysisRangeModal(), { size: 'wide' });
+    },
+
     async runAiClassAnalysis(className, rangeKey) {
         const dialogues = this.collectAiClassDialogues(className, rangeKey);
 
@@ -4647,16 +6212,18 @@ ${allQuestionsText || '（无）'}
             .sort((a, b) => b.count - a.count)
             .slice(0, 10);
 
-        const rangeLabel = this._aiBookAnalysisRangeOptions.find(o => o.key === rangeKey)?.label || rangeKey;
+        const rangeLabel = this.formatAiRangeLabel(rangeKey);
         const roleLabel = `班级「${className}」`;
 
         if (!this._aiClassAnalysis) this._aiClassAnalysis = {};
         this._aiClassAnalysis[className] = {
             className, rangeKey, rangeLabel, roleLabel,
             generatedAt: '',
+            author: this.getCurrentUserName(),
             sampleCount: dialogues.length,
             studentCount: studentSet.size,
             bookCount: bookCount.size,
+            stats: this.computeAiDialogueStats(dialogues),
             topQuestions: fallbackTop,
             clusterMode: 'fallback',
             analysis: '',
@@ -4664,6 +6231,9 @@ ${allQuestionsText || '（无）'}
             generating: true
         };
         this._aiClassAnalysisCtx = { className, rangeKey };
+        // 在历史列表插入"生成中"占位，生成完成前用户点掉弹窗也能看到记录
+        const placeholderId = this.insertGeneratingReport('class', className, rangeKey);
+        this._aiClassAnalysis[className].id = placeholderId;
         this.openModal(this.renderAiClassAnalysisModal(), { size: 'xwide' });
 
         const allQuestionsText = dialogues
@@ -4732,13 +6302,14 @@ ${allQuestionsText || '（无）'}
                     entry.generating = false;
                     entry.generatedAt = this.formatNowDateTime();
                     this.refreshAiClassAnalysisModal('done');
-                    this.saveAiClassReport(className, entry);
+                    this.finalizeGeneratingReport('class', className, placeholderId, entry);
                 },
                 onError: (err) => {
                     const entry = this._aiClassAnalysis[className];
                     if (!entry) return;
                     entry.error = String(err?.message || err || '生成失败');
                     entry.generating = false;
+                    this.removeGeneratingReport('class', className, placeholderId);
                     this.refreshAiClassAnalysisModal('error');
                 }
             });
@@ -4747,6 +6318,7 @@ ${allQuestionsText || '（无）'}
             if (entry) {
                 entry.error = String(e?.message || e || '生成失败');
                 entry.generating = false;
+                this.removeGeneratingReport('class', className, placeholderId);
                 this.refreshAiClassAnalysisModal('error');
             }
         }
@@ -4779,13 +6351,17 @@ ${allQuestionsText || '（无）'}
             ? `<button onclick="App.toggleAiClassHistoryPopover('${className.replace(/'/g, "\\'")}')" data-ai-cls-hist-trigger="${this.hashStr(className)}" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-700/50 hover:bg-slate-600/60 text-slate-200 text-xs border border-slate-500/40 transition-colors mr-2" title="查看历史报告">📚 历史 ${history.length}</button>`
             : '';
         const regenBtn = isDone || hasError
-            ? `<button onclick="App.regenerateAiClassAnalysis()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs border border-amber-400/30 transition-colors mr-2">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            ? `<button onclick="App.regenerateAiClassAnalysis()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 text-xs border border-violet-400/30 transition-colors mr-2" title="按当前报告所选时间范围重新生成">
+                    <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                     重新生成
+                </button>
+                <button onclick="App.addAiClassAnalysis()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs border border-amber-400/30 transition-colors mr-2" title="选择新的时间范围生成新报告">
+                    <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                    新增
                 </button>`
             : '';
         const exportBtn = isDone
-            ? `<button onclick="App.exportAiReport('class', App._aiClassAnalysisCtx?.className)" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs border border-emerald-400/30 transition-colors mr-2" title="导出报告"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>导出</button>`
+            ? `<button onclick="App.exportAiReport('class', App._aiClassAnalysisCtx?.className)" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs border border-emerald-400/30 transition-colors mr-2" title="导出报告"><svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>导出</button>`
             : '';
         const errorHtml = hasError
             ? `<div class="bg-red-500/10 border border-red-400/30 rounded-lg p-3 text-sm text-red-300 mb-3">生成失败：${entry.error}。请检查网络或稍后重试。</div>`
@@ -4808,12 +6384,12 @@ ${allQuestionsText || '（无）'}
                         ${exportBtn}
                         ${regenBtn}
                         <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
                     </div>
                 </div>
                 <div class="grid grid-cols-4 gap-3 text-xs text-slate-400 mb-4">
-                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">范围</span><div class="text-slate-200">${entry.roleLabel || '-'} · ${entry.rangeLabel || '-'}</div></div>
+                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">范围</span><div class="text-slate-200">${entry.roleLabel || '-'} · ${entry.rangeKey ? this.formatAiRangeLabel(entry.rangeKey) : (entry.rangeLabel || '-')}</div></div>
                     <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">对话样本</span><div class="text-amber-300">${entry.sampleCount || 0} 次</div></div>
                     <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">涉及幼儿/绘本</span><div class="text-emerald-300">${entry.studentCount || 0} 人 · ${entry.bookCount || 0} 本</div></div>
                     <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">生成时间</span><div class="text-slate-200">${entry.generatedAt || '—'}</div></div>
@@ -4904,8 +6480,8 @@ ${allQuestionsText || '（无）'}
                         <div class="text-xs text-slate-200 truncate">${dateStr} - ${className}</div>
                         <div class="text-[11px] text-slate-500 mt-0.5">${rangeLabel} · 样本：${sample}</div>
                     </div>
-                    <button onclick="App.loadHistoricalClassReport('${escClass}', '${(r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-400/30">查看</button>
-                    <button onclick="App.deleteAiClassReport('${escClass}', '${(r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-400/30">删除</button>
+                    <button onclick="App.loadHistoricalClassReport('${escClass}', '${String(r.id || r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-400/30">查看</button>
+                    <button onclick="App.deleteAiClassReport('${escClass}', '${String(r.id || r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-400/30">删除</button>
                 </div>
             `;
         }).join('');
@@ -4933,17 +6509,10 @@ ${allQuestionsText || '（无）'}
             { id: 'devices', label: '设备', icon: Icons.device('w-4 h-4') }
         ];
 
-        // 教育局管理员：未选学校时只显示全区数据概览和学校筛选，选了学校后显示完整标签
+        // 教育局管理员：区域数据页已并入大数据总览，schoolData 仅在选中具体园所时使用
         let tabs;
         if (this.currentRole === 'admin') {
-            if (!this.selectedSchool) {
-                tabs = [
-                    { id: 'overview', label: '全区数据概览', icon: Icons.chart('w-4 h-4') },
-                    { id: 'schools', label: '学校筛选', icon: Icons.school('w-4 h-4') }
-                ];
-            } else {
-                tabs = baseTabs;
-            }
+            tabs = baseTabs;
         } else if (this.currentRole === 'teacher') {
             // 教师视角：本班数据，去掉设备页（设备由园所统管，无班级维度）
             tabs = baseTabs.filter(t => t.id !== 'devices');
@@ -4956,21 +6525,16 @@ ${allQuestionsText || '（无）'}
         let scopeSelector = '';
 
         if (this.currentRole === 'admin') {
-            if (this.selectedSchool) {
-                titleText = `${this.selectedSchool.name}数据统计`;
-                scopeSelector = `
-                    <span class="role-badge admin inline-flex items-center gap-1">${Icons.school()} ${this.selectedSchool.name}</span>
-                    <button onclick="App.clearSelectedSchool()" class="px-3 py-1.5 rounded-lg bg-slate-600/50 border border-slate-500/30 text-slate-300 text-sm hover:bg-slate-500/50 hover:text-white transition-all flex items-center gap-1.5">
-                        <span>←</span> 返回学校筛选
-                    </button>
-                `;
-            } else {
-                titleText = '全区园所综合数据统计';
-                scopeSelector = `<span class="role-badge admin inline-flex items-center gap-1">${Icons.admin()} 全区数据</span>`;
-            }
+            titleText = this.selectedSchool ? `${this.selectedSchool.name}数据统计` : '园所数据统计';
+            scopeSelector = `
+                <span class="role-badge admin inline-flex items-center gap-1">${Icons.school()} ${this.selectedSchool ? this.selectedSchool.name : '园所详情'}</span>
+                <button onclick="App.clearSelectedSchool()" class="px-3 py-1.5 rounded-lg bg-slate-600/50 border border-slate-500/30 text-slate-300 text-sm hover:bg-slate-500/50 hover:text-white transition-all flex items-center gap-1.5">
+                    <span>←</span> 返回大数据总览
+                </button>
+            `;
         } else if (this.currentRole === 'principal') {
             titleText = this.selectedSchool ? `${this.selectedSchool.name}数据统计` : '园所数据统计';
-            scopeSelector = `<span class="role-badge principal inline-flex items-center gap-1">${Icons.school()} ${this.selectedSchool ? this.selectedSchool.name : '本园'}</span>`;
+            scopeSelector = `<span class="role-badge principal inline-flex items-center gap-1">${Icons.school()} 园所数据</span>`;
         } else if (this.currentRole === 'teacher') {
             titleText = this.selectedClass ? `${this.selectedClass.name}数据统计` : '班级数据统计';
             scopeSelector = `<span class="role-badge teacher inline-flex items-center gap-1">${Icons.teacher()} 班级数据</span>`;
@@ -4982,6 +6546,7 @@ ${allQuestionsText || '（无）'}
                 <h2 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">${titleText}</h2>
                 <div class="flex items-center gap-3">
                     ${scopeSelector}
+                    <div class="text-sm text-slate-500" id="school-overview-date"></div>
                 </div>
             </div>
             <div id="school-date-filter">
@@ -5045,35 +6610,43 @@ ${allQuestionsText || '（无）'}
         });
     },
 
+    updateSchoolOverviewDate() {
+        const el = document.getElementById('school-overview-date');
+        if (!el) return;
+        const range = this.dateRanges.schoolOverview || {};
+        el.textContent = (range.startDate && range.endDate) ? `${range.startDate} 至 ${range.endDate}` : '';
+    },
+
     switchSchoolTab(tabId) {
         this.schoolDataTab = tabId;
         document.querySelectorAll('.school-tab').forEach(tab => {
             const isActive = tab.dataset.tab === tabId;
             tab.className = this.getSchoolTabClass(isActive);
         });
-        this.renderSchoolTabContent(tabId);
+        // 立刻渲染骨架占位，给用户"加载中"的反馈，下一帧再真正渲染（避免感知卡顿）
+        const container = document.getElementById('school-tab-content');
+        if (container) {
+            const skeletonType = (
+                tabId === 'compare' ? 'compare' :
+                tabId === 'overview' ? 'overview' :
+                tabId === 'schools' ? 'overview' :
+                'table'
+            );
+            container.innerHTML = this.skeletonFor(skeletonType);
+        }
+        requestAnimationFrame(() => this.renderSchoolTabContent(tabId));
     },
 
     initSchoolDataPage() {
         this.enhanceSchoolDataLayout();
-        // 教育局管理员：未选学校时，保持当前tab（clearSelectedSchool会设置为schools）
-        // 首次进入时默认显示全区数据概览
-        if (this.currentRole === 'admin' && !this.selectedSchool) {
-            // 如果已经设置了tab，保持不变；否则默认overview
-            if (!this.schoolDataTab || this.schoolDataTab === 'overview') {
-                this.schoolDataTab = 'overview';
-            }
-        } else {
-            this.schoolDataTab = this.schoolDataTab || 'overview';
+        this.updateSchoolOverviewDate();
+        // 区域数据页已并入大数据总览，所有角色统一用 overview 作为默认 tab
+        if (!this.schoolDataTab || this.schoolDataTab === 'compare' || this.schoolDataTab === 'schools') {
+            this.schoolDataTab = 'overview';
         }
         // 教师视角不可能停留在 devices 子页签
         if (this.currentRole === 'teacher' && this.schoolDataTab === 'devices') {
             this.schoolDataTab = 'overview';
-        }
-        // 非教育局管理员不应停留在"学校筛选"子页签
-        if (this.currentRole !== 'admin' && this.schoolDataTab === 'schools') {
-            this.schoolDataTab = 'overview';
-            this.schoolSearchKeyword = '';
         }
         this.renderSchoolTabContent(this.schoolDataTab);
         // 同步更新tab高亮状态
@@ -5088,6 +6661,15 @@ ${allQuestionsText || '（无）'}
         Charts.dispose();
         switch (tabId) {
             case 'schools': container.innerHTML = this.renderSchoolsView(this.schoolSearchKeyword); break;
+            case 'compare':
+                container.innerHTML = this.renderRegionalSchoolCompare();
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        const data = this.buildKindergartenUsageSeries();
+                        Charts.safeInit(() => Charts.initKindergartenUsageLine(data, this.kindergartenUsageChartTypes));
+                    });
+                });
+                break;
             case 'overview':
                 container.innerHTML = this.renderSchoolOverview();
                 requestAnimationFrame(() => {
@@ -5120,7 +6702,7 @@ ${allQuestionsText || '（无）'}
                             oninput="App.handleSchoolSearch(this.value)"
                         />
                         <div class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                         </div>
                     </div>
                     <div id="school-search-stats" class="text-sm text-slate-400">
@@ -5275,7 +6857,7 @@ ${allQuestionsText || '（无）'}
                     <div class="flex items-center gap-2 shrink-0">
                         <button onclick="App.openSchoolPage(${school.id})" class="px-3.5 py-1.5 rounded-lg bg-cyan-400/15 border border-cyan-400/30 text-cyan-200 text-sm font-medium hover:bg-cyan-400/25 transition-all flex items-center gap-1.5" title="进入该学校完整数据页">
                             <span>打开详情</span>
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 3h7v7M10 14L21 3M21 14v7H3V3h7"/></svg>
+                            <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 3h7v7M10 14L21 3M21 14v7H3V3h7"/></svg>
                         </button>
                         <button onclick="App.closeModalDirect()" class="px-2 py-1.5 rounded-lg bg-slate-600/50 border border-slate-500/30 text-slate-300 text-sm hover:bg-slate-500/50 transition-all" title="关闭">✕</button>
                     </div>
@@ -5297,12 +6879,18 @@ ${allQuestionsText || '（无）'}
         this.loadPage('schoolData');
     },
 
-    // 返回学校筛选（教育局管理员）
+    // 返回上一级（教育局管理员从园所详情返回大数据总览，其他角色返回学校筛选）
     clearSelectedSchool() {
         this.selectedSchool = null;
         this.schoolSearchKeyword = '';
-        this.schoolDataTab = 'schools';
-        this.loadPage('schoolData');
+        if (this.currentRole === 'admin') {
+            // admin 已无单独的学校筛选页，统一回到大数据总览
+            this.schoolDataTab = 'overview';
+            this.loadPage('dataOverview');
+        } else {
+            this.schoolDataTab = 'schools';
+            this.loadPage('schoolData');
+        }
     },
 
     // 学校搜索处理（只更新结果，不重新渲染输入框）
@@ -5360,6 +6948,290 @@ ${allQuestionsText || '（无）'}
     },
 
     // 园所数据 - 数据概述
+    // 工具：返回数值在数组中的相对百分位（0-100）。用于 .compare-bar-cell 的 --pct
+    barPct(value, max) {
+        const v = Number(value) || 0;
+        const m = Number(max) || 0;
+        if (m <= 0) return 0;
+        return Math.max(0, Math.min(100, Math.round(v / m * 100)));
+    },
+    // 工具：渲染一个带条件格式条的数值单元格
+    barCell(value, max, opts = {}) {
+        const pct = this.barPct(value, max);
+        const cls = ['compare-bar-cell'];
+        if (opts.lowThreshold !== undefined && value < opts.lowThreshold) cls.push('is-low');
+        if (opts.highThreshold !== undefined && value >= opts.highThreshold) cls.push('is-high');
+        if (opts.extraClass) cls.push(opts.extraClass);
+        const display = opts.format ? opts.format(value) : value;
+        const align = opts.align || 'text-center';
+        return `<td class="px-4 py-3 ${align} ${cls.join(' ')}" style="--pct:${pct}">${display}</td>`;
+    },
+    // 工具：渲染可排序列头
+    sortableTh(label, key, sortState, options = {}) {
+        const align = options.align || 'text-center';
+        const isActive = sortState && sortState.key === key;
+        const dir = isActive ? sortState.dir : null;
+        const arrow = dir === 'asc' ? '▲' : (dir === 'desc' ? '▼' : '↕');
+        const onclick = options.onclick || `App.toggleSort('${options.scope || ''}','${key}')`;
+        return `<th class="px-4 py-3 ${align} text-xs font-medium sortable-th ${isActive ? 'is-sorted' : ''}" onclick="${onclick}">
+            ${label}<span class="sort-arrow">${arrow}</span>
+        </th>`;
+    },
+    // 工具：园所数据 tab 的排序状态（多 tab 共享）
+    schoolSort: {
+        classes: { key: 'activityCount', dir: 'desc' },
+        teachers: { key: 'activityCount', dir: 'desc' },
+        students: { key: 'activityCount', dir: 'desc' },
+        books: { key: 'readCount', dir: 'desc' },
+        devices: { key: 'useCount', dir: 'desc' }
+    },
+    toggleSort(scope, key) {
+        if (!scope || !this.schoolSort[scope]) return;
+        const s = this.schoolSort[scope];
+        if (s.key === key) {
+            s.dir = s.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+            s.key = key;
+            s.dir = 'desc';
+        }
+        this.renderSchoolTabContent(scope);
+    },
+    sortByKey(arr, sortState) {
+        if (!sortState || !sortState.key) return arr;
+        const k = sortState.key;
+        const sign = sortState.dir === 'asc' ? 1 : -1;
+        return arr.slice().sort((a, b) => {
+            const va = a[k];
+            const vb = b[k];
+            // 字符串带 'h' 后缀的时长字段：抽数字
+            const na = typeof va === 'string' ? parseFloat(va) || 0 : (Number(va) || 0);
+            const nb = typeof vb === 'string' ? parseFloat(vb) || 0 : (Number(vb) || 0);
+            if (na === nb) return 0;
+            return na > nb ? sign : -sign;
+        });
+    },
+
+    // 园所"关键差异速览"：4 项量化口径
+    getSchoolDiffSummary() {
+        const ratio = this.getSchoolRangeRatio();
+        const scaleCount = v => ratio <= 0 ? 0 : Math.max(0, Math.round((Number(v) || 0) * ratio));
+        const classes = (MockData.classes || []).map(c => ({
+            ...c,
+            activityCount: scaleCount(c.activityCount)
+        }));
+        const teachers = (MockData.schoolData?.teachers || []).map(t => ({
+            ...t,
+            activityCount: scaleCount(t.activityCount)
+        }));
+        const devices = (MockData.devices || []).map(d => ({
+            ...d,
+            useCount: scaleCount(d.useCount)
+        }));
+
+        const classCounts = classes.map(c => c.activityCount);
+        const classAvg = classCounts.length ? classCounts.reduce((s, v) => s + v, 0) / classCounts.length : 0;
+        const highClasses = classes.filter(c => c.activityCount >= classAvg * 1.2);
+        const lowClasses = classes.filter(c => c.activityCount < classAvg * 0.5);
+        const sortedClasses = [...classes].sort((a, b) => b.activityCount - a.activityCount);
+
+        const teacherCounts = teachers.map(t => t.activityCount);
+        const teacherMax = teacherCounts.length ? Math.max(...teacherCounts) : 0;
+        const teacherMin = teacherCounts.length ? Math.min(...teacherCounts) : 0;
+        const teacherTop = teachers.find(t => t.activityCount === teacherMax);
+        const teacherBottom = teachers.find(t => t.activityCount === teacherMin);
+
+        const deviceCounts = devices.map(d => d.useCount);
+        const deviceMax = deviceCounts.length ? Math.max(...deviceCounts) : 0;
+        const deviceMin = deviceCounts.length ? Math.min(...deviceCounts) : 0;
+
+        return {
+            classCount: classes.length,
+            classAvg: Math.round(classAvg * 10) / 10,
+            highClassCount: highClasses.length,
+            lowClassCount: lowClasses.length,
+            topClassName: sortedClasses[0]?.name || '-',
+            bottomClassName: sortedClasses[sortedClasses.length - 1]?.name || '-',
+            teacherMax,
+            teacherMin,
+            teacherSpread: teacherMax - teacherMin,
+            teacherTopName: teacherTop?.name || '-',
+            teacherBottomName: teacherBottom?.name || '-',
+            deviceMax,
+            deviceMin,
+            deviceSpread: deviceMax - deviceMin
+        };
+    },
+
+    // 园所"班级开课情况变化"图：state + 工具
+    schoolClassChart: {
+        types: ['line', 'bar']
+    },
+    selectedClassesForLine: null, // 第一次访问时初始化为活动次数 TOP3 班
+    initSelectedClassesForLineIfEmpty() {
+        if (this.selectedClassesForLine && this.selectedClassesForLine.length) return;
+        const ranked = (MockData.classes || [])
+            .slice()
+            .sort((a, b) => (b.activityCount || 0) - (a.activityCount || 0))
+            .slice(0, 3)
+            .map(c => c.name);
+        this.selectedClassesForLine = ranked;
+    },
+    // 按 schoolOverview 时间筛选，把 activities 中 className+date 累加成多 series（每个班一条）
+    buildSchoolClassUsageSeries() {
+        const range = this.getSchoolDateRange();
+        const start = range?.startDate ? new Date(`${range.startDate}T00:00:00`) : null;
+        const end = range?.endDate ? new Date(`${range.endDate}T23:59:59`) : null;
+        const granularity = this.getOverviewSeriesGranularity(range);
+
+        // 时间轴
+        const dates = [];
+        if (start && end) {
+            if (granularity === 'month') {
+                const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+                const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+                while (cursor <= endMonth) {
+                    dates.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`);
+                    cursor.setMonth(cursor.getMonth() + 1);
+                }
+            } else {
+                const cursor = new Date(start);
+                cursor.setHours(0, 0, 0, 0);
+                const endDate = new Date(end);
+                endDate.setHours(0, 0, 0, 0);
+                while (cursor <= endDate) {
+                    dates.push(this.formatDateInput(cursor).slice(5));
+                    cursor.setDate(cursor.getDate() + 1);
+                }
+            }
+        }
+
+        this.initSelectedClassesForLineIfEmpty();
+        const selected = this.selectedClassesForLine || [];
+        const acts = this.filterActivitiesByGlobalRange(MockData.schoolData?.activities || []);
+        // 按 className 分组，再按时间桶累加
+        const dateKeyOf = (timeStr) => {
+            const d = this.parseActivityDate(timeStr);
+            if (Number.isNaN(d.getTime())) return null;
+            if (granularity === 'month') {
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            }
+            return this.formatDateInput(d).slice(5);
+        };
+        const series = selected.map(name => {
+            const buckets = Object.fromEntries(dates.map(d => [d, 0]));
+            acts.forEach(a => {
+                if (a.className !== name) return;
+                const k = dateKeyOf(a.startTime || a.endTime);
+                if (k && buckets[k] != null) buckets[k] += 1;
+            });
+            return { name, values: dates.map(d => buckets[d] || 0) };
+        });
+
+        return { dates, series, granularity };
+    },
+    renderSchoolClassActivityHeader() {
+        this.initSelectedClassesForLineIfEmpty();
+        const types = this.schoolClassChart.types && this.schoolClassChart.types.length
+            ? this.schoolClassChart.types
+            : ['line', 'bar'];
+        const tab = (key, label, icon) => {
+            const active = types.includes(key);
+            const onlyOne = types.length === 1 && active;
+            return `<button onclick="App.toggleSchoolClassChartType('${key}')"
+                ${onlyOne ? 'disabled' : ''}
+                class="chart-toggle-btn chart-toggle-btn--purple ${active ? 'is-active' : 'is-inactive'} ${onlyOne ? 'is-locked' : ''}"
+                title="${onlyOne ? '至少保留一种图形' : (active ? '点击隐藏' + label : '点击显示' + label)}">
+                ${icon}<span>${label}</span>
+            </button>`;
+        };
+        const lineIcon = '<svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 17l6-6 4 4 8-8"/></svg>';
+        const barIcon = '<svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20V10M10 20V4M16 20v-6M22 20H2"/></svg>';
+        const allClasses = MockData.classes || [];
+        const selected = this.selectedClassesForLine || [];
+        const selectedNames = allClasses.filter(c => selected.includes(c.name)).map(c => c.name);
+        return `
+            <div id="school-class-activity-header" class="space-y-3 mb-3">
+                <div class="flex items-center justify-between gap-3">
+                    ${this.chartTitle('班级绘本活动次数', 'bg-rose-500', '统计范围：当前所选时间范围内本园所有绘本活动记录。\n口径：按"活动次数"统计——每条活动记录算一次，按所选时间粒度（日/月）分桶，按所选班级分组。\n图形：折线/柱状可同时展示，最少保留一种。\n用法：勾选要对比的班级 → 联动顶部时间筛选栏 → 看每个班绘本活动次数随时间的变化与差异。')}
+                    <div class="chart-toggle-group">
+                        ${tab('line', '折线', lineIcon)}
+                        ${tab('bar', '柱状', barIcon)}
+                    </div>
+                </div>
+                <div class="relative" id="school-class-dropdown-container">
+                    <button onclick="event.stopPropagation();App.toggleSchoolClassDropdown()" class="flex items-center justify-between w-full px-3 py-2 rounded-lg text-xs transition-all border bg-slate-700/40 text-slate-300 border-slate-500/30 hover:border-purple-400/30">
+                        <span class="truncate">${selectedNames.length > 0 ? selectedNames.join('、') : '请选择班级'}</span>
+                        <svg class="w-4 h-4 transition-transform" width="16" height="16" id="school-class-dropdown-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                    <div id="school-class-dropdown-menu" class="hidden absolute top-full left-0 right-0 mt-1 bg-slate-800/95 border border-slate-500/30 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto">
+                        ${allClasses.map(c => `
+                            <div onclick="event.stopPropagation();App.toggleClassForLine('${c.name.replace(/'/g, "\\'")}')" class="flex items-center gap-2 px-3 py-2 text-xs cursor-pointer transition-all hover:bg-purple-500/10 ${selected.includes(c.name) ? 'bg-purple-500/15 text-purple-300' : 'text-slate-300'}">
+                                <span class="w-4 h-4 rounded border flex items-center justify-center ${selected.includes(c.name) ? 'bg-purple-500 border-purple-500' : 'border-slate-500'}">
+                                    ${selected.includes(c.name) ? '<svg class="w-3 h-3 text-white" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : ''}
+                                </span>
+                                <span class="truncate">${c.name}${c.teacherName ? ` · ${c.teacherName}` : ''}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>`;
+    },
+    toggleSchoolClassDropdown() {
+        const menu = document.getElementById('school-class-dropdown-menu');
+        const arrow = document.getElementById('school-class-dropdown-arrow');
+        if (menu) menu.classList.toggle('hidden');
+        if (arrow) arrow.classList.toggle('rotate-180');
+    },
+    toggleClassForLine(name) {
+        this.initSelectedClassesForLineIfEmpty();
+        const list = this.selectedClassesForLine.slice();
+        const idx = list.indexOf(name);
+        if (idx > -1) {
+            if (list.length > 1) list.splice(idx, 1); // 至少保留一个
+        } else {
+            list.push(name);
+        }
+        this.selectedClassesForLine = list;
+        this.refreshSchoolClassActivityChart({ headerOnly: true, keepDropdown: true });
+    },
+    toggleSchoolClassChartType(type) {
+        if (type !== 'line' && type !== 'bar') return;
+        const list = (this.schoolClassChart.types || []).slice();
+        const idx = list.indexOf(type);
+        if (idx > -1) {
+            if (list.length === 1) return;
+            list.splice(idx, 1);
+        } else {
+            list.push(type);
+        }
+        this.schoolClassChart.types = list;
+        this.refreshSchoolClassActivityChart({ headerOnly: true });
+    },
+    refreshSchoolClassActivityChart(opts = {}) {
+        const wasOpen = !document.getElementById('school-class-dropdown-menu')?.classList.contains('hidden');
+        const header = document.getElementById('school-class-activity-header');
+        if (header) {
+            header.outerHTML = this.renderSchoolClassActivityHeader();
+            if (opts.keepDropdown && wasOpen) {
+                document.getElementById('school-class-dropdown-menu')?.classList.remove('hidden');
+                document.getElementById('school-class-dropdown-arrow')?.classList.add('rotate-180');
+            }
+        }
+        const data = this.buildSchoolClassUsageSeries();
+        const updated = Charts.updateSchoolClassActivityChart(data, this.schoolClassChart.types);
+        if (!updated) {
+            Charts.safeInit(() => Charts.initSchoolClassActivityChart(data, this.schoolClassChart.types));
+        }
+    },
+
+    renderSchoolDiffSummary() {
+        return `
+            <div>
+                ${this.renderSchoolClassActivityHeader()}
+                <div id="school-class-activity-chart" class="h-72"></div>
+            </div>`;
+    },
+
     renderSchoolOverview() {
         const d = this.getSchoolOverviewDataForCurrentRange();
         const recommendations = this.getSchoolOverviewBookRecommendations();
@@ -5367,8 +7239,12 @@ ${allQuestionsText || '（无）'}
         const scopeLabel = this.isTeacherScope()
             ? '本班'
             : (this.currentRole === 'admin' && !this.selectedSchool ? '全区' : '园所');
+        // 是否需要 5 KPI 概览：admin（全区合计或单园弹窗）和 teacher（本班概览）保留；
+        // principal 视角下与总览页 KPI 重复，删除
+        const showKpiOverview = this.currentRole !== 'principal';
         return `
         <div class="space-y-6">
+            ${showKpiOverview ? `
             <div>
                 ${this.chartTitle(scopeLabel + '绘本活动概览', 'bg-blue-500', '统计范围：当前所选时间范围内 ' + scopeLabel + ' 全部绘本活动。\n指标说明：\n· 绘本活动总次数：发起的绘本活动场次\n· 绘本活动总时长：所有活动累计时长\n· 绘本总数：参与活动覆盖的绘本数（去重）\n· 绘本阅读次数 / 时长：含教师朗读、AI 共读、自由阅读全部触达')}
                 <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
@@ -5378,61 +7254,46 @@ ${allQuestionsText || '（无）'}
                     ${this.miniStat('绘本阅读次数', d.bookReadCount, 'amber')}
                     ${this.miniStat('绘本阅读时长', d.bookReadDuration + 'h', 'cyan')}
                 </div>
-            </div>
+            </div>` : ''}
             <div>
-                ${this.chartTitle(scopeLabel + '大模型使用概况', 'bg-cyan-500', '统计范围：当前所选时间范围内的 AI 共读会话。\n指标说明：\n· 大模型绘本数：触发过 AI 互动的不同绘本数（去重）\n· 大模型对话次数：所有 AI 会话的累计轮数\n用途：观察 AI 共读的覆盖广度与互动密度。')}
+                ${this.chartTitle(scopeLabel + '大模型使用概况', 'bg-cyan-500', '统计范围：当前所选时间范围内的 AI 共读会话。\n指标说明：\n· 互动绘本数：触发过 AI 互动的不同绘本数（去重）\n· 互动次数：所有 AI 会话的累计轮数\n用途：观察 AI 共读的覆盖广度与互动密度。')}
                 <div class="grid grid-cols-2 gap-3">
-                    ${this.miniStat('大模型绘本数', d.llmBookCount, 'cyan')}
-                    ${this.miniStat('大模型对话次数', d.llmChatCount, 'purple')}
+                    ${this.miniStat('互动绘本数', d.llmBookCount, 'cyan')}
+                    ${this.miniStat('互动次数', d.llmChatCount, 'purple')}
                 </div>
             </div>
             <div>
                 ${this.chartTitle('绘本分类阅读数据', 'bg-emerald-500', '统计范围：当前所选时间范围内的全部阅读记录。\n口径：按绘本"类型"分组，统计阅读次数和阅读时长。\n用途：识别孩子近期偏好的内容分类，辅助选书与活动设计。')}
-                <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                    ${d.categoryData.map(cat => `
-                        <div class="bg-slate-700/50 rounded-xl p-3 flex items-center justify-between border border-slate-500/30 hover:border-blue-400/30 transition-colors">
-                            <div><div class="text-sm font-medium text-slate-200">${cat.name}</div><div class="text-xs text-slate-500 mt-0.5">阅读时长 ${cat.duration}</div></div>
-                            <div class="text-lg font-bold text-blue-400">${cat.readCount}<span class="text-xs text-slate-500 ml-1">次</span></div>
-                        </div>
-                    `).join('')}
+                <div class="grid grid-cols-1 lg:grid-cols-5 gap-4 items-stretch">
+                    <div class="lg:col-span-2 rounded-xl border border-slate-500/30 bg-slate-700/40 p-3 flex flex-col">
+                        <div class="text-xs text-slate-400 mb-1 px-1">类型阅读次数占比</div>
+                        <div id="school-category-pie" class="flex-1 min-h-[260px]"></div>
+                    </div>
+                    <div class="lg:col-span-3 grid grid-cols-2 lg:grid-cols-3 gap-3 auto-rows-fr">
+                        ${d.categoryData.map(cat => `
+                            <div class="bg-slate-700/50 rounded-xl p-3 flex items-center justify-between border border-slate-500/30 hover:border-blue-400/30 transition-colors h-full">
+                                <div><div class="text-sm font-medium text-slate-200">${cat.name}</div><div class="text-xs text-slate-500 mt-0.5">阅读时长 ${cat.duration}</div></div>
+                                <div class="text-lg font-bold text-blue-400">${cat.readCount}<span class="text-xs text-slate-500 ml-1">次</span></div>
+                            </div>
+                        `).join('')}
+                    </div>
                 </div>
             </div>
-            ${this.isTeacherScope() ? '' : `
-            <div>
-                ${this.chartTitle(scopeLabel + '设备概况', 'bg-cyan-500', '指标说明：\n· 设备总数：' + scopeLabel + '已绑定的阅读机器人台数\n· 使用次数：当前时间范围内的累计开机/活动次数\n· 使用时长：当前时间范围内的累计在线时长（小时）\n用途：评估设备投入产出与日常使用饱和度。')}
-                <div class="grid grid-cols-3 gap-3">
-                    ${this.miniStat('设备总数', d.deviceTotal, 'cyan')}
-                    ${this.miniStat('使用次数', d.deviceUseCount, 'cyan')}
-                    ${this.miniStat('使用时长', d.deviceUseDuration + 'h', 'cyan')}
-                </div>
-            </div>`}
-            ${this.currentRole !== 'admin' ? this.card(`
-                <div class="flex items-center justify-between gap-3 mb-4">
-                    ${this.chartTitle('绘本推荐栏', 'bg-rose-500', '推荐规则：固定四张推荐位。\n· 高热度：' + scopeLabel + '近 1 个月阅读次数最多的绘本\n· 高互动：' + scopeLabel + '近 1 个月大模型对话互动最多的两本绘本\n· 可拓展：' + scopeLabel + '近期读得最少的类型，从全部数据中挑出该类型阅读量最高的一本')}
-                    <div class="text-xs text-slate-400 px-3 py-1.5 rounded-full border border-rose-500/20 bg-rose-500/10">${this.currentRole === 'principal' ? '园所视角推荐' : '班级视角推荐'}</div>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                    ${recommendations.map(book => `
-                        <div class="rounded-2xl border border-slate-500/25 bg-slate-800/40 p-4 hover:border-rose-400/30 hover:bg-slate-700/40 transition-all">
-                            <div class="flex items-start justify-between gap-3 mb-3">
-                                <div class="w-11 h-14 rounded-xl bg-gradient-to-br from-rose-500/20 to-amber-500/20 border border-rose-500/20 flex items-center justify-center text-lg">📖</div>
-                                ${this.badge(book.highlight, book.highlight === '高热度' ? 'red' : book.highlight === '高互动' ? 'amber' : 'purple')}
-                            </div>
-                            <div class="text-white font-semibold leading-6 mb-2">${book.name}</div>
-                            <div class="flex items-center gap-2 text-xs text-slate-400 mb-3">
-                                ${this.badge(book.type, 'blue')}
-                                <span>阅读 ${book.readCount} 次</span>
-                            </div>
-                            <p class="text-sm text-slate-300 leading-6">${book.reason}</p>
-                        </div>
-                    `).join('')}
-                </div>
-            `) : ''}
+            ${this.currentRole !== 'admin' ? this.renderSchoolFavoriteBoard() : ''}
         </div>`;
     },
 
     initSchoolOverviewCharts() {
-        // 图表初始化已移除
+        // 绘本分类阅读饼图（园长 / 教师 / 管理员单园都渲染）
+        const overviewData = this.getSchoolOverviewDataForCurrentRange();
+        if (overviewData && overviewData.categoryData) {
+            Charts.safeInit(() => Charts.initSchoolCategoryPie(overviewData.categoryData));
+        }
+        // principal 视角的"班级开课情况变化"图（admin 单园弹窗 / teacher 不渲染，DOM 不存在自动短路）
+        const dom = document.getElementById('school-class-activity-chart');
+        if (!dom) return;
+        const data = this.buildSchoolClassUsageSeries();
+        Charts.safeInit(() => Charts.initSchoolClassActivityChart(data, this.schoolClassChart.types));
     },
 
     // 园所数据 - 绘本活动
@@ -5455,7 +7316,7 @@ ${allQuestionsText || '（无）'}
             { label: '教师' }, { label: '参与班级' }, { label: '参与幼儿', align: 'text-center' }, { label: '操作', align: 'text-center' }
         ];
         const rows = pageData.map((a, i) => `
-            <tr class="hover:bg-blue-500/5 transition-colors">
+            <tr class="hover:bg-blue-500/10 transition-colors">
                 <td class="px-4 py-3 text-slate-500">${(p.page-1)*p.pageSize+i+1}</td>
                 <td class="px-4 py-3 text-slate-300">${a.startTime}</td>
                 <td class="px-4 py-3 text-center text-slate-300">${this.formatActivityDuration(a.startTime, a.endTime)}</td>
@@ -5497,26 +7358,49 @@ ${allQuestionsText || '（无）'}
             return {
                 ...b,
                 readCount: scaledCount,
+                readDurationNum: scaledDuration,
                 readDuration: durationMatch ? `${scaledDuration.toFixed(2)}${durationUnit}` : b.readDuration
             };
         });
         if (f.type) data = data.filter(b => b.type.includes(f.type));
         if (f.name) data = data.filter(b => b.name.includes(f.name));
         if (f.isbn) data = data.filter(b => b.isbn.includes(f.isbn));
+        data = this.sortByKey(data, this.schoolSort.books);
         const total = data.length;
         const totalPages = Math.ceil(total / p.pageSize);
         const pageData = data.slice((p.page-1)*p.pageSize, p.page*p.pageSize);
 
         const typeOptions = '<option value="">全部</option>' + ['日常生活','人际交往','情商品格','国学文化','科普百科','语言学习'].map(t => `<option value="${t}" ${f.type===t?'selected':''}>${t}</option>`).join('');
-        const headers = [{ label: '序号' },{ label: '绘本名称' },{ label: 'ISBN号' },{ label: '绘本类型' },{ label: '阅读次数', align: 'text-center' },{ label: '阅读时长', align: 'text-center' },{ label: '操作', align: 'text-center' }];
+        const maxRead = Math.max(1, ...data.map(b => b.readCount));
+        const maxDur = Math.max(1, ...data.map(b => b.readDurationNum || 0));
+        const sumRead = data.reduce((s, b) => s + b.readCount, 0);
+        const avgRead = data.length ? sumRead / data.length : 0;
+        const headers = [
+            { label: '序号' },
+            { label: '绘本名称' },
+            { label: 'ISBN号' },
+            { label: '绘本类型' },
+            { label: '阅读次数', align: 'text-center', sortKey: 'readCount', sortScope: 'books' },
+            { label: '阅读时长', align: 'text-center', sortKey: 'readDurationNum', sortScope: 'books' },
+            { label: '操作', align: 'text-center' }
+        ];
+        const summary = `<tr class="compare-summary-row">
+            <td colspan="4" class="text-left">
+                <span class="summary-label">绘本数</span><span class="summary-value">${total}</span>
+                <span class="summary-label" style="margin-left:16px">书均阅读</span><span class="summary-value">${avgRead.toFixed(1)}</span>
+            </td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumRead}</span></td>
+            <td class="text-center text-slate-500">—</td>
+            <td></td>
+        </tr>`;
         const rows = pageData.map((b,i) => `
-            <tr class="hover:bg-blue-500/5 transition-colors">
+            <tr class="hover:bg-blue-500/10 transition-colors">
                 <td class="px-4 py-3 text-slate-500">${(p.page-1)*p.pageSize+i+1}</td>
                 <td class="px-4 py-3 font-medium text-slate-200">${b.name}</td>
                 <td class="px-4 py-3 text-slate-500 text-xs">${b.isbn}</td>
                 <td class="px-4 py-3">${this.badge(b.type)}</td>
-                <td class="px-4 py-3 text-center text-blue-400 font-semibold">${b.readCount}</td>
-                <td class="px-4 py-3 text-center text-slate-400">${b.readDuration}</td>
+                ${this.barCell(b.readCount, maxRead)}
+                ${this.barCell(b.readDurationNum || 0, maxDur, { format: () => b.readDuration })}
                 <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewBookDetail(${b.id})">查看</button></td>
             </tr>`).join('');
 
@@ -5536,7 +7420,7 @@ ${allQuestionsText || '（无）'}
                 ${this.btnPrimary('查询', "App.pagination.books.page=1;App.renderSchoolTabContent('books')")}
                 ${this.btnSecondary('重置', "App.filters.books={type:'',name:'',isbn:''};App.pagination.books.page=1;App.renderSchoolTabContent('books')")}
             `)}
-            ${this.tableWrap(headers, rows)}
+            ${this.tableWrap(headers, rows, { summary })}
             ${this.renderPagination(total, p.page, totalPages, 'books')}
         </div>`;
     },
@@ -5590,30 +7474,80 @@ ${allQuestionsText || '（无）'}
             const durationNum = durationMatch ? parseFloat(durationMatch[1]) : 0;
             const durationUnit = String(c.activityDuration || '').replace(durationMatch ? durationMatch[1] : '', '').trim();
             const scaledDuration = ratio <= 0 ? 0 : durationNum * ratio;
+            const scaledParticipant = scaleCount(c.participantCount);
+            // 累计阅读绘本时长 ≈ 参与人次 × 活动时长 × 0.6（粗略口径：活动中孩子合计阅读绘本时间）
+            const cumulativeReadingHours = scaledDuration * scaledParticipant * 0.6;
             return {
                 ...c,
                 activityCount: scaleCount(c.activityCount),
+                activityDurationNum: scaledDuration,
                 activityDuration: durationMatch ? `${scaledDuration.toFixed(1)}${durationUnit}` : c.activityDuration,
                 deviceUseCount: scaleCount(c.deviceUseCount),
-                participantCount: scaleCount(c.participantCount)
+                participantCount: scaledParticipant,
+                cumulativeReadingNum: cumulativeReadingHours,
+                cumulativeReadingText: `${cumulativeReadingHours.toFixed(1)}h`
             };
         });
+        // 排序
+        data = this.sortByKey(data, this.schoolSort.classes);
         const total = data.length;
         const totalPages = Math.ceil(total / p.pageSize);
         const pageData = data.slice((p.page-1)*p.pageSize, p.page*p.pageSize);
-        const headers = [{label:'序号'},{label:'班级'},{label:'教师数量',align:'text-center'},{label:'幼儿数量',align:'text-center'},{label:'活动总次数',align:'text-center'},{label:'活动总时长',align:'text-center'},{label:'设备使用次数',align:'text-center'},{label:'参与总人次',align:'text-center'},{label:'操作',align:'text-center'}];
-        const rows = pageData.map((c,i) => `
-            <tr class="hover:bg-blue-500/5 transition-colors">
+
+        // 各列最大值：用于条件格式背景条计算百分位
+        const maxActivity = Math.max(1, ...data.map(c => c.activityCount));
+        const maxDuration = Math.max(1, ...data.map(c => c.activityDurationNum || 0));
+        const maxDevice = Math.max(1, ...data.map(c => c.deviceUseCount));
+        const maxParticipant = Math.max(1, ...data.map(c => c.participantCount));
+        const maxReading = Math.max(1, ...data.map(c => c.cumulativeReadingNum || 0));
+        const avgActivity = data.length ? data.reduce((s, c) => s + c.activityCount, 0) / data.length : 0;
+        const avgParticipant = data.length ? data.reduce((s, c) => s + c.participantCount, 0) / data.length : 0;
+        const sumActivity = data.reduce((s, c) => s + c.activityCount, 0);
+        const sumParticipant = data.reduce((s, c) => s + c.participantCount, 0);
+        const sumReading = Math.round(data.reduce((s, c) => s + (c.cumulativeReadingNum || 0), 0) * 10) / 10;
+
+        const headers = [
+            {label:'序号'},
+            {label:'班级'},
+            {label:'教师数量', align:'text-center'},
+            {label:'幼儿数量', align:'text-center'},
+            {label:'活动总次数', align:'text-center', sortKey:'activityCount', sortScope:'classes'},
+            {label:'活动总时长', align:'text-center', sortKey:'activityDurationNum', sortScope:'classes'},
+            {label:'设备使用次数', align:'text-center', sortKey:'deviceUseCount', sortScope:'classes'},
+            {label:'参与总人次', align:'text-center', sortKey:'participantCount', sortScope:'classes'},
+            {label:'累计阅读绘本时长', align:'text-center', sortKey:'cumulativeReadingNum', sortScope:'classes'},
+            {label:'操作', align:'text-center'}
+        ];
+        const summary = isTeacher ? '' : `<tr class="compare-summary-row">
+            <td colspan="4" class="text-left">
+                <span class="summary-label">班级总数</span><span class="summary-value">${total}</span>
+                <span class="summary-label" style="margin-left:16px">班均活动</span><span class="summary-value">${avgActivity.toFixed(1)}</span>
+                <span class="summary-label" style="margin-left:16px">班均参与</span><span class="summary-value">${avgParticipant.toFixed(1)}</span>
+            </td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumActivity}</span></td>
+            <td class="text-center text-slate-500">—</td>
+            <td class="text-center text-slate-500">—</td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumParticipant}</span></td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumReading}h</span></td>
+            <td></td>
+        </tr>`;
+        const rows = pageData.map((c,i) => {
+            const lowAct = c.activityCount < avgActivity * 0.5;
+            const highAct = c.activityCount >= avgActivity * 1.2;
+            return `
+            <tr class="hover:bg-blue-500/10 transition-colors">
                 <td class="px-4 py-3 text-slate-500">${(p.page-1)*p.pageSize+i+1}</td>
                 <td class="px-4 py-3 font-medium text-slate-200">${c.name}</td>
                 <td class="px-4 py-3 text-center text-slate-300">${c.teacherCount}</td>
                 <td class="px-4 py-3 text-center text-slate-300">${c.studentCount}</td>
-                <td class="px-4 py-3 text-center text-blue-400 font-semibold">${c.activityCount}</td>
-                <td class="px-4 py-3 text-center text-slate-300">${c.activityDuration}</td>
-                <td class="px-4 py-3 text-center text-slate-300">${c.deviceUseCount}</td>
-                <td class="px-4 py-3 text-center text-slate-300">${c.participantCount}</td>
+                ${this.barCell(c.activityCount, maxActivity, { extraClass: highAct ? 'is-high' : (lowAct ? 'is-low' : '') })}
+                ${this.barCell(c.activityDurationNum || 0, maxDuration, { format: () => c.activityDuration })}
+                ${this.barCell(c.deviceUseCount, maxDevice)}
+                ${this.barCell(c.participantCount, maxParticipant)}
+                ${this.barCell(c.cumulativeReadingNum || 0, maxReading, { format: () => c.cumulativeReadingText })}
                 <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewClassDetail(${c.id})">查看</button></td>
-            </tr>`).join('');
+            </tr>`;
+        }).join('');
         return `<div>
             ${isTeacher ? '' : this.filterBar(`
                 ${this.filterInput('班级名称', `placeholder="如 大一班 / dyb" value="${f.name}" oninput="App.filters.classes.name=this.value"`)}
@@ -5621,7 +7555,7 @@ ${allQuestionsText || '（无）'}
                 ${this.btnPrimary('查询', "App.pagination.classes.page=1;App.renderSchoolTabContent('classes')")}
                 ${this.btnSecondary('重置', "App.filters.classes={name:'',teacher:''};App.pagination.classes.page=1;App.renderSchoolTabContent('classes')")}
             `)}
-            ${this.tableWrap(headers, rows)}
+            ${this.tableWrap(headers, rows, { summary })}
             ${this.renderPagination(total, p.page, totalPages, 'classes')}
         </div>`;
     },
@@ -5648,19 +7582,42 @@ ${allQuestionsText || '（无）'}
             return {
                 ...t,
                 activityCount: ratio <= 0 ? 0 : Math.max(0, Math.round((Number(t.activityCount) || 0) * ratio)),
+                activityDurationNum: scaledDuration,
                 activityDuration: durationMatch ? `${scaledDuration.toFixed(1)}${durationUnit}` : t.activityDuration
             };
         });
+        data = this.sortByKey(data, this.schoolSort.teachers);
         const total = data.length;
         const totalPages = Math.ceil(total / p.pageSize);
         const pageData = data.slice((p.page-1)*p.pageSize, p.page*p.pageSize);
-        const headers = [{label:'序号'},{label:'教师姓名'},{label:'绘本活动次数',align:'text-center'},{label:'绘本活动时长',align:'text-center'},{label:'操作',align:'text-center'}];
+
+        const maxAct = Math.max(1, ...data.map(t => t.activityCount));
+        const maxDur = Math.max(1, ...data.map(t => t.activityDurationNum || 0));
+        const sumAct = data.reduce((s, t) => s + t.activityCount, 0);
+        const avgAct = data.length ? sumAct / data.length : 0;
+
+        const headers = [
+            {label:'序号'},
+            {label:'教师姓名'},
+            {label:'绘本活动次数', align:'text-center', sortKey:'activityCount', sortScope:'teachers'},
+            {label:'绘本活动时长', align:'text-center', sortKey:'activityDurationNum', sortScope:'teachers'},
+            {label:'操作', align:'text-center'}
+        ];
+        const summary = isTeacher ? '' : `<tr class="compare-summary-row">
+            <td colspan="2" class="text-left">
+                <span class="summary-label">教师总数</span><span class="summary-value">${total}</span>
+                <span class="summary-label" style="margin-left:16px">人均活动</span><span class="summary-value">${avgAct.toFixed(1)}</span>
+            </td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumAct}</span></td>
+            <td class="text-center text-slate-500">—</td>
+            <td></td>
+        </tr>`;
         const rows = pageData.map((t,i) => `
-            <tr class="hover:bg-blue-500/5 transition-colors">
+            <tr class="hover:bg-blue-500/10 transition-colors">
                 <td class="px-4 py-3 text-slate-500">${(p.page-1)*p.pageSize+i+1}</td>
                 <td class="px-4 py-3 font-medium text-slate-200">${t.name}</td>
-                <td class="px-4 py-3 text-center text-blue-400 font-semibold">${t.activityCount}</td>
-                <td class="px-4 py-3 text-center text-slate-300">${t.activityDuration}</td>
+                ${this.barCell(t.activityCount, maxAct)}
+                ${this.barCell(t.activityDurationNum || 0, maxDur, { format: () => t.activityDuration })}
                 <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewTeacherActivities('${t.name}')">查看绘本活动记录</button></td>
             </tr>`).join('');
         return `<div>
@@ -5669,7 +7626,7 @@ ${allQuestionsText || '（无）'}
                 ${this.btnPrimary('查询', "App.pagination.teachers.page=1;App.renderSchoolTabContent('teachers')")}
                 ${this.btnSecondary('重置', "App.filters.teachers={name:''};App.pagination.teachers.page=1;App.renderSchoolTabContent('teachers')")}
             `)}
-            ${this.tableWrap(headers, rows)}
+            ${this.tableWrap(headers, rows, { summary })}
             ${this.renderPagination(total, p.page, totalPages, 'teachers')}
         </div>`;
     },
@@ -5694,24 +7651,52 @@ ${allQuestionsText || '（无）'}
             return {
                 ...s,
                 activityCount: scaleCount(s.activityCount),
+                activityDurationNum: scaledDuration,
                 activityDuration: durationMatch ? `${scaledDuration.toFixed(1)}${durationUnit}` : s.activityDuration,
                 bookCount: scaleCount(s.bookCount)
             };
         });
+        data = this.sortByKey(data, this.schoolSort.students);
         const total = data.length;
         const totalPages = Math.ceil(total / p.pageSize);
         const pageData = data.slice((p.page-1)*p.pageSize, p.page*p.pageSize);
         const classOptions = '<option value="">全部</option>' + [...new Set(MockData.students.map(s => s.className))].map(c => `<option value="${c}" ${f.className===c?'selected':''}>${c}</option>`).join('');
-        const headers = [{label:'序号'},{label:'幼儿姓名'},{label:'幼儿编号'},{label:'所属班级'},{label:'参与活动次数',align:'text-center'},{label:'参与活动时长',align:'text-center'},{label:'绘本总数',align:'text-center'},{label:'操作',align:'text-center'}];
+
+        const maxAct = Math.max(1, ...data.map(s => s.activityCount));
+        const maxDur = Math.max(1, ...data.map(s => s.activityDurationNum || 0));
+        const maxBook = Math.max(1, ...data.map(s => s.bookCount));
+        const sumAct = data.reduce((s, x) => s + x.activityCount, 0);
+        const avgAct = data.length ? sumAct / data.length : 0;
+
+        const headers = [
+            {label:'序号'},
+            {label:'幼儿姓名'},
+            {label:'幼儿编号'},
+            {label:'所属班级'},
+            {label:'参与活动次数', align:'text-center', sortKey:'activityCount', sortScope:'students'},
+            {label:'参与活动时长', align:'text-center', sortKey:'activityDurationNum', sortScope:'students'},
+            {label:'绘本总数', align:'text-center', sortKey:'bookCount', sortScope:'students'},
+            {label:'操作', align:'text-center'}
+        ];
+        const summary = `<tr class="compare-summary-row">
+            <td colspan="4" class="text-left">
+                <span class="summary-label">幼儿总数</span><span class="summary-value">${total}</span>
+                <span class="summary-label" style="margin-left:16px">人均活动</span><span class="summary-value">${avgAct.toFixed(1)}</span>
+            </td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumAct}</span></td>
+            <td class="text-center text-slate-500">—</td>
+            <td class="text-center text-slate-500">—</td>
+            <td></td>
+        </tr>`;
         const rows = pageData.map((s,i) => `
-            <tr class="hover:bg-blue-500/5 transition-colors">
+            <tr class="hover:bg-blue-500/10 transition-colors">
                 <td class="px-4 py-3 text-slate-500">${(p.page-1)*p.pageSize+i+1}</td>
                 <td class="px-4 py-3 font-medium text-slate-200">${s.name}</td>
                 <td class="px-4 py-3 text-slate-500 text-xs">${s.code}</td>
                 <td class="px-4 py-3 text-slate-300">${s.className}</td>
-                <td class="px-4 py-3 text-center text-blue-400 font-semibold">${s.activityCount}</td>
-                <td class="px-4 py-3 text-center text-slate-300">${s.activityDuration}</td>
-                <td class="px-4 py-3 text-center text-slate-300">${s.bookCount}</td>
+                ${this.barCell(s.activityCount, maxAct)}
+                ${this.barCell(s.activityDurationNum || 0, maxDur, { format: () => s.activityDuration })}
+                ${this.barCell(s.bookCount, maxBook)}
                 <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewStudentReport(${s.id})">查看阅读报告</button></td>
             </tr>`).join('');
         return `<div>
@@ -5721,7 +7706,7 @@ ${allQuestionsText || '（无）'}
                 ${this.btnPrimary('查询', "App.pagination.students.page=1;App.renderSchoolTabContent('students')")}
                 ${this.btnSecondary('重置', "App.filters.students={name:'',className:''};App.pagination.students.page=1;App.renderSchoolTabContent('students')")}
             `)}
-            ${this.tableWrap(headers, rows)}
+            ${this.tableWrap(headers, rows, { summary })}
             ${this.renderPagination(total, p.page, totalPages, 'students')}
         </div>`;
     },
@@ -5742,19 +7727,43 @@ ${allQuestionsText || '（无）'}
             return {
                 ...d,
                 useCount: ratio <= 0 ? 0 : Math.max(0, Math.round((Number(d.useCount) || 0) * ratio)),
+                useDurationNum: scaledDuration,
                 useDuration: durationMatch ? `${scaledDuration.toFixed(1)}${durationUnit}` : d.useDuration
             };
         });
+        data = this.sortByKey(data, this.schoolSort.devices);
         const total = data.length;
         const totalPages = Math.ceil(total / p.pageSize);
         const pageData = data.slice((p.page-1)*p.pageSize, p.page*p.pageSize);
-        const headers = [{label:'序号'},{label:'设备SN号'},{label:'设备编号'},{label:'设备使用次数'},{label:'设备使用时长'},{label:'最近使用时间'}];
+
+        const maxCount = Math.max(1, ...data.map(d => d.useCount));
+        const maxDur = Math.max(1, ...data.map(d => d.useDurationNum || 0));
+        const sumCount = data.reduce((s, d) => s + d.useCount, 0);
+        const avgCount = data.length ? sumCount / data.length : 0;
+
+        const headers = [
+            {label:'序号'},
+            {label:'设备SN号'},
+            {label:'设备编号'},
+            {label:'设备使用次数', align:'text-center', sortKey:'useCount', sortScope:'devices'},
+            {label:'设备使用时长', align:'text-center', sortKey:'useDurationNum', sortScope:'devices'},
+            {label:'最近使用时间', align:'text-center'}
+        ];
+        const summary = `<tr class="compare-summary-row">
+            <td colspan="3" class="text-left">
+                <span class="summary-label">设备总数</span><span class="summary-value">${total}</span>
+                <span class="summary-label" style="margin-left:16px">台均使用</span><span class="summary-value">${avgCount.toFixed(1)}</span>
+            </td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumCount}</span></td>
+            <td class="text-center text-slate-500">—</td>
+            <td></td>
+        </tr>`;
         const rows = pageData.map((d,i) => `
-            <tr class="hover:bg-blue-500/5 transition-colors">
+            <tr class="hover:bg-blue-500/10 transition-colors">
                 <td class="px-4 py-3 text-slate-500">${(p.page-1)*p.pageSize+i+1}</td>
                 <td class="px-4 py-3 font-medium text-slate-200">${d.sn}</td>
                 <td class="px-4 py-3 text-slate-400">${d.code}</td>
-                <td class="px-4 py-3 text-center text-blue-400 font-semibold">${d.useCount}次</td>
+                ${this.barCell(d.useCount, maxCount, { format: () => d.useCount + '次' })}
                 <td class="px-4 py-3 text-center text-slate-300">${d.useDuration}</td>
                 <td class="px-4 py-3 text-center text-slate-500">${d.lastUseTime || '-'}</td>
             </tr>`).join('');
@@ -5764,7 +7773,7 @@ ${allQuestionsText || '（无）'}
                 ${this.btnPrimary('查询', "App.pagination.devices.page=1;App.renderSchoolTabContent('devices')")}
                 ${this.btnSecondary('重置', "App.filters.devices={sn:''};App.pagination.devices.page=1;App.renderSchoolTabContent('devices')")}
             `)}
-            ${this.tableWrap(headers, rows)}
+            ${this.tableWrap(headers, rows, { summary })}
             ${this.renderPagination(total, p.page, totalPages, 'devices')}
         </div>`;
     },
@@ -5789,7 +7798,7 @@ ${allQuestionsText || '（无）'}
         const roleColor = r => r==='管理员'?'red':r==='园长'?'purple':r==='教师'?'blue':'green';
         const headers = [{label:'序号'},{label:'账号'},{label:'姓名'},{label:'角色'},{label:'手机号'},{label:'状态',align:'text-center'},{label:'创建时间',align:'text-center'},{label:'操作',align:'text-center'}];
         const rows = pageData.map((u,i) => `
-            <tr class="hover:bg-blue-500/5 transition-colors">
+            <tr class="hover:bg-blue-500/10 transition-colors">
                 <td class="px-4 py-3 text-slate-500">${(p.page-1)*p.pageSize+i+1}</td>
                 <td class="px-4 py-3 font-medium text-slate-200">${u.account}</td>
                 <td class="px-4 py-3 text-slate-300">${u.name}</td>
@@ -5838,7 +7847,7 @@ ${allQuestionsText || '（无）'}
 
         const headers = [{label:'序号'},{label:'设备SN号'},{label:'设备编号'},{label:'状态',align:'text-center'},{label:'绑定园所'},{label:'绑定班级'},{label:'使用次数',align:'text-center'},{label:'使用时长',align:'text-center'},{label:'最近使用',align:'text-center'},{label:'操作',align:'text-center'}];
         const rows = pageData.map((d,i) => `
-            <tr class="hover:bg-blue-500/5 transition-colors">
+            <tr class="hover:bg-blue-500/10 transition-colors">
                 <td class="px-4 py-3 text-slate-500">${(p.page-1)*p.pageSize+i+1}</td>
                 <td class="px-4 py-3 font-medium text-slate-200">${d.sn}</td>
                 <td class="px-4 py-3 text-slate-400">${d.code}</td>
@@ -5911,7 +7920,7 @@ ${allQuestionsText || '（无）'}
     //  详情弹窗（深色模态框）
     // ============================================================
     modalHeader(title) {
-        return `<div class="flex items-center justify-between mb-5"><h3 class="text-lg font-bold text-white">${title}</h3><button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button></div>`;
+        return `<div class="flex items-center justify-between mb-5"><h3 class="text-lg font-bold text-white">${title}</h3><button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()"><svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button></div>`;
     },
 
     modalInfoItem(label, value) {
@@ -5961,11 +7970,11 @@ ${allQuestionsText || '（无）'}
         // 标题栏按钮
         const headerActions = mode === 'modal' 
             ? `<button onclick="App.viewActivityDetail(${a.id}, 'subpage')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2" title="在当前页面打开">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
+                <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
                 打开
             </button>`
             : `<button onclick="App.closeActivitySubpage()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 关闭
             </button>`;
         
@@ -6179,11 +8188,11 @@ ${allQuestionsText || '（无）'}
         // 标题栏按钮
         const headerActions = mode === 'modal'
             ? `<button onclick="App.viewBookDetail(${b.id}, 'subpage')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2" title="在当前页面打开">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
+                <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
                 打开
             </button>`
             : `<button onclick="App.closeBookSubpage()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 关闭
             </button>`;
         
@@ -6405,6 +8414,108 @@ ${allQuestionsText || '（无）'}
         return { dates, granularity, series };
     },
 
+    // 构建幼儿能力分布气泡图数据（仅取当前 abilityStats 的当前值，散布到 4 象限）
+    buildStudentAbilityBubble(student) {
+        const stats = (student && student.abilityStats) || {};
+        const palette = ['#22d3ee', '#3b82f6', '#a855f7', '#f59e0b', '#10b981', '#ef4444', '#ec4899', '#fb923c', '#a16207'];
+        const entries = Object.entries(stats);
+        if (!entries.length) return [];
+        const sorted = entries.sort((a, b) => b[1] - a[1]);
+        const anchors = [
+            { x: 22, y: 70 },
+            { x: 46, y: 36 },
+            { x: 70, y: 78 },
+            { x: 14, y: 30 },
+            { x: 60, y: 58 },
+            { x: 36, y: 86 },
+            { x: 80, y: 26 },
+            { x: 50, y: 60 },
+            { x: 30, y: 50 }
+        ];
+        return sorted.map(([name, value], i) => {
+            const a = anchors[i % anchors.length];
+            return { name, value, x: a.x, y: a.y, color: palette[i % palette.length] };
+        });
+    },
+
+    // 把班级"类型时间序列"压成饼图（按类型聚合 values 之和）
+    renderClassBookTypePieFromSeries(seriesData, domId) {
+        const el = document.getElementById(domId);
+        if (!el || typeof echarts === 'undefined') return;
+        const typeColors = {
+            '日常生活': '#60a5fa', '人际交往': '#34d399', '情商品格': '#f59e0b',
+            '国学文化': '#a78bfa', '科普百科': '#22d3ee', '语言学习': '#f472b6'
+        };
+        const data = (seriesData?.series || [])
+            .map(s => ({ name: s.name, value: (s.values || []).reduce((a, b) => a + (b || 0), 0), itemStyle: { color: typeColors[s.name] || '#60a5fa' } }))
+            .filter(d => d.value > 0)
+            .sort((a, b) => b.value - a.value);
+        const existing = echarts.getInstanceByDom(el);
+        if (existing) existing.dispose();
+        const chart = echarts.init(el, (typeof Charts !== 'undefined' && Charts.isWarm && Charts.isWarm()) ? 'warm' : null, { renderer: 'canvas' });
+        chart.setOption({
+            tooltip: { trigger: 'item', backgroundColor: 'rgba(15,23,42,0.92)', borderColor: 'rgba(148,163,184,0.3)', textStyle: { color: '#e2e8f0', fontSize: 12 }, formatter: '{b}: {c}次 ({d}%)' },
+            legend: { bottom: 0, textStyle: { color: '#a0aec0', fontSize: 11 } },
+            series: [{
+                type: 'pie', radius: ['38%', '62%'], center: ['50%', '46%'],
+                avoidLabelOverlap: true,
+                itemStyle: { borderRadius: 6, borderColor: 'rgba(120,160,220,0.35)', borderWidth: 2 },
+                label: { show: true, formatter: '{b}\n{d}%', fontSize: 11, color: '#a0aec0' },
+                emphasis: { label: { fontSize: 13, fontWeight: 'bold', color: '#f1f5f9' }, itemStyle: { shadowBlur: 18, shadowColor: 'rgba(59,130,246,0.3)' } },
+                data: data.length ? data : [{ name: '暂无数据', value: 1, itemStyle: { color: '#475569' }, label: { color: '#64748b' } }]
+            }]
+        });
+        const onResize = () => chart.resize();
+        window.addEventListener('resize', onResize);
+    },
+
+    // 班级能力分布气泡图（同 student 视觉，散布到 4 象限）
+    renderClassAbilityBubble(cls, domId) {
+        const el = document.getElementById(domId);
+        if (!el || typeof echarts === 'undefined') return;
+        const stats = (cls && cls.abilityStats) || {};
+        const palette = ['#22d3ee', '#3b82f6', '#a855f7', '#f59e0b', '#10b981', '#ef4444', '#ec4899', '#fb923c', '#a16207'];
+        const entries = Object.entries(stats).sort((a, b) => b[1] - a[1]);
+        const anchors = [
+            { x: 22, y: 70 }, { x: 46, y: 36 }, { x: 70, y: 78 },
+            { x: 14, y: 30 }, { x: 60, y: 58 }, { x: 36, y: 86 },
+            { x: 80, y: 26 }, { x: 50, y: 60 }, { x: 30, y: 50 }
+        ];
+        const data = entries.map(([name, value], i) => ({
+            name, value, x: anchors[i % anchors.length].x, y: anchors[i % anchors.length].y, color: palette[i % palette.length]
+        }));
+        const existing = echarts.getInstanceByDom(el);
+        if (existing) existing.dispose();
+        const chart = echarts.init(el, (typeof Charts !== 'undefined' && Charts.isWarm && Charts.isWarm()) ? 'warm' : null, { renderer: 'canvas' });
+        const sizeOf = d => 36 + Math.max(0, Math.min(100, d.value || 0)) / 100 * 48;
+        const fontOf = sz => Math.max(10, Math.min(15, Math.round(sz / 7)));
+        chart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: { show: false },
+            xAxis: { show: false, min: 0, max: 100, type: 'value' },
+            yAxis: { show: false, min: 0, max: 100, type: 'value', inverse: true },
+            grid: { left: 50, right: 50, top: 24, bottom: 24, containLabel: false },
+            series: [{
+                type: 'scatter',
+                data: data.map(d => {
+                    const sz = sizeOf(d);
+                    const fs = fontOf(sz);
+                    return {
+                        name: d.name,
+                        value: [d.x, d.y, d.value],
+                        symbolSize: sz,
+                        itemStyle: { color: d.color, shadowBlur: 16, shadowColor: (d.color || '#3b82f6') + '66' },
+                        label: { show: true, formatter: d.name, color: '#ffffff', fontSize: fs, fontWeight: 600, position: 'inside', width: Math.max(40, sz - 16), overflow: 'break', lineHeight: fs + 3 }
+                    };
+                }),
+                labelLayout: { hideOverlap: false },
+                emphasis: { scale: 1.06, itemStyle: { shadowBlur: 22 } }
+            }]
+        });
+        const onResize = () => chart.resize();
+        window.addEventListener('resize', onResize);
+    },
+
     viewClassDetail(id, mode = 'modal') {
         const clsOriginal = MockData.classes.find(c => c.id === id);
         if (!clsOriginal) return;
@@ -6455,11 +8566,11 @@ ${allQuestionsText || '（无）'}
         const hasBookTypeData = bookTypeSeriesData.series.length > 0;
         const hasAbilityData = abilitySeriesData.series.length > 0;
         const bookTypeHtml = hasBookTypeData
-            ? `<div class="text-xs text-slate-500 mb-2">展示周期：${periodLabel}</div>
+            ? `<div class="text-xs text-slate-500 mb-2">统计周期：${periodLabel}</div>
                <div id="class-book-type-chart" class="h-64"></div>`
             : '<div class="h-64 flex items-center justify-center"><span class="text-slate-500 text-sm">抱歉，没有统计到阅读数据，无法分析类型占比</span></div>';
         const abilityHtml = hasAbilityData
-            ? `<div class="text-xs text-slate-500 mb-2">展示周期：${periodLabel}</div>
+            ? `<div class="text-xs text-slate-500 mb-2">气泡大小=能力得分</div>
                <div id="class-ability-chart" class="h-64"></div>`
             : '<div class="h-64 flex items-center justify-center"><span class="text-slate-500 text-sm">抱歉，没有统计到阅读数据，无法分析能力分布</span></div>';
         
@@ -6519,11 +8630,11 @@ ${allQuestionsText || '（无）'}
         // 标题栏按钮
         const headerActions = mode === 'modal'
             ? `<button onclick="App.viewClassDetail(${cls.id}, 'subpage')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2" title="在当前页面打开">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
+                <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
                 打开
             </button>`
             : `<button onclick="App.closeClassSubpage()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 关闭
             </button>`;
         
@@ -6570,15 +8681,15 @@ ${allQuestionsText || '（无）'}
                                 </div>
                             </div>
 
-                            <!-- 中间：阅读绘本类型趋势 -->
+                            <!-- 中间：阅读绘本类型占比 -->
                             <div class="lg:col-span-1">
-                                <h4 class="text-sm font-semibold text-slate-300 mb-3">阅读绘本类型趋势：</h4>
+                                <h4 class="text-sm font-semibold text-slate-300 mb-3">阅读绘本类型占比：</h4>
                                 ${bookTypeHtml}
                             </div>
 
-                            <!-- 右侧：班级能力分布趋势 -->
+                            <!-- 右侧：班级能力分布 -->
                             <div class="lg:col-span-1">
-                                <h4 class="text-sm font-semibold text-slate-300 mb-3">班级能力分布趋势：</h4>
+                                <h4 class="text-sm font-semibold text-slate-300 mb-3">班级能力分布：</h4>
                                 ${abilityHtml}
                             </div>
                         </div>
@@ -6623,27 +8734,30 @@ ${allQuestionsText || '（无）'}
             </div>
         `;
         
+        // 子页面模式：在"园所数据"页落到 school-tab-content，
+        // 在大数据总览等页面落到 page-container，实现整页跳转
         if (mode === 'subpage') {
-            // 子页面模式：先关闭弹窗，然后在当前标签页内容区域内渲染
             this.closeModal();
             this.openClassSubpage(content);
+            mode = 'subpage';
         } else {
             // 弹窗模式：使用原有弹窗
             this.openModal(content);
+            mode = 'modal';
         }
 
         // 记录当前查看的班级ID（在 closeModal 之后设置，避免被清理）
         this._currentClassDetailId = id;
         this._currentClassDetailMode = mode;
 
-        // 初始化班级报告内的两个折线图（绘本类型趋势 / 能力分布趋势）
+        // 初始化班级报告内的两个图（绘本类型占比饼图 / 班级能力分布气泡图）
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
                 if (hasBookTypeData) {
-                    Charts.safeInit(() => Charts.initClassBookTypeLine(bookTypeSeriesData));
+                    this.renderClassBookTypePieFromSeries(bookTypeSeriesData, 'class-book-type-chart');
                 }
                 if (hasAbilityData) {
-                    Charts.safeInit(() => Charts.initClassAbilityLine(abilitySeriesData));
+                    this.renderClassAbilityBubble(clsOriginal, 'class-ability-chart');
                 }
             });
         });
@@ -6651,9 +8765,10 @@ ${allQuestionsText || '（无）'}
     
     // 打开班级详情子页面（在当前标签页内容区域内）
     openClassSubpage(html) {
-        // 找到当前标签页内容容器
-        const tabContent = document.getElementById('school-tab-content');
+        // 优先用"园所数据"页的 tab 容器；大数据总览等页面则落到 page-container（整页跳转）
+        const tabContent = document.getElementById('school-tab-content') || document.getElementById('page-container');
         if (!tabContent) return;
+        this._classSubpageHostId = tabContent.id;
 
         // 已存在子页面：仅替换内部内容，避免覆盖原始 tab 内容备份
         const existing = document.getElementById('class-subpage-container');
@@ -6662,8 +8777,9 @@ ${allQuestionsText || '（无）'}
             return;
         }
 
-        // 保存当前 tab 状态
+        // 保存当前 tab 状态 + 当前页面，便于返回
         this._previousSchoolDataTab = this.schoolDataTab;
+        this._classSubpageReturnPage = this.currentPage;
 
         // 保存原始内容
         this._originalClassTabContent = tabContent.innerHTML;
@@ -6688,6 +8804,17 @@ ${allQuestionsText || '（无）'}
     
     // 关闭班级详情子页面
     closeClassSubpage() {
+        // 大数据总览等页面：宿主是 page-container，直接重新加载原页面即可返回
+        if (this._classSubpageHostId === 'page-container') {
+            const back = this._classSubpageReturnPage || 'dataOverview';
+            this._originalClassTabContent = null;
+            this._classSubpageHostId = null;
+            this._classSubpageReturnPage = null;
+            this._currentClassDetailId = null;
+            this.loadPage(back);
+            return;
+        }
+
         const tabContent = document.getElementById('school-tab-content');
         if (!tabContent) return;
 
@@ -6749,11 +8876,11 @@ ${allQuestionsText || '（无）'}
         // 标题栏按钮
         const headerActions = mode === 'modal'
             ? `<button onclick="App.viewTeacherActivities('${name}', 'subpage')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2" title="在当前页面打开">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
+                <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
                 打开
             </button>`
             : `<button onclick="App.closeTeacherSubpage()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 关闭
             </button>`;
         
@@ -6878,9 +9005,9 @@ ${allQuestionsText || '（无）'}
             `).join('')
             : '<span class="text-slate-500 text-sm">暂无阅读类型数据</span>';
         
-        // 能力分布改为按时间筛选联动的折线图
-        const abilitySeriesData = this.buildStudentAbilitySeries(sOriginal);
-        const hasAbilityTrend = abilitySeriesData.series.length > 0;
+        // 能力分布改为气泡图（基于当前 abilityStats）
+        const abilityBubbleData = this.buildStudentAbilityBubble(sOriginal);
+        const hasAbilityTrend = abilityBubbleData.length > 0;
         const studentReportRange = this.dateRanges.schoolOverview || {};
         const formatChineseDate = (str) => {
             if (!str) return '';
@@ -6930,26 +9057,18 @@ ${allQuestionsText || '（无）'}
             }).join('')
             : '<div class="col-span-3 text-center text-slate-500 text-sm py-6">暂无数据</div>';
 
-        // 兴趣/建议书单：根据时间维度生成不同数量与组合的推荐
-        const studentId = s.id;
-        // 默认 7 天
-        if (!this._studentBookListRanges) this._studentBookListRanges = {};
-        if (!this._studentBookListRanges[studentId]) {
-            this._studentBookListRanges[studentId] = { interest: '7d', recommend: '7d' };
-        }
-        const interestRange = this._studentBookListRanges[studentId].interest;
-        const recommendRange = this._studentBookListRanges[studentId].recommend;
-        const interestBooksHtml = this.renderStudentInterestBooks(s, interestRange);
-        const recommendBooksHtml = this.renderStudentRecommendBooks(s, recommendRange);
+        // 兴趣/建议书单：联动顶部全局时间筛选（不再有独立切换器）
+        const interestBooksHtml = this.renderStudentInterestBooks(s);
+        const recommendBooksHtml = this.renderStudentRecommendBooks(s);
 
         // 标题栏按钮
         const headerActions = mode === 'modal'
             ? `<button onclick="App.viewStudentReport(${s.id}, 'subpage')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2" title="在当前页面打开">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
+                <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
                 打开
             </button>`
             : `<button onclick="App.closeStudentSubpage()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg transition-colors flex items-center gap-2 mr-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 关闭
             </button>`;
         
@@ -7116,7 +9235,7 @@ ${allQuestionsText || '（无）'}
                     <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
                         <div class="flex items-center justify-between mb-2">
                             <h3 class="text-sm font-semibold text-slate-200">阅读类型</h3>
-                            <span class="text-[11px] text-slate-500">按筛选周期趋势</span>
+                            <span class="text-[11px] text-slate-500">按筛选周期占比</span>
                         </div>
                         <div class="text-xs text-amber-400 mb-3">${s.name}最喜爱的绘本类型是"${Object.keys(bookTypeStats)[0] || '日常生活'}"</div>
                         <div id="student-booktype-trend-chart" class="w-full" style="min-height:260px;height:260px"></div>
@@ -7126,7 +9245,7 @@ ${allQuestionsText || '（无）'}
                     <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
                         <div class="flex items-center justify-between mb-2">
                             <h3 class="text-sm font-semibold text-slate-200">能力分布</h3>
-                            ${hasAbilityTrend && studentPeriodLabel ? `<span class="text-[11px] text-slate-500">展示周期：${studentPeriodLabel}</span>` : ''}
+                            <span class="text-[11px] text-slate-500">气泡大小=能力得分</span>
                         </div>
                         ${hasAbilityTrend
                             ? '<div id="student-ability-chart" class="w-full" style="min-height:260px;height:260px"></div>'
@@ -7146,7 +9265,6 @@ ${allQuestionsText || '（无）'}
                 <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 mb-6">
                     <div class="flex items-center justify-between mb-2">
                         <h3 class="text-sm font-semibold text-slate-200">兴趣书单</h3>
-                        ${this.renderBookListRangeSwitcher(s.id, 'interest', interestRange)}
                     </div>
                     <p class="text-xs text-slate-400 mb-4">基于 <span class="text-amber-400">${s.name}</span> 的阅读数据分析，发现她/他很喜欢以下类型的书单</p>
                     <div id="student-interest-books-${s.id}">${interestBooksHtml}</div>
@@ -7156,9 +9274,8 @@ ${allQuestionsText || '（无）'}
                 <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
                     <div class="flex items-center justify-between mb-2">
                         <h3 class="text-sm font-semibold text-slate-200">建议书单</h3>
-                        ${this.renderBookListRangeSwitcher(s.id, 'recommend', recommendRange)}
                     </div>
-                    <p class="text-xs text-slate-400 mb-4">基于 <span class="text-amber-400">${s.name}</span> 在3-6岁年龄段中，接下来应更多关注以下类型书籍</p>
+                    <p class="text-xs text-slate-400 mb-4">基于 <span class="text-amber-400">${s.name}</span> 在该年龄段中，接下来应更多关注以下类型书籍</p>
                     <div id="student-recommend-books-${s.id}">${recommendBooksHtml}</div>
                 </div>
             </div>
@@ -7173,12 +9290,12 @@ ${allQuestionsText || '（无）'}
             this.openModal(content);
         }
 
-        // 渲染完成后初始化阅读类型趋势折线图与能力分布趋势折线图
+        // 渲染完成后初始化阅读类型饼图与能力分布气泡图
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
                 this.renderStudentBookTypeTrendChart(detail.records);
                 if (hasAbilityTrend) {
-                    Charts.safeInit(() => Charts.initClassAbilityLine(abilitySeriesData, 'student-ability-chart'));
+                    this.renderStudentAbilityBubble(abilityBubbleData);
                 }
             });
         });
@@ -7191,42 +9308,8 @@ ${allQuestionsText || '（无）'}
     renderStudentBookTypeTrendChart(records) {
         const el = document.getElementById('student-booktype-trend-chart');
         if (!el || typeof echarts === 'undefined') return;
-        const range = this.getSchoolDateRange();
-        const granularity = this.getOverviewSeriesGranularity(range);
 
-        const startMs = range?.startDate ? new Date(`${range.startDate}T00:00:00`).getTime() : null;
-        const endMs = range?.endDate ? new Date(`${range.endDate}T23:59:59`).getTime() : null;
-
-        // 构建按粒度的桶序列
-        const labels = [];
-        if (startMs !== null && endMs !== null) {
-            const cursor = new Date(startMs); cursor.setHours(0, 0, 0, 0);
-            const endDate = new Date(endMs); endDate.setHours(0, 0, 0, 0);
-            while (cursor.getTime() <= endDate.getTime()) {
-                if (granularity === 'month') {
-                    labels.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`);
-                    cursor.setMonth(cursor.getMonth() + 1);
-                    cursor.setDate(1);
-                } else {
-                    labels.push(`${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`);
-                    cursor.setDate(cursor.getDate() + 1);
-                }
-            }
-        }
-        if (!labels.length) {
-            // 兜底：从 records 自身的日期推断
-            const set = new Set();
-            (records || []).forEach(r => {
-                if (!r.date) return;
-                set.add(granularity === 'month' ? r.date.slice(0, 7) : r.date.slice(5, 10));
-            });
-            labels.push(...[...set].sort());
-        }
-
-        const bucketKeyOf = (dateStr) => granularity === 'month' ? dateStr.slice(0, 7) : dateStr.slice(5, 10);
-
-        // 收集类型，每个类型一条折线（按阅读次数）
-        const allTypes = ['日常生活', '人际交往', '情商品格', '国学文化', '科普百科', '语言学习'];
+        // 按类型聚合阅读次数（取当前已筛选 records）
         const typeColors = {
             '日常生活': '#60a5fa',
             '人际交往': '#34d399',
@@ -7235,29 +9318,14 @@ ${allQuestionsText || '（无）'}
             '科普百科': '#22d3ee',
             '语言学习': '#f472b6'
         };
-        const buckets = new Map();
-        allTypes.forEach(t => buckets.set(t, new Map(labels.map(l => [l, 0]))));
+        const counts = new Map();
         (records || []).forEach(r => {
-            if (!r.bookType || !r.date) return;
-            const key = bucketKeyOf(r.date);
-            const typeMap = buckets.get(r.bookType);
-            if (typeMap && typeMap.has(key)) typeMap.set(key, typeMap.get(key) + 1);
+            if (!r.bookType) return;
+            counts.set(r.bookType, (counts.get(r.bookType) || 0) + 1);
         });
-
-        const series = allTypes
-            .filter(t => [...buckets.get(t).values()].some(v => v > 0))
-            .map(t => ({
-                name: t,
-                type: 'line',
-                smooth: true,
-                showSymbol: true,
-                symbol: 'circle',
-                symbolSize: 6,
-                lineStyle: { width: 2 },
-                itemStyle: { color: typeColors[t] || '#60a5fa' },
-                emphasis: { focus: 'series' },
-                data: labels.map(l => buckets.get(t).get(l) || 0)
-            }));
+        const data = [...counts.entries()]
+            .map(([name, value]) => ({ name, value, itemStyle: { color: typeColors[name] || '#60a5fa' } }))
+            .sort((a, b) => b.value - a.value);
 
         if (this._studentBookTypeChart) {
             this._studentBookTypeChart.dispose();
@@ -7265,42 +9333,24 @@ ${allQuestionsText || '（无）'}
         }
         const chart = echarts.init(el, (typeof Charts !== 'undefined' && Charts.isWarm && Charts.isWarm()) ? 'warm' : null, { renderer: 'canvas' });
         const option = {
-            grid: { left: 8, right: 16, top: 78, bottom: 28, containLabel: true },
             tooltip: {
-                trigger: 'axis',
+                trigger: 'item',
                 backgroundColor: 'rgba(15,23,42,0.92)',
                 borderColor: 'rgba(148,163,184,0.3)',
                 textStyle: { color: '#e2e8f0', fontSize: 12 },
-                valueFormatter: v => `${v}次`
+                formatter: '{b}: {c}次 ({d}%)'
             },
-            legend: {
-                top: 6,
-                left: 'center',
-                type: 'scroll',
-                textStyle: { color: '#cbd5e1', fontSize: 11 },
-                itemWidth: 10,
-                itemHeight: 10,
-                itemGap: 12,
-                pageIconColor: '#94a3b8',
-                pageIconInactiveColor: '#475569',
-                pageTextStyle: { color: '#94a3b8', fontSize: 11 }
-            },
-            xAxis: {
-                type: 'category',
-                data: labels,
-                boundaryGap: false,
-                axisLabel: { color: '#94a3b8', fontSize: 11 },
-                axisLine: { lineStyle: { color: 'rgba(148,163,184,0.25)' } }
-            },
-            yAxis: {
-                type: 'value',
-                minInterval: 1,
-                name: '次数',
-                nameTextStyle: { color: '#94a3b8', fontSize: 11 },
-                axisLabel: { color: '#94a3b8', fontSize: 11, formatter: v => `${v}` },
-                splitLine: { lineStyle: { color: 'rgba(148,163,184,0.12)' } }
-            },
-            series: series.length ? series : [{ type: 'line', data: labels.map(() => 0), itemStyle: { color: '#475569' } }]
+            legend: { bottom: 0, textStyle: { color: '#a0aec0', fontSize: 11 } },
+            series: [{
+                type: 'pie',
+                radius: ['38%', '62%'],
+                center: ['50%', '46%'],
+                avoidLabelOverlap: true,
+                itemStyle: { borderRadius: 6, borderColor: 'rgba(120,160,220,0.35)', borderWidth: 2 },
+                label: { show: true, formatter: '{b}\n{d}%', fontSize: 11, color: '#a0aec0' },
+                emphasis: { label: { fontSize: 13, fontWeight: 'bold', color: '#f1f5f9' }, itemStyle: { shadowBlur: 18, shadowColor: 'rgba(59,130,246,0.3)' } },
+                data: data.length ? data : [{ name: '暂无数据', value: 1, itemStyle: { color: '#475569' }, label: { color: '#64748b' } }]
+            }]
         };
         chart.setOption(option);
         this._studentBookTypeChart = chart;
@@ -7321,6 +9371,57 @@ ${allQuestionsText || '（无）'}
         const onResize = () => chart.resize();
         window.addEventListener('resize', onResize);
         this._studentBookTypeChartWinHandler = onResize;
+    },
+
+    renderStudentAbilityBubble(data) {
+        const el = document.getElementById('student-ability-chart');
+        if (!el || typeof echarts === 'undefined') return;
+        if (this._studentAbilityChart) {
+            this._studentAbilityChart.dispose();
+            this._studentAbilityChart = null;
+        }
+        const chart = echarts.init(el, (typeof Charts !== 'undefined' && Charts.isWarm && Charts.isWarm()) ? 'warm' : null, { renderer: 'canvas' });
+        const sizeOf = d => 36 + Math.max(0, Math.min(100, d.value || 0)) / 100 * 48;
+        const fontOf = sz => Math.max(10, Math.min(15, Math.round(sz / 7)));
+        chart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: { show: false },
+            xAxis: { show: false, min: 0, max: 100, type: 'value' },
+            yAxis: { show: false, min: 0, max: 100, type: 'value', inverse: true },
+            grid: { left: 50, right: 50, top: 24, bottom: 24, containLabel: false },
+            series: [{
+                type: 'scatter',
+                data: data.map(d => {
+                    const sz = sizeOf(d);
+                    const fs = fontOf(sz);
+                    return {
+                        name: d.name,
+                        value: [d.x, d.y, d.value],
+                        symbolSize: sz,
+                        itemStyle: { color: d.color, shadowBlur: 16, shadowColor: (d.color || '#3b82f6') + '66' },
+                        label: {
+                            show: true,
+                            formatter: d.name,
+                            color: '#ffffff',
+                            fontSize: fs,
+                            fontWeight: 600,
+                            position: 'inside',
+                            width: Math.max(40, sz - 16),
+                            overflow: 'break',
+                            lineHeight: fs + 3
+                        }
+                    };
+                }),
+                labelLayout: { hideOverlap: false },
+                emphasis: { scale: 1.06, itemStyle: { shadowBlur: 22 } }
+            }]
+        });
+        this._studentAbilityChart = chart;
+        const safeResize = () => { if (document.body.contains(el)) chart.resize(); };
+        requestAnimationFrame(() => requestAnimationFrame(safeResize));
+        const onResize = () => chart.resize();
+        window.addEventListener('resize', onResize);
+        this._studentAbilityChartWinHandler = onResize;
     },
 
     // 兴趣/建议书单时间快筛器（7天 / 1个月 / 半年）
@@ -7357,8 +9458,8 @@ ${allQuestionsText || '（无）'}
         const container = document.getElementById(containerId);
         if (container) {
             container.innerHTML = kind === 'interest'
-                ? this.renderStudentInterestBooks(student, rangeKey)
-                : this.renderStudentRecommendBooks(student, rangeKey);
+                ? this.renderStudentInterestBooks(student)
+                : this.renderStudentRecommendBooks(student);
         }
 
         // 同步切换器选中样式
@@ -7376,8 +9477,8 @@ ${allQuestionsText || '（无）'}
     },
 
     // 兴趣书单：基于 s.interestBooks 与该幼儿喜爱类型，在书库内补足到目标数量
-    renderStudentInterestBooks(s, rangeKey) {
-        const size = this._bookListSizeOf(rangeKey);
+    renderStudentInterestBooks(s) {
+        const size = this.getGlobalBookListSize();
         const base = Array.isArray(s.interestBooks) ? [...s.interestBooks] : [];
         const favoriteType = (s.bookTypeStats && Object.keys(s.bookTypeStats)[0]) || null;
         const allBooks = (MockData.schoolData?.books || []).map(b => b.name);
@@ -7386,18 +9487,8 @@ ${allQuestionsText || '（无）'}
             : [];
 
         const list = [...base];
-        // 不同维度采用不同补足顺序，做出"周期化"差异
-        const fillOrder = rangeKey === '6m'
-            ? [...sameTypeBooks, ...allBooks]
-            : rangeKey === '1m'
-                ? [...sameTypeBooks.slice().reverse(), ...allBooks]
-                : sameTypeBooks;
+        const fillOrder = [...sameTypeBooks, ...allBooks];
         for (const name of fillOrder) {
-            if (list.length >= size) break;
-            if (!list.includes(name)) list.push(name);
-        }
-        // 若仍不足，从全库再补
-        for (const name of allBooks) {
             if (list.length >= size) break;
             if (!list.includes(name)) list.push(name);
         }
@@ -7409,20 +9500,14 @@ ${allQuestionsText || '（无）'}
     },
 
     // 建议书单：基于 s.recommendBooks，按维度补足
-    renderStudentRecommendBooks(s, rangeKey) {
-        const size = this._bookListSizeOf(rangeKey);
+    renderStudentRecommendBooks(s) {
+        const size = this.getGlobalBookListSize();
         const base = Array.isArray(s.recommendBooks) ? [...s.recommendBooks] : [];
         const readNames = new Set(Array.isArray(s.favoriteBooks) ? s.favoriteBooks : []);
         const allBooks = (MockData.schoolData?.books || []).map(b => b.name);
-        // 优先推送未读过的
         const unread = allBooks.filter(n => !readNames.has(n));
-        const fillOrder = rangeKey === '6m'
-            ? unread
-            : rangeKey === '1m'
-                ? unread.slice().reverse()
-                : unread;
         const list = [...base];
-        for (const name of fillOrder) {
+        for (const name of unread) {
             if (list.length >= size) break;
             if (!list.includes(name)) list.push(name);
         }
@@ -7432,9 +9517,327 @@ ${allQuestionsText || '（无）'}
         }
         const final = list.slice(0, size);
         if (!final.length) {
-            return `<span class="text-slate-500 text-sm">基于${s.name || ''}在3-6岁年龄段中，接下来应更多关注以下类型书籍</span>`;
+            return `<span class="text-slate-500 text-sm">基于${s.name || ''}在该年龄段中，接下来应更多关注以下类型书籍</span>`;
         }
         return final.map(book => `<span class="inline-block px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-full text-sm mr-2 mb-2">《${book}》</span>`).join('');
+    },
+
+    // —— 班级爱读榜：班级兴趣书单 / 班级建议书单（规则与幼儿一致） ——
+    _classBookListRanges: {},
+    _ensureClassBookListRange(classId) {
+        if (!this._classBookListRanges) this._classBookListRanges = {};
+        if (!this._classBookListRanges[classId]) {
+            this._classBookListRanges[classId] = { interest: '7d', recommend: '7d' };
+        }
+        return this._classBookListRanges[classId];
+    },
+    renderClassBookListRangeSwitcher(classId, kind, active) {
+        const items = [
+            { key: '7d', label: '7天' },
+            { key: '1m', label: '1个月' },
+            { key: '6m', label: '半年' }
+        ];
+        return `
+            <div class="inline-flex items-center bg-slate-900/60 border border-slate-700/60 rounded-lg p-0.5 text-xs">
+                ${items.map(it => `
+                    <button type="button"
+                        onclick="App.setClassBookListRange(${classId}, '${kind}', '${it.key}')"
+                        class="px-3 py-1 rounded-md transition-colors ${active === it.key ? 'bg-blue-500/20 text-blue-300' : 'text-slate-400 hover:text-slate-200'}">
+                        ${it.label}
+                    </button>
+                `).join('')}
+            </div>
+        `;
+    },
+    setClassBookListRange(classId, kind, rangeKey) {
+        const r = this._ensureClassBookListRange(classId);
+        r[kind] = rangeKey;
+        const cls = (MockData.classes || []).find(c => c.id === classId) || { id: classId };
+        const containerId = kind === 'interest' ? `class-interest-books-${classId}` : `class-recommend-books-${classId}`;
+        const container = document.getElementById(containerId);
+        if (container) {
+            container.innerHTML = kind === 'interest'
+                ? this.renderClassInterestBooks(cls)
+                : this.renderClassRecommendBooks(cls);
+        }
+        const switcherWrapper = container ? container.parentElement.querySelector('.inline-flex') : null;
+        if (switcherWrapper) {
+            switcherWrapper.outerHTML = this.renderClassBookListRangeSwitcher(classId, kind, rangeKey);
+        }
+    },
+    // 班级兴趣书单：取班级 bookTypeStats 中权重最高的类型，在书库内挑出该类型的书；不足时按全库补足
+    renderClassInterestBooks(cls) {
+        const size = this.getGlobalBookListSize();
+        const stats = cls.bookTypeStats || {};
+        const topType = Object.entries(stats).sort((a, b) => b[1] - a[1]).map(([k]) => k)[0] || null;
+        const allBooks = (MockData.schoolData?.books || []).map(b => b.name);
+        const sameTypeBooks = topType
+            ? (MockData.schoolData?.books || []).filter(b => b.type === topType).map(b => b.name)
+            : [];
+        const list = [];
+        for (const name of [...sameTypeBooks, ...allBooks]) {
+            if (list.length >= size) break;
+            if (!list.includes(name)) list.push(name);
+        }
+        const final = list.slice(0, size);
+        if (!final.length) {
+            return `<span class="text-slate-500 text-sm">基于${cls.name || ''}的阅读数据分析，发现该班很喜欢以下类型的书单</span>`;
+        }
+        return final.map(book => `<span class="inline-block px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full text-sm mr-2 mb-2">《${book}》</span>`).join('');
+    },
+    // 班级建议书单：以"班级未充分覆盖的类型"优先（bookTypeStats 中读得最少的类型），书库挑出对应书籍
+    renderClassRecommendBooks(cls) {
+        const size = this.getGlobalBookListSize();
+        const stats = cls.bookTypeStats || {};
+        const allBooks = (MockData.schoolData?.books || []).map(b => b.name);
+        const allBookObjs = (MockData.schoolData?.books || []);
+        const types = Object.keys(stats);
+        const leastType = types.length ? types.sort((a, b) => stats[a] - stats[b])[0] : null;
+        const sameTypeBooks = leastType
+            ? allBookObjs.filter(b => b.type === leastType).map(b => b.name)
+            : [];
+        const list = [];
+        for (const name of [...sameTypeBooks, ...allBooks]) {
+            if (list.length >= size) break;
+            if (!list.includes(name)) list.push(name);
+        }
+        const final = list.slice(0, size);
+        if (!final.length) {
+            return `<span class="text-slate-500 text-sm">基于${cls.name || ''}的阅读数据，可拓展以下类型的书籍</span>`;
+        }
+        return final.map(book => `<span class="inline-block px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-full text-sm mr-2 mb-2">《${book}》</span>`).join('');
+    },
+    // 班级累计阅读绘本 Top3（按全局时间筛选；活动 records 里聚合 bookName）
+    buildClassFavoriteTop3(cls) {
+        if (!cls || cls.id == null) return [];
+        const range = this.getSchoolDateRange();
+        const startMs = range?.startDate ? new Date(`${range.startDate}T00:00:00`).getTime() : null;
+        const endMs = range?.endDate ? new Date(`${range.endDate}T23:59:59`).getTime() : null;
+        const inRange = ts => (startMs == null || ts >= startMs) && (endMs == null || ts <= endMs);
+
+        // 聚合该班级时间窗内的活动 -> 绘本计数
+        const acts = (MockData.schoolData?.activities || []).filter(a => a.classId === cls.id || a.className === cls.name);
+        const counts = new Map();
+        const types = new Map();
+        acts.forEach(a => {
+            const ts = a.date ? new Date(`${a.date}T00:00:00`).getTime() : null;
+            if (ts != null && !inRange(ts)) return;
+            const bookName = a.bookName || a.book || null;
+            if (!bookName) return;
+            counts.set(bookName, (counts.get(bookName) || 0) + 1);
+            if (a.bookType) types.set(bookName, a.bookType);
+        });
+
+        let entries = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+        // 兜底：没有活动数据时，从该班 bookTypeStats 中权重最高的类型挑前 3 本作展示
+        if (!entries.length) {
+            const topType = Object.entries(cls.bookTypeStats || {}).sort((a, b) => b[1] - a[1]).map(([k]) => k)[0];
+            const seedBooks = topType
+                ? (MockData.schoolData?.books || []).filter(b => b.type === topType).slice(0, 3).map(b => ({ name: b.name, count: 0, type: b.type }))
+                : (MockData.schoolData?.books || []).slice(0, 3).map(b => ({ name: b.name, count: 0, type: b.type }));
+            return seedBooks;
+        }
+        return entries.slice(0, 3).map(([name, count]) => ({ name, count, type: types.get(name) || '' }));
+    },
+    renderClassFavoriteTop3(cls) {
+        const top3 = this.buildClassFavoriteTop3(cls);
+        if (!top3.length) {
+            return `<div class="text-sm text-slate-500">暂无累计阅读数据</div>`;
+        }
+        const medal = ['#fbbf24', '#94a3b8', '#a78bfa'];
+        return `<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            ${top3.map((b, i) => `
+                <div class="rounded-2xl border border-slate-500/25 bg-slate-800/40 p-4 flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0" style="background:${medal[i] || '#475569'}">${i + 1}</div>
+                    <div class="min-w-0 flex-1">
+                        <div class="text-sm font-semibold text-white truncate">《${b.name}》</div>
+                        <div class="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
+                            ${b.type ? this.badge(b.type, 'blue') : ''}
+                            <span>累计阅读 ${b.count} 次</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>`;
+    },
+    // 渲染整个"班级爱读榜"模块（卡片形式，单独的"爱读榜 Top3"）
+    renderClassFavoriteBoard(cls) {
+        if (!cls || cls.id == null) return '';
+        return this.card(`
+            <div class="flex items-center justify-between gap-3 mb-4">
+                ${this.chartTitle('班级爱读榜', 'bg-rose-500', '统计范围：当前所选时间范围内本班全部活动记录。\n口径：按绘本聚合阅读次数，取累计阅读次数前 3 本。\n用途：识别本班最受欢迎的绘本。')}
+                <div class="text-xs text-slate-400 px-3 py-1.5 rounded-full border border-rose-500/20 bg-rose-500/10">${cls.name || ''} · 累计 Top3</div>
+            </div>
+            ${this.renderClassFavoriteTop3(cls)}
+        `);
+    },
+
+    // 渲染"班级兴趣书单"独立模块
+    renderClassInterestBoard(cls) {
+        if (!cls || cls.id == null) return '';
+        const topType = Object.entries(cls.bookTypeStats || {}).sort((a, b) => b[1] - a[1]).map(([k]) => k)[0] || '日常生活';
+        return this.card(`
+            <div class="flex items-center justify-between gap-3 mb-3">
+                ${this.chartTitle('班级兴趣书单', 'bg-blue-500', '统计范围：跟随顶部时间筛选。\n口径：基于班级最近偏好的类型推荐对应类型绘本。\n数量：根据所选时间范围长度自动调整。')}
+            </div>
+            <p class="text-xs text-slate-400 mb-4">基于 <span class="text-amber-400">${cls.name || ''}</span> 的阅读数据分析，该班很喜欢"${topType}"类型的书</p>
+            <div id="class-interest-books-${cls.id}">${this.renderClassInterestBooks(cls)}</div>
+        `);
+    },
+
+    // 渲染"班级建议书单"独立模块
+    renderClassRecommendBoard(cls) {
+        if (!cls || cls.id == null) return '';
+        return this.card(`
+            <div class="flex items-center justify-between gap-3 mb-3">
+                ${this.chartTitle('班级建议书单', 'bg-emerald-500', '统计范围：跟随顶部时间筛选。\n口径：基于班级近期较少阅读的类型，从书库挑选可拓展的绘本。\n数量：根据所选时间范围长度自动调整。')}
+            </div>
+            <p class="text-xs text-slate-400 mb-4">基于 <span class="text-amber-400">${cls.name || ''}</span> 在该年龄段中，接下来应更多关注以下类型书籍</p>
+            <div id="class-recommend-books-${cls.id}">${this.renderClassRecommendBooks(cls)}</div>
+        `);
+    },
+
+    // 渲染整组"班级爱读榜 + 班级兴趣书单 + 班级建议书单"三个独立模块（园长视角带班级选择器；教师视角直接锁定本班）
+    _selectedFavoriteClassId: null,
+
+    // —— 园所级聚合：合并多个班级的 bookTypeStats ——
+    getAggregatedBookTypeStats(classes) {
+        const merged = {};
+        (classes || []).forEach(c => {
+            Object.entries(c.bookTypeStats || {}).forEach(([k, v]) => {
+                merged[k] = (merged[k] || 0) + v;
+            });
+        });
+        return merged;
+    },
+    // 园所级爱读榜：聚合所有班级在时间窗内的活动 → 绘本计数 Top3
+    buildSchoolFavoriteTop3(classes) {
+        const range = this.getSchoolDateRange();
+        const startMs = range?.startDate ? new Date(`${range.startDate}T00:00:00`).getTime() : null;
+        const endMs = range?.endDate ? new Date(`${range.endDate}T23:59:59`).getTime() : null;
+        const inRange = ts => (startMs == null || ts >= startMs) && (endMs == null || ts <= endMs);
+        const ids = new Set((classes || []).map(c => c.id));
+        const names = new Set((classes || []).map(c => c.name));
+        const acts = (MockData.schoolData?.activities || []).filter(a => ids.has(a.classId) || names.has(a.className));
+        const counts = new Map();
+        const types = new Map();
+        acts.forEach(a => {
+            const ts = a.date ? new Date(`${a.date}T00:00:00`).getTime() : null;
+            if (ts != null && !inRange(ts)) return;
+            const bookName = a.bookName || a.book || null;
+            if (!bookName) return;
+            counts.set(bookName, (counts.get(bookName) || 0) + 1);
+            if (a.bookType) types.set(bookName, a.bookType);
+        });
+        let entries = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+        if (!entries.length) {
+            const merged = this.getAggregatedBookTypeStats(classes);
+            const topType = Object.entries(merged).sort((a, b) => b[1] - a[1]).map(([k]) => k)[0];
+            const seed = topType
+                ? (MockData.schoolData?.books || []).filter(b => b.type === topType).slice(0, 3).map(b => ({ name: b.name, count: 0, type: b.type }))
+                : (MockData.schoolData?.books || []).slice(0, 3).map(b => ({ name: b.name, count: 0, type: b.type }));
+            return seed;
+        }
+        return entries.slice(0, 3).map(([name, count]) => ({ name, count, type: types.get(name) || '' }));
+    },
+    // 园所级三个榜单（合成一个代表全园的虚拟 cls 复用书单渲染）
+    renderSchoolLevelBoards(classes, schoolName) {
+        const merged = this.getAggregatedBookTypeStats(classes);
+        const schoolCls = { id: 'school', name: schoolName || '本园', bookTypeStats: merged };
+        const top3 = this.buildSchoolFavoriteTop3(classes);
+        const medal = ['#fbbf24', '#94a3b8', '#a78bfa'];
+        const favHtml = top3.length
+            ? `<div class="grid grid-cols-1 md:grid-cols-3 gap-4">${top3.map((b, i) => `
+                <div class="rounded-2xl border border-slate-500/25 bg-slate-800/40 p-4 flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0" style="background:${medal[i] || '#475569'}">${i + 1}</div>
+                    <div class="min-w-0 flex-1">
+                        <div class="text-sm font-semibold text-white truncate">《${b.name}》</div>
+                        <div class="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
+                            ${b.type ? this.badge(b.type, 'blue') : ''}
+                            <span>累计阅读 ${b.count} 次</span>
+                        </div>
+                    </div>
+                </div>`).join('')}</div>`
+            : `<div class="text-sm text-slate-500">暂无累计阅读数据</div>`;
+        const topType = Object.entries(merged).sort((a, b) => b[1] - a[1]).map(([k]) => k)[0] || '日常生活';
+        return `
+            ${this.card(`
+                <div class="flex items-center justify-between gap-3 mb-4">
+                    ${this.chartTitle('园所爱读榜', 'bg-rose-500', '统计范围：当前所选时间范围内全园全部活动记录。\n口径：按绘本聚合阅读次数，取累计阅读次数前 3 本。\n用途：识别全园最受欢迎的绘本。')}
+                    <div class="text-xs text-slate-400 px-3 py-1.5 rounded-full border border-rose-500/20 bg-rose-500/10">${schoolName || '本园'} · 累计 Top3</div>
+                </div>
+                ${favHtml}
+            `)}
+            ${this.card(`
+                <div class="flex items-center justify-between gap-3 mb-3">
+                    ${this.chartTitle('园所兴趣书单', 'bg-blue-500', '统计范围：跟随顶部时间筛选。\n口径：基于全园最近偏好的类型推荐对应类型绘本。\n数量：根据所选时间范围长度自动调整。')}
+                </div>
+                <p class="text-xs text-slate-400 mb-4">基于 <span class="text-amber-400">${schoolName || '本园'}</span> 的阅读数据分析，全园很喜欢"${topType}"类型的书</p>
+                <div id="class-interest-books-school">${this.renderClassInterestBooks(schoolCls)}</div>
+            `)}
+            ${this.card(`
+                <div class="flex items-center justify-between gap-3 mb-3">
+                    ${this.chartTitle('园所建议书单', 'bg-emerald-500', '统计范围：跟随顶部时间筛选。\n口径：基于全园近期较少阅读的类型，从书库挑选可拓展的绘本。\n数量：根据所选时间范围长度自动调整。')}
+                </div>
+                <p class="text-xs text-slate-400 mb-4">基于 <span class="text-amber-400">${schoolName || '本园'}</span> 的整体阅读情况，接下来应更多关注以下类型书籍</p>
+                <div id="class-recommend-books-school">${this.renderClassRecommendBooks(schoolCls)}</div>
+            `)}
+        `;
+    },
+
+    renderSchoolFavoriteBoard() {
+        // 选择班级范围：admin 单园弹窗看选定园所；principal 看本园；teacher 看本班
+        let classes = (MockData.classes || []).slice();
+        if (this.currentRole === 'teacher') {
+            const teacherClassId = this.selectedClass ? this.selectedClass.id : null;
+            if (teacherClassId) classes = classes.filter(c => c.id === teacherClassId);
+        } else if (this.selectedSchool) {
+            classes = classes.filter(c => c.kindergartenId === this.selectedSchool.id);
+        }
+        if (!classes.length) return '';
+
+        // 当前选中的班级；若失效或未选，默认第一项
+        let activeId = this._selectedFavoriteClassId;
+        if (!classes.some(c => c.id === activeId)) {
+            activeId = classes[0].id;
+            this._selectedFavoriteClassId = activeId;
+        }
+        const activeCls = classes.find(c => c.id === activeId) || classes[0];
+
+        // 园长 / 单园视角：榜单为"园所级"聚合（不再按班级切换）
+        if (this.currentRole !== 'teacher') {
+            const schoolName = this.selectedSchool ? this.selectedSchool.name : '本园';
+            return `<div id="class-favorite-board-host" class="space-y-6">
+                ${this.renderSchoolLevelBoards(classes, schoolName)}
+            </div>`;
+        }
+
+        const showSelector = this.currentRole !== 'teacher' && classes.length > 1;
+        const selectorBar = showSelector
+            ? `<div class="flex items-center justify-end gap-2">
+                <span class="text-xs text-slate-400">选择班级</span>
+                <select onchange="App.setSchoolFavoriteClass(parseInt(this.value, 10))"
+                    class="bg-slate-800/60 border border-slate-600/40 text-slate-200 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-rose-400/50">
+                    ${classes.map(c => `<option value="${c.id}" ${c.id === activeId ? 'selected' : ''}>${c.name}</option>`).join('')}
+                </select>
+            </div>`
+            : '';
+
+        return `<div id="class-favorite-board-host" class="space-y-6">
+            ${selectorBar}
+            ${this.renderClassFavoriteBoard(activeCls)}
+            ${this.renderClassInterestBoard(activeCls)}
+            ${this.renderClassRecommendBoard(activeCls)}
+        </div>`;
+    },
+    setSchoolFavoriteClass(classId) {
+        this._selectedFavoriteClassId = classId;
+        const cls = (MockData.classes || []).find(c => c.id === classId);
+        if (!cls) return;
+        const host = document.getElementById('class-favorite-board-host');
+        if (!host) return;
+        // 重新渲染整个 host（保留选择器，只刷新三个卡片）
+        host.outerHTML = this.renderSchoolFavoriteBoard();
     },
 
     // 打开学生详情子页面（在当前标签页内容区域内）
@@ -7631,12 +10034,12 @@ ${allQuestionsText || '（无）'}
         const items = list.map(r => {
             const dateStr = (r.generatedAt || '').split(' ')[0] || '-';
             return `
-                <div onclick="App.openMobileAiReport('${type}', '${escKey}', '${(r.generatedAt || '').replace(/'/g, "\\'")}')" class="flex items-center justify-between px-4 py-3 border-b border-gray-100 active:bg-gray-50">
+                <div onclick="App.openMobileAiReport('${type}', '${escKey}', '${String(r.id || r.generatedAt || '').replace(/'/g, "\\'")}')" class="flex items-center justify-between px-4 py-3 border-b border-gray-100 active:bg-gray-50">
                     <div class="flex-1 min-w-0">
                         <div class="text-sm font-medium text-gray-900">${dateStr}</div>
                         <div class="text-xs text-gray-500 mt-0.5">${r.rangeLabel || '-'} · ${r.sampleCount || 0} 次对话</div>
                     </div>
-                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                    <svg class="w-4 h-4 text-gray-400" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </div>
             `;
         }).join('');
@@ -7644,7 +10047,7 @@ ${allQuestionsText || '（无）'}
             <div class="min-h-screen bg-gray-50">
                 <div class="sticky top-0 z-50 bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
                     <button onclick="window.history.back()" class="p-2 -ml-2">
-                        <svg class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                        <svg class="w-6 h-6 text-gray-700" width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
                     </button>
                     <h1 class="text-lg font-semibold text-gray-900 flex-1">${type === 'class' ? '班级' : '幼儿'} AI 报告 · ${titleName}</h1>
                 </div>
@@ -7656,9 +10059,9 @@ ${allQuestionsText || '（无）'}
         this._renderMobileOverlay(html);
     },
 
-    openMobileAiReport(type, key, generatedAt) {
+    openMobileAiReport(type, key, reportId) {
         const list = this._mobileAiList(type, key);
-        const r = list.find(x => x.generatedAt === generatedAt) || list[0];
+        const r = list.find(x => (x.id || x.generatedAt) === reportId) || list[0];
         if (!r) return;
         const titleMap = {
             class: `${r.className || key} · 班级 AI 画像`,
@@ -7676,7 +10079,7 @@ ${allQuestionsText || '（无）'}
             <div class="min-h-screen bg-gray-50 pb-8">
                 <div class="sticky top-0 z-50 bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
                     <button onclick="window.history.back()" class="p-2 -ml-2">
-                        <svg class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                        <svg class="w-6 h-6 text-gray-700" width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
                     </button>
                     <h1 class="text-base font-semibold text-gray-900 flex-1 truncate">${titleMap[type] || 'AI 报告'}</h1>
                 </div>
@@ -7772,13 +10175,13 @@ ${allQuestionsText || '（无）'}
                 <!-- 头部 -->
                 <div class="sticky top-0 z-50 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
                     <button onclick="window.history.back()" class="p-2 -ml-2">
-                        <svg class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg class="w-6 h-6 text-gray-700" width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                         </svg>
                     </button>
                     <h1 class="text-lg font-semibold text-gray-900">绘本阅读报告</h1>
                     <button class="p-2 -mr-2">
-                        <svg class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg class="w-6 h-6 text-gray-700" width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
                         </svg>
                     </button>
@@ -8065,13 +10468,13 @@ ${allQuestionsText || '（无）'}
                 <!-- 头部 -->
                 <div class="sticky top-0 z-50 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
                     <button onclick="App.renderMobileClassReport(${s.classId})" class="p-2 -ml-2">
-                        <svg class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg class="w-6 h-6 text-gray-700" width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                         </svg>
                     </button>
                     <h1 class="text-lg font-semibold text-gray-900">绘本阅读报告</h1>
                     <button class="p-2 -mr-2">
-                        <svg class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg class="w-6 h-6 text-gray-700" width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
                         </svg>
                     </button>
