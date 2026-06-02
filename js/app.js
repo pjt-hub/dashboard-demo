@@ -4310,6 +4310,27 @@ const App = {
         }
         return `<div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs mb-5">${cells.join('')}${typeCell}</div>`;
     },
+    // 已生成报告头部：范围 + 多维样本统计 + 生成时间（统一新样式）
+    renderAiReportHeaderStats(entry, fields, accentTextClass = 'text-cyan-300') {
+        const stats = entry.stats || this.computeAiDialogueStats([]);
+        const labelMap = {
+            chat: ['对话次数', stats.chatCount],
+            turns: ['累计轮次', stats.turns],
+            books: ['互动绘本', stats.bookCount],
+            students: ['涉及幼儿', stats.studentCount],
+            classes: ['涉及班级', stats.classCount],
+        };
+        const rangeCell = `<div class="bg-slate-800/60 border border-slate-600/30 rounded-lg px-3 py-2"><span class="text-slate-500">范围</span><div class="text-slate-200">${entry.roleLabel || '-'} · ${entry.rangeKey ? this.formatAiRangeLabel(entry.rangeKey) : (entry.rangeLabel || '-')}</div></div>`;
+        const statCells = fields.filter(f => f !== 'type').map(f => {
+            const [label, val] = labelMap[f];
+            return `<div class="bg-slate-800/60 border border-slate-600/30 rounded-lg px-3 py-2"><span class="text-slate-500">${label}</span><div class="${accentTextClass} font-semibold">${val}</div></div>`;
+        }).join('');
+        const typeCell = fields.includes('type')
+            ? `<div class="bg-slate-800/60 border border-slate-600/30 rounded-lg px-3 py-2"><span class="text-slate-500">对话类型分布</span><div class="mt-1">${this.renderAiTypeDistribution(stats)}</div></div>`
+            : '';
+        const timeCell = `<div class="bg-slate-800/60 border border-slate-600/30 rounded-lg px-3 py-2"><span class="text-slate-500">生成时间</span><div class="text-slate-200">${entry.generatedAt || '—'}</div></div>`;
+        return `<div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs mb-4">${rangeCell}${statCells}${typeCell}${timeCell}</div>`;
+    },
     // 自选时间状态（共用）：{ startDate, endDate } yyyy-mm-dd
     _aiAnalysisCustomRange: { startDate: '', endDate: '' },
     setAiAnalysisCustomRange(field, value) {
@@ -5205,11 +5226,7 @@ ${allQuestionsText || '（无）'}
                         </button>
                     </div>
                 </div>
-                <div class="grid grid-cols-3 gap-3 text-xs text-slate-400 mb-4">
-                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">范围</span><div class="text-slate-200">${entry.roleLabel || '-'} · ${entry.rangeKey ? this.formatAiRangeLabel(entry.rangeKey) : (entry.rangeLabel || '-')}</div></div>
-                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">样本</span><div class="text-cyan-300">${entry.sampleCount || 0} 次对话</div></div>
-                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">生成时间</span><div class="text-slate-200">${entry.generatedAt || '—'}</div></div>
-                </div>
+                ${this.renderAiReportHeaderStats(entry, ['chat', 'turns', 'students', 'classes', 'type'], 'text-cyan-300')}
 
                 <div class="mb-4">
                     <h4 class="text-sm font-semibold text-amber-300 mb-2 flex items-center">🔥 热门问题 TOP${Math.min(10, top.length)}${clusterTag}</h4>
@@ -5821,11 +5838,7 @@ ${allQuestionsText || '（无）'}
                         </button>
                     </div>
                 </div>
-                <div class="grid grid-cols-3 gap-3 text-xs text-slate-400 mb-4">
-                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">范围</span><div class="text-slate-200">${entry.roleLabel || '-'} · ${entry.rangeKey ? this.formatAiRangeLabel(entry.rangeKey) : (entry.rangeLabel || '-')}</div></div>
-                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">样本</span><div class="text-emerald-300">${entry.sampleCount || 0} 次对话</div></div>
-                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">生成时间</span><div class="text-slate-200">${entry.generatedAt || '—'}</div></div>
-                </div>
+                ${this.renderAiReportHeaderStats(entry, ['chat', 'turns', 'books', 'type'], 'text-emerald-300')}
 
                 <div class="mb-4">
                     <h4 class="text-sm font-semibold text-amber-300 mb-2 flex items-center">🔥 核心关注主题 TOP${Math.min(10, top.length)}${clusterTag}</h4>
@@ -6388,12 +6401,7 @@ ${allQuestionsText || '（无）'}
                         </button>
                     </div>
                 </div>
-                <div class="grid grid-cols-4 gap-3 text-xs text-slate-400 mb-4">
-                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">范围</span><div class="text-slate-200">${entry.roleLabel || '-'} · ${entry.rangeKey ? this.formatAiRangeLabel(entry.rangeKey) : (entry.rangeLabel || '-')}</div></div>
-                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">对话样本</span><div class="text-amber-300">${entry.sampleCount || 0} 次</div></div>
-                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">涉及幼儿/绘本</span><div class="text-emerald-300">${entry.studentCount || 0} 人 · ${entry.bookCount || 0} 本</div></div>
-                    <div class="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2"><span class="text-slate-500">生成时间</span><div class="text-slate-200">${entry.generatedAt || '—'}</div></div>
-                </div>
+                ${this.renderAiReportHeaderStats(entry, ['chat', 'turns', 'books', 'type'], 'text-amber-300')}
 
                 <div class="mb-4">
                     <h4 class="text-sm font-semibold text-amber-300 mb-2 flex items-center">🔥 班级核心关注主题 TOP${Math.min(10, top.length)}${clusterTag}</h4>
