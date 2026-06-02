@@ -5665,9 +5665,18 @@ ${bodyHtml}
             bookMap.set(d.book, (bookMap.get(d.book) || 0) + 1);
         });
         const fallbackTop = [...bookMap.entries()]
-            .map(([q, count]) => ({ q, count }))
+            .map(([q, count]) => ({ q, count, books: [q] }))
             .sort((a, b) => b.count - a.count)
             .slice(0, 10);
+
+        // 提问文本 → 来源绘本 的映射，便于给"核心关注主题"标注绘本来源
+        const qBookMap = new Map();
+        dialogues.forEach(d => {
+            (d.session || []).forEach(t => {
+                if (t.q && d.book && !qBookMap.has(t.q)) qBookMap.set(t.q, d.book);
+            });
+        });
+        this._aiStudentQBookMap = qBookMap;
 
         const rangeLabel = this.formatAiRangeLabel(rangeKey);
         const roleLabel = `小朋友「${student}」（${className}）`;
@@ -5737,11 +5746,12 @@ ${allQuestionsText || '（无）'}
                     const rawText = full || entry.analysis;
                     const cluster = this.parseClusterJson(rawText);
                     if (cluster && Array.isArray(cluster.clusters) && cluster.clusters.length) {
-                        entry.topQuestions = cluster.clusters.slice(0, 10).map(c => ({
-                            q: c.representative || (Array.isArray(c.samples) ? c.samples[0] : '') || '',
-                            count: Number(c.count) || (Array.isArray(c.samples) ? c.samples.length : 0),
-                            samples: Array.isArray(c.samples) ? c.samples.slice(0, 6) : []
-                        })).filter(t => t.q);
+                        const qbm = this._aiStudentQBookMap || new Map();
+                        entry.topQuestions = cluster.clusters.slice(0, 10).map(c => {
+                            const samples = Array.isArray(c.samples) ? c.samples.slice(0, 6) : [];
+                            const books = [...new Set(samples.map(s => qbm.get(s)).filter(Boolean))];
+                            return { q: c.representative || samples[0] || '', count: Number(c.count) || samples.length, samples, books };
+                        }).filter(t => t.q);
                         entry.clusterMode = 'model';
                     } else {
                         entry.clusterMode = 'fallback';
@@ -5851,7 +5861,7 @@ ${allQuestionsText || '（无）'}
                             return `
                             <div class="flex items-center gap-2 text-sm" ${sampleAttr}>
                                 <span class="shrink-0 w-6 h-6 rounded-full ${i < 3 ? 'bg-amber-500/30 text-amber-200' : 'bg-slate-700/60 text-slate-300'} text-xs flex items-center justify-center">${i + 1}</span>
-                                <span class="flex-1 text-slate-200">${t.q}</span>
+                                <span class="flex-1 text-slate-200">${t.q}${(() => { const bs=(t.books||[]).filter(b=>b && b!==t.q); return bs.length ? ` <span class="text-xs text-violet-300">· ${bs.map(b => `《${b}》`).join("、")}</span>` : ""; })()}</span>
                                 <span class="text-xs text-slate-400">${t.count} 次</span>
                             </div>`;
                         }).join('')}
@@ -6221,9 +6231,18 @@ ${allQuestionsText || '（无）'}
             if (d.book) bookCount.set(d.book, (bookCount.get(d.book) || 0) + 1);
         });
         const fallbackTop = [...bookCount.entries()]
-            .map(([q, count]) => ({ q, count }))
+            .map(([q, count]) => ({ q, count, books: [q] }))
             .sort((a, b) => b.count - a.count)
             .slice(0, 10);
+
+        // 提问文本 → 来源绘本 映射，用于标注班级"核心关注主题"的绘本来源
+        const qBookMapC = new Map();
+        dialogues.forEach(d => {
+            (d.session || []).forEach(t => {
+                if (t.q && d.book && !qBookMapC.has(t.q)) qBookMapC.set(t.q, d.book);
+            });
+        });
+        this._aiClassQBookMap = qBookMapC;
 
         const rangeLabel = this.formatAiRangeLabel(rangeKey);
         const roleLabel = `班级「${className}」`;
@@ -6296,11 +6315,12 @@ ${allQuestionsText || '（无）'}
                     const rawText = full || entry.analysis;
                     const cluster = this.parseClusterJson(rawText);
                     if (cluster && Array.isArray(cluster.clusters) && cluster.clusters.length) {
-                        entry.topQuestions = cluster.clusters.slice(0, 10).map(c => ({
-                            q: c.representative || (Array.isArray(c.samples) ? c.samples[0] : '') || '',
-                            count: Number(c.count) || (Array.isArray(c.samples) ? c.samples.length : 0),
-                            samples: Array.isArray(c.samples) ? c.samples.slice(0, 6) : []
-                        })).filter(t => t.q);
+                        const qbm = this._aiClassQBookMap || new Map();
+                        entry.topQuestions = cluster.clusters.slice(0, 10).map(c => {
+                            const samples = Array.isArray(c.samples) ? c.samples.slice(0, 6) : [];
+                            const books = [...new Set(samples.map(s => qbm.get(s)).filter(Boolean))];
+                            return { q: c.representative || samples[0] || '', count: Number(c.count) || samples.length, samples, books };
+                        }).filter(t => t.q);
                         entry.clusterMode = 'model';
                     } else {
                         entry.clusterMode = 'fallback';
@@ -6414,7 +6434,7 @@ ${allQuestionsText || '（无）'}
                             return `
                             <div class="flex items-center gap-2 text-sm" ${sampleAttr}>
                                 <span class="shrink-0 w-6 h-6 rounded-full ${i < 3 ? 'bg-amber-500/30 text-amber-200' : 'bg-slate-700/60 text-slate-300'} text-xs flex items-center justify-center">${i + 1}</span>
-                                <span class="flex-1 text-slate-200">${t.q}</span>
+                                <span class="flex-1 text-slate-200">${t.q}${(() => { const bs=(t.books||[]).filter(b=>b && b!==t.q); return bs.length ? ` <span class="text-xs text-violet-300">· ${bs.map(b => `《${b}》`).join("、")}</span>` : ""; })()}</span>
                                 <span class="text-xs text-slate-400">${t.count} 次</span>
                             </div>`;
                         }).join('')}
