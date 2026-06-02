@@ -4278,9 +4278,9 @@ const App = {
     renderAiTypeDistribution(stats) {
         const r = stats?.typeRead || 0;
         const a = stats?.typeAfter || 0;
-        return `<span class="inline-flex items-center gap-1">
-            <span class="px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-400/30">阅读中 ${r}</span>
-            <span class="px-1.5 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">阅读后 ${a}</span>
+        return `<span class="aih-badges">
+            <span class="aih-badge aih-badge--read">阅读中 <b>${r}</b></span>
+            <span class="aih-badge aih-badge--after">阅读后 <b>${a}</b></span>
         </span>`;
     },
     // 可用对话样本统计行：与对应明细列表展示范围一致
@@ -4572,32 +4572,45 @@ const App = {
         const pageStartIdx = (curPage - 1) * pageSize;
         const rows = allRows.slice(pageStartIdx, pageStartIdx + pageSize);
 
-        // 表头定义
+        // 表头定义（num: 居中数值列）
         let headers;
         if (kind === 'class') {
-            headers = ['序号', '班级', '时间范围', '对话次数', '累计轮次', '互动绘本', '对话类型分布', '生成报告时间', '生成者', '操作'];
+            headers = [
+                { t: '序号' }, { t: '班级' }, { t: '时间范围' },
+                { t: '对话次数', num: 1 }, { t: '累计轮次', num: 1 }, { t: '互动绘本', num: 1 },
+                { t: '对话类型分布' }, { t: '生成报告时间' }, { t: '生成者' }, { t: '操作', num: 1 }
+            ];
         } else if (kind === 'student') {
-            headers = ['序号', '幼儿', '班级', '时间范围', '对话次数', '累计轮次', '互动绘本', '对话类型分布', '生成报告时间', '生成者', '操作'];
+            headers = [
+                { t: '序号' }, { t: '幼儿' }, { t: '班级' }, { t: '时间范围' },
+                { t: '对话次数', num: 1 }, { t: '累计轮次', num: 1 }, { t: '互动绘本', num: 1 },
+                { t: '对话类型分布' }, { t: '生成报告时间' }, { t: '生成者' }, { t: '操作', num: 1 }
+            ];
         } else {
-            headers = ['序号', '绘本', '时间范围', '对话次数', '累计轮次', '涉及幼儿', '涉及班级', '对话类型分布', '生成报告时间', '生成者', '操作'];
+            headers = [
+                { t: '序号' }, { t: '绘本' }, { t: '时间范围' },
+                { t: '对话次数', num: 1 }, { t: '累计轮次', num: 1 }, { t: '涉及幼儿', num: 1 }, { t: '涉及班级', num: 1 },
+                { t: '对话类型分布' }, { t: '生成报告时间' }, { t: '生成者' }, { t: '操作', num: 1 }
+            ];
         }
 
         const body = rows.length ? rows.map((item, i) => {
             const r = item.report;
+            const nameCell = kind === 'class'
+                ? `<span class="aih-mark">🏫</span>${item.key}`
+                : kind === 'student' ? item.key : `<span class="aih-mark">《</span>${item.key}<span class="aih-mark">》</span>`;
             if (r.generating) {
-                const nameCell = kind === 'class' ? `🏫 ${item.key}` : kind === 'student' ? item.key : `《${item.key}》`;
-                const nameClr = kind === 'class' ? 'text-amber-200' : kind === 'student' ? 'text-emerald-200' : 'text-cyan-200';
                 const spanCols = headers.length - 2;
-                return `<tr class="border-b border-slate-700/30 bg-cyan-500/5">
-                    <td class="px-3 py-3 text-slate-500">${pageStartIdx + i + 1}</td>
-                    <td class="px-3 py-3 font-medium ${nameClr}">${nameCell}</td>
-                    <td class="px-3 py-3 text-cyan-300 text-xs" colspan="${spanCols}">
-                        <span class="inline-flex items-center gap-1.5">
+                return `<tr class="is-generating">
+                    <td class="aih-idx">${pageStartIdx + i + 1}</td>
+                    <td class="aih-name">${nameCell}</td>
+                    <td colspan="${spanCols}">
+                        <span class="aih-generating">
                             <svg class="w-3 h-3 animate-spin" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8V2.5"/></svg>
                             正在生成 AI 分析报告，请稍候…
                         </span>
                     </td>
-                    <td class="px-3 py-3 text-center"><span class="px-2 py-1 rounded text-[11px] text-cyan-300 border border-cyan-400/30">生成中</span></td>
+                    <td class="aih-ops"><span class="aih-pill">生成中</span></td>
                 </tr>`;
             }
             const st = this._aiHistStats(r);
@@ -4606,47 +4619,47 @@ const App = {
             const rangeLabel = this._aiHistRangeLabel(r);
             const typeDist = this.renderAiTypeDistribution(st);
             const author = r.author || this.getCurrentUserName();
-            const authorCell = `<td class="px-3 py-3 text-cyan-300 text-xs whitespace-nowrap">${author}</td>`;
+            const authorCell = `<td class="aih-muted">${author}</td>`;
             let viewFn, cells;
             if (kind === 'class') {
                 viewFn = `App.loadHistoricalClassReport('${key}', '${ts}')`;
                 cells = [
-                    `<td class="px-3 py-3 text-slate-500">${pageStartIdx + i + 1}</td>`,
-                    `<td class="px-3 py-3 font-medium text-amber-200">🏫 ${item.key}</td>`,
-                    `<td class="px-3 py-3 text-slate-300 text-xs">${rangeLabel}</td>`,
-                    `<td class="px-3 py-3 text-center text-slate-300">${st.chatCount}</td>`,
-                    `<td class="px-3 py-3 text-center text-slate-300">${st.turns}</td>`,
-                    `<td class="px-3 py-3 text-center text-slate-300">${st.bookCount}</td>`,
-                    `<td class="px-3 py-3 text-center">${typeDist}</td>`,
-                    `<td class="px-3 py-3 text-slate-400 text-xs whitespace-nowrap">${this._aiHistFmtTime(r.generatedAt)}</td>`,
+                    `<td class="aih-idx">${pageStartIdx + i + 1}</td>`,
+                    `<td class="aih-name">${nameCell}</td>`,
+                    `<td>${rangeLabel}</td>`,
+                    `<td class="aih-num">${st.chatCount}</td>`,
+                    `<td class="aih-num">${st.turns}</td>`,
+                    `<td class="aih-num">${st.bookCount}</td>`,
+                    `<td>${typeDist}</td>`,
+                    `<td class="aih-time">${this._aiHistFmtTime(r.generatedAt)}</td>`,
                     authorCell
                 ];
             } else if (kind === 'student') {
                 viewFn = `App.loadHistoricalStudentReport('${key}', '${ts}')`;
                 cells = [
-                    `<td class="px-3 py-3 text-slate-500">${pageStartIdx + i + 1}</td>`,
-                    `<td class="px-3 py-3 font-medium text-emerald-200">${item.key}</td>`,
-                    `<td class="px-3 py-3 text-slate-300">${r.className || '-'}</td>`,
-                    `<td class="px-3 py-3 text-slate-300 text-xs">${rangeLabel}</td>`,
-                    `<td class="px-3 py-3 text-center text-slate-300">${st.chatCount}</td>`,
-                    `<td class="px-3 py-3 text-center text-slate-300">${st.turns}</td>`,
-                    `<td class="px-3 py-3 text-center text-slate-300">${st.bookCount}</td>`,
-                    `<td class="px-3 py-3 text-center">${typeDist}</td>`,
-                    `<td class="px-3 py-3 text-slate-400 text-xs whitespace-nowrap">${this._aiHistFmtTime(r.generatedAt)}</td>`,
+                    `<td class="aih-idx">${pageStartIdx + i + 1}</td>`,
+                    `<td class="aih-name">${nameCell}</td>`,
+                    `<td>${r.className || '-'}</td>`,
+                    `<td>${rangeLabel}</td>`,
+                    `<td class="aih-num">${st.chatCount}</td>`,
+                    `<td class="aih-num">${st.turns}</td>`,
+                    `<td class="aih-num">${st.bookCount}</td>`,
+                    `<td>${typeDist}</td>`,
+                    `<td class="aih-time">${this._aiHistFmtTime(r.generatedAt)}</td>`,
                     authorCell
                 ];
             } else {
                 viewFn = `App.loadHistoricalReport('${key}', '${ts}')`;
                 cells = [
-                    `<td class="px-3 py-3 text-slate-500">${pageStartIdx + i + 1}</td>`,
-                    `<td class="px-3 py-3 font-medium text-cyan-200">《${item.key}》</td>`,
-                    `<td class="px-3 py-3 text-slate-300 text-xs">${rangeLabel}</td>`,
-                    `<td class="px-3 py-3 text-center text-slate-300">${st.chatCount}</td>`,
-                    `<td class="px-3 py-3 text-center text-slate-300">${st.turns}</td>`,
-                    `<td class="px-3 py-3 text-center text-slate-300">${st.studentCount}</td>`,
-                    `<td class="px-3 py-3 text-center text-slate-300">${st.classCount}</td>`,
-                    `<td class="px-3 py-3 text-center">${typeDist}</td>`,
-                    `<td class="px-3 py-3 text-slate-400 text-xs whitespace-nowrap">${this._aiHistFmtTime(r.generatedAt)}</td>`,
+                    `<td class="aih-idx">${pageStartIdx + i + 1}</td>`,
+                    `<td class="aih-name">${nameCell}</td>`,
+                    `<td>${rangeLabel}</td>`,
+                    `<td class="aih-num">${st.chatCount}</td>`,
+                    `<td class="aih-num">${st.turns}</td>`,
+                    `<td class="aih-num">${st.studentCount}</td>`,
+                    `<td class="aih-num">${st.classCount}</td>`,
+                    `<td>${typeDist}</td>`,
+                    `<td class="aih-time">${this._aiHistFmtTime(r.generatedAt)}</td>`,
                     authorCell
                 ];
             }
@@ -4655,42 +4668,49 @@ const App = {
                 : kind === 'student'
                     ? `App.deleteAiStudentReport('${key}', '${ts}')`
                     : `App.deleteAiReport('${key}', '${ts}')`;
-            const opCell = `<td class="px-3 py-3 text-center whitespace-nowrap">
-                <button onclick="${viewFn}" class="px-2 py-1 rounded text-[11px] bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 border border-violet-400/30 mr-1">查看</button>
-                <button onclick="${delFn};App.refreshAiReportsHistoryModal('${kind}')" class="px-2 py-1 rounded text-[11px] bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-400/30">删除</button>
+            const opCell = `<td class="aih-ops">
+                <button onclick="${viewFn}" class="aih-btn aih-btn--view">查看</button>
+                <button onclick="${delFn};App.refreshAiReportsHistoryModal('${kind}')" class="aih-btn aih-btn--del">删除</button>
             </td>`;
-            return `<tr class="hover:bg-white/5 transition-colors border-b border-slate-700/30">${cells.join('')}${opCell}</tr>`;
-        }).join('') : `<tr><td colspan="${headers.length}" class="px-3 py-12 text-center text-slate-500 text-sm">暂无历史分析报告</td></tr>`;
+            return `<tr>${cells.join('')}${opCell}</tr>`;
+        }).join('') : `<tr><td colspan="${headers.length}"><div class="aih-empty">
+                <div class="aih-empty-ico">📄</div>
+                <div class="aih-empty-title">${kw ? '没有匹配的报告' : '暂无历史分析报告'}</div>
+                <div class="aih-empty-sub">${kw ? '换个关键词试试，或清空搜索查看全部。' : '生成第一份 AI 分析报告后，会在这里归档。'}</div>
+            </div></td></tr>`;
 
         const pager = totalPages > 1 ? `
-            <div class="flex items-center justify-between mt-3 text-xs text-slate-400">
-                <span>共 ${allRows.length} 条 · 第 ${curPage}/${totalPages} 页</span>
-                <div class="flex items-center gap-1">
-                    <button ${curPage <= 1 ? 'disabled' : ''} onclick="App.setAiReportsHistoryPage('${kind}', ${curPage - 1})" class="px-2.5 py-1 rounded border ${curPage <= 1 ? 'border-slate-700 text-slate-600 cursor-not-allowed' : 'border-slate-600 text-slate-300 hover:bg-slate-700/50'}">上一页</button>
-                    <button ${curPage >= totalPages ? 'disabled' : ''} onclick="App.setAiReportsHistoryPage('${kind}', ${curPage + 1})" class="px-2.5 py-1 rounded border ${curPage >= totalPages ? 'border-slate-700 text-slate-600 cursor-not-allowed' : 'border-slate-600 text-slate-300 hover:bg-slate-700/50'}">下一页</button>
+            <div class="aih-pager">
+                <span class="aih-pager-info">共 <b>${allRows.length}</b> 条 · 第 <b>${curPage}</b>/<b>${totalPages}</b> 页</span>
+                <div class="aih-pager-btns">
+                    <button class="aih-page-btn" ${curPage <= 1 ? 'disabled' : ''} onclick="App.setAiReportsHistoryPage('${kind}', ${curPage - 1})">上一页</button>
+                    <button class="aih-page-btn" ${curPage >= totalPages ? 'disabled' : ''} onclick="App.setAiReportsHistoryPage('${kind}', ${curPage + 1})">下一页</button>
                 </div>
             </div>` : '';
 
         return `
-            <div id="ai-reports-history-table" class="flex-1 min-h-0 overflow-auto rounded-xl border border-slate-700/40">
-                <table class="w-full text-sm">
-                    <thead class="bg-slate-800/70 sticky top-0 z-10">
-                        <tr>${headers.map(h => `<th class="px-3 py-2.5 text-left text-xs font-medium text-slate-400 whitespace-nowrap">${h}</th>`).join('')}</tr>
+            <div id="ai-reports-history-table" class="aih-shell">
+                <table class="aih-table">
+                    <thead>
+                        <tr>${headers.map(h => `<th class="${h.num ? 'is-num' : ''}">${h.t}</th>`).join('')}</tr>
                     </thead>
                     <tbody>${body}</tbody>
                 </table>
             </div>
-            <div class="shrink-0">${pager}</div>
+            ${pager}
         `;
     },
     renderAiReportsHistoryModal(kind) {
         const titleMap = { book: '绘本 AI 分析历史报告', student: '幼儿 AI 分析历史报告', class: '班级 AI 分析历史报告' };
-        const accentMap = { book: 'text-cyan-300', student: 'text-emerald-300', class: 'text-amber-300' };
+        const total = this.collectAiReportsFlat(kind).length;
         return `
-            <div class="w-full max-h-[86vh] flex flex-col">
-                <div class="flex items-center justify-between mb-4 gap-3 shrink-0">
-                    <h3 class="text-lg font-semibold ${accentMap[kind]}">${titleMap[kind]}</h3>
-                    <button onclick="App.closeModal()" class="text-slate-400 hover:text-white text-lg">✕</button>
+            <div class="w-full max-h-[84vh] flex flex-col p-6">
+                <div class="aih-head">
+                    <div>
+                        <h3 class="aih-title">${titleMap[kind]}</h3>
+                        <div class="aih-subtitle">共归档 <b>${total}</b> 份报告</div>
+                    </div>
+                    <button onclick="App.closeModal()" class="aih-close" aria-label="关闭">✕</button>
                 </div>
                 <div id="ai-reports-history-body-wrap" class="flex-1 min-h-0 overflow-hidden flex flex-col">${this.renderAiReportsHistoryBody(kind)}</div>
             </div>
@@ -4716,7 +4736,7 @@ const App = {
         const pop = document.createElement('div');
         pop.id = id;
         pop.dataset.aiHistPop = '1';
-        pop.className = 'fixed z-[60] bg-slate-900 border border-slate-600 rounded-xl shadow-2xl p-3 w-80 max-h-96 overflow-y-auto';
+        pop.className = 'aih-pop fixed z-[60] w-80 max-h-96 overflow-y-auto';
         pop.innerHTML = this.renderAiBookHistoryPopover(book);
         document.body.appendChild(pop);
         const rect = trigger.getBoundingClientRect();
@@ -4748,7 +4768,7 @@ const App = {
         const list = (this._aiBookReports || {})[book] || [];
         const escBook = book.replace(/'/g, "\\'");
         if (!list.length) {
-            return `<div class="text-sm text-slate-400 px-2 py-3 text-center">暂无历史报告</div>`;
+            return `<div class="aih-pop-empty">暂无历史报告</div>`;
         }
         const items = list.map((r, i) => {
             const rangeLabel = r.rangeLabel || r.rangeKey || '-';
@@ -4757,20 +4777,20 @@ const App = {
             const scopeLabel = r.roleLabel || '-';
             const sample = r.sampleCount || 0;
             return `
-                <div class="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-700/40 border border-slate-700/40 mb-1.5">
-                    <div class="flex-1 min-w-0">
-                        <div class="text-xs text-slate-200 truncate">${dateStr} - ${bookLabel}</div>
-                        <div class="text-[11px] text-slate-500 mt-0.5">分析维度：${scopeLabel} · ${rangeLabel} · 样本：${sample}</div>
+                <div class="aih-pop-item">
+                    <div class="aih-pop-item-main">
+                        <div class="aih-pop-item-title">${dateStr} · ${bookLabel}</div>
+                        <div class="aih-pop-item-sub">分析维度：${scopeLabel} · ${rangeLabel} · 样本：${sample}</div>
                     </div>
-                    <button onclick="App.loadHistoricalReport('${escBook}', '${String(r.id || r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-400/30">查看</button>
-                    <button onclick="App.deleteAiReport('${escBook}', '${String(r.id || r.generatedAt || '').replace(/'/g, "\\'")}')" class="px-2 py-1 rounded text-[11px] bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-400/30">删除</button>
+                    <button onclick="App.loadHistoricalReport('${escBook}', '${String(r.id || r.generatedAt || '').replace(/'/g, "\\'")}')" class="aih-btn aih-btn--view">查看</button>
+                    <button onclick="App.deleteAiReport('${escBook}', '${String(r.id || r.generatedAt || '').replace(/'/g, "\\'")}')" class="aih-btn aih-btn--del">删除</button>
                 </div>
             `;
         }).join('');
         return `
-            <div class="flex items-center justify-between mb-2 px-1">
-                <div class="text-sm font-semibold text-amber-300">📚 历史报告 · ${list.length} 份</div>
-                <button onclick="App.toggleAiBookHistoryPopover('${escBook}')" class="text-slate-400 hover:text-white text-xs">✕</button>
+            <div class="aih-pop-head">
+                <div class="aih-pop-head-title">历史报告 · ${list.length} 份</div>
+                <button onclick="App.toggleAiBookHistoryPopover('${escBook}')" class="aih-close" aria-label="关闭">✕</button>
             </div>
             ${items}
         `;
@@ -5508,7 +5528,7 @@ ${bodyHtml}
         const pop = document.createElement('div');
         pop.id = id;
         pop.dataset.aiStuHistPop = '1';
-        pop.className = 'fixed z-[60] bg-slate-900 border border-slate-600 rounded-xl shadow-2xl p-3 w-80 max-h-96 overflow-y-auto';
+        pop.className = 'aih-pop fixed z-[60] w-80 max-h-96 overflow-y-auto';
         pop.innerHTML = this.renderAiStudentHistoryPopover(student);
         document.body.appendChild(pop);
         const rect = trigger.getBoundingClientRect();
@@ -6524,7 +6544,7 @@ ${allQuestionsText || '（无）'}
         const pop = document.createElement('div');
         pop.id = id;
         pop.dataset.aiClsHistPop = '1';
-        pop.className = 'fixed z-[60] bg-slate-900 border border-slate-600 rounded-xl shadow-2xl p-3 w-80 max-h-96 overflow-y-auto';
+        pop.className = 'aih-pop fixed z-[60] w-80 max-h-96 overflow-y-auto';
         pop.innerHTML = this.renderAiClassHistoryPopover(className);
         document.body.appendChild(pop);
         const rect = trigger.getBoundingClientRect();
@@ -9563,6 +9583,46 @@ ${allQuestionsText || '（无）'}
         return 3;
     },
 
+    // 绘本封面占位符（先用占位图，后续替换为真实封面）
+    // 根据书名生成稳定的渐变色，避免每次渲染颜色跳动
+    _bookCoverGradient(name) {
+        const palettes = [
+            ['#a78bfa', '#7c3aed'], ['#60a5fa', '#2563eb'], ['#34d399', '#059669'],
+            ['#fbbf24', '#d97706'], ['#f472b6', '#db2777'], ['#22d3ee', '#0891b2'],
+            ['#f87171', '#dc2626'], ['#c084fc', '#9333ea']
+        ];
+        let h = 0;
+        for (let i = 0; i < String(name).length; i++) h = (h * 31 + String(name).charCodeAt(i)) >>> 0;
+        return palettes[h % palettes.length];
+    },
+    // 单个绘本封面占位（含书名），size: 'sm' | 'md'
+    renderBookCover(name, size = 'md') {
+        const [c1, c2] = this._bookCoverGradient(name);
+        const dims = size === 'sm' ? 'w-16 h-20' : 'w-full aspect-[3/4]';
+        const fontSz = size === 'sm' ? 'text-[10px]' : 'text-xs';
+        return `
+            <div class="${dims} rounded-lg overflow-hidden shrink-0 relative shadow-sm border border-white/10"
+                 style="background:linear-gradient(135deg, ${c1}, ${c2});" title="《${name}》">
+                <div class="absolute inset-0 flex items-center justify-center p-2 text-center">
+                    <span class="text-white ${fontSz} font-medium leading-snug line-clamp-3 drop-shadow">${name}</span>
+                </div>
+                <div class="absolute left-0 top-1.5 bottom-1.5 w-1 bg-white/25 rounded-r"></div>
+            </div>`;
+    },
+    // 书单封面网格：传入书名数组，渲染成封面 + 书名
+    // 封面固定大小，flex + justify-around 均匀分散(不贴左/不挤中)；卡片偏窄以便 8 本也能同行
+    renderBookCoverGrid(books, accent = 'text-blue-300') {
+        if (!books || !books.length) return '';
+        return `<div class="flex flex-wrap justify-around gap-y-5">
+            ${books.map(name => `
+                <div class="flex flex-col items-center gap-1.5 w-[84px] mx-1">
+                    ${this.renderBookCover(name, 'md')}
+                    <span class="${accent} text-[11px] text-center leading-tight line-clamp-2 w-full">《${name}》</span>
+                </div>
+            `).join('')}
+        </div>`;
+    },
+
     // 兴趣书单：基于 s.interestBooks 与该幼儿喜爱类型，在书库内补足到目标数量
     renderStudentInterestBooks(s) {
         const size = this.getGlobalBookListSize();
@@ -9583,7 +9643,7 @@ ${allQuestionsText || '（无）'}
         if (!final.length) {
             return `<span class="text-slate-500 text-sm">基于${s.name || ''}的阅读数据分析，发现她/他很喜欢以下类型的书单</span>`;
         }
-        return final.map(book => `<span class="inline-block px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full text-sm mr-2 mb-2">《${book}》</span>`).join('');
+        return this.renderBookCoverGrid(final, 'text-blue-300');
     },
 
     // 建议书单：基于 s.recommendBooks，按维度补足
@@ -9606,7 +9666,7 @@ ${allQuestionsText || '（无）'}
         if (!final.length) {
             return `<span class="text-slate-500 text-sm">基于${s.name || ''}在该年龄段中，接下来应更多关注以下类型书籍</span>`;
         }
-        return final.map(book => `<span class="inline-block px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-full text-sm mr-2 mb-2">《${book}》</span>`).join('');
+        return this.renderBookCoverGrid(final, 'text-emerald-300');
     },
 
     // —— 班级爱读榜：班级兴趣书单 / 班级建议书单（规则与幼儿一致） ——
@@ -9670,7 +9730,7 @@ ${allQuestionsText || '（无）'}
         if (!final.length) {
             return `<span class="text-slate-500 text-sm">基于${cls.name || ''}的阅读数据分析，发现该班很喜欢以下类型的书单</span>`;
         }
-        return final.map(book => `<span class="inline-block px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full text-sm mr-2 mb-2">《${book}》</span>`).join('');
+        return this.renderBookCoverGrid(final, 'text-blue-300');
     },
     // 班级建议书单：以"班级未充分覆盖的类型"优先（bookTypeStats 中读得最少的类型），书库挑出对应书籍
     renderClassRecommendBooks(cls) {
@@ -9692,7 +9752,7 @@ ${allQuestionsText || '（无）'}
         if (!final.length) {
             return `<span class="text-slate-500 text-sm">基于${cls.name || ''}的阅读数据，可拓展以下类型的书籍</span>`;
         }
-        return final.map(book => `<span class="inline-block px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-full text-sm mr-2 mb-2">《${book}》</span>`).join('');
+        return this.renderBookCoverGrid(final, 'text-emerald-300');
     },
     // 班级累计阅读绘本 Top3（按全局时间筛选；活动 records 里聚合 bookName）
     buildClassFavoriteTop3(cls) {
@@ -9735,7 +9795,10 @@ ${allQuestionsText || '（无）'}
         return `<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             ${top3.map((b, i) => `
                 <div class="rounded-2xl border border-slate-500/25 bg-slate-800/40 p-4 flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0" style="background:${medal[i] || '#475569'}">${i + 1}</div>
+                    <div class="relative shrink-0">
+                        ${this.renderBookCover(b.name, 'sm')}
+                        <div class="absolute -top-1.5 -left-1.5 w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-xs shadow" style="background:${medal[i] || '#475569'}">${i + 1}</div>
+                    </div>
                     <div class="min-w-0 flex-1">
                         <div class="text-sm font-semibold text-white truncate">《${b.name}》</div>
                         <div class="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
@@ -9836,7 +9899,10 @@ ${allQuestionsText || '（无）'}
         const favHtml = top3.length
             ? `<div class="grid grid-cols-1 md:grid-cols-3 gap-4">${top3.map((b, i) => `
                 <div class="rounded-2xl border border-slate-500/25 bg-slate-800/40 p-4 flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0" style="background:${medal[i] || '#475569'}">${i + 1}</div>
+                    <div class="relative shrink-0">
+                        ${this.renderBookCover(b.name, 'sm')}
+                        <div class="absolute -top-1.5 -left-1.5 w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-xs shadow" style="background:${medal[i] || '#475569'}">${i + 1}</div>
+                    </div>
                     <div class="min-w-0 flex-1">
                         <div class="text-sm font-semibold text-white truncate">《${b.name}》</div>
                         <div class="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
