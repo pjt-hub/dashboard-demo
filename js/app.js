@@ -7284,10 +7284,10 @@ ${allQuestionsText || '（无）'}
                 </div>
             </div>` : ''}
             <div>
-                ${this.chartTitle(scopeLabel + '大模型使用概况', 'bg-cyan-500', '统计范围：当前所选时间范围内的 AI 共读会话。\n指标说明：\n· 互动绘本数：触发过 AI 互动的不同绘本数（去重）\n· 互动次数：所有 AI 会话的累计轮数\n用途：观察 AI 共读的覆盖广度与互动密度。')}
+                ${this.chartTitle(scopeLabel + '大模型使用概况', 'bg-cyan-500', '统计范围：当前所选时间范围内的 AI 共读会话。\n指标说明：\n· 互动绘本数：触发过 AI 互动的不同绘本数（去重）\n· 互动对话数：所有 AI 会话的累计轮数\n用途：观察 AI 共读的覆盖广度与互动密度。')}
                 <div class="grid grid-cols-2 gap-3">
                     ${this.miniStat('互动绘本数', d.llmBookCount, 'cyan')}
-                    ${this.miniStat('互动次数', d.llmChatCount, 'purple')}
+                    ${this.miniStat('互动对话数', d.llmChatCount, 'purple')}
                 </div>
             </div>
             <div>
