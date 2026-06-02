@@ -5979,6 +5979,36 @@ ${allQuestionsText || '（无）'}
         this.openModal(this.renderAiClassPickerModal(), { size: 'wide' });
     },
 
+    // 新增 AI 分析选择器的搜索关键词
+    _aiPickerKeyword: { class: '', student: '', book: '' },
+    _aiPickerMatch(kind, name) {
+        const kw = ((this._aiPickerKeyword || {})[kind] || '').trim().toLowerCase();
+        if (!kw) return true;
+        const n = String(name || '').toLowerCase();
+        if (n.includes(kw)) return true;
+        if (window.PinyinUtil && PinyinUtil.match) { try { return PinyinUtil.match(name, kw); } catch (e) {} }
+        return false;
+    },
+    setAiPickerKeyword(kind, kw) {
+        if (!this._aiPickerKeyword) this._aiPickerKeyword = { class: '', student: '', book: '' };
+        this._aiPickerKeyword[kind] = kw;
+        const grid = document.getElementById('ai-' + kind + '-picker-grid');
+        if (!grid) return;
+        if (kind === 'class') grid.innerHTML = this.renderAiClassPickerItems();
+        else if (kind === 'student') grid.innerHTML = this.renderAiStudentPickerItems();
+        else if (kind === 'book') grid.innerHTML = this.renderAiBookPickerItems();
+    },
+    // 选择器内搜索框（标题旁）
+    renderAiPickerSearch(kind, ph) {
+        const kw = ((this._aiPickerKeyword || {})[kind] || '').replace(/"/g, '&quot;');
+        return `<div class="relative">
+            <input type="text" value="${kw}" placeholder="${ph}"
+                oninput="App.setAiPickerKeyword('${kind}', this.value)"
+                class="w-48 pl-7 pr-2 py-1.5 rounded-lg bg-slate-800/70 border border-slate-600/50 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-400/60">
+            <svg class="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
+        </div>`;
+    },
+
     getAiClassCandidates() {
         const list = MockData.classes || [];
         return list.filter(c => {
@@ -5987,10 +6017,14 @@ ${allQuestionsText || '（无）'}
         });
     },
 
-    renderAiClassPickerModal() {
-        const classes = this.getAiClassCandidates();
+    renderAiClassPickerItems() {
+        const classes = this.getAiClassCandidates().filter(c => this._aiPickerMatch('class', c.name));
         const ctx = this._aiClassAnalysisCtx || {};
-        const items = classes.map(c => {
+        if (!classes.length) {
+            const kw = ((this._aiPickerKeyword || {}).class || '').trim();
+            return `<div class="text-sm text-slate-500 col-span-2 text-center py-6">${kw ? '没有匹配的班级' : '当前范围内暂无班级'}</div>`;
+        }
+        return classes.map(c => {
             const list = (this._aiClassReports || {})[c.name] || [];
             const escName = c.name.replace(/'/g, "\\'");
             const histBtn = list.length
@@ -6006,17 +6040,24 @@ ${allQuestionsText || '（无）'}
                 </div>
             `;
         }).join('');
+    },
+
+    renderAiClassPickerModal() {
+        const ctx = this._aiClassAnalysisCtx || {};
         return `
             <div class="bg-slate-900 rounded-xl p-6 w-full">
-                <div class="flex items-center justify-between mb-5">
+                <div class="flex items-center justify-between mb-5 gap-3">
                     <h3 class="text-lg font-bold text-white">🏫 选择班级进行 AI 分析</h3>
-                    <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
-                        <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        ${this.renderAiPickerSearch('class', '搜索班级名…')}
+                        <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                            <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
                 </div>
                 <div class="text-xs text-slate-400 mb-3">将基于该班级在 AI 总览所选时间范围内的全部对话数据，分析班级整体兴趣画像与教学建议。</div>
                 <div id="ai-class-picker-grid" class="grid grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
-                    ${items || '<div class="text-sm text-slate-500 col-span-2 text-center py-6">当前范围内暂无班级</div>'}
+                    ${this.renderAiClassPickerItems()}
                 </div>
                 <div class="flex items-center justify-end gap-3 mt-5">
                     <button onclick="App.closeModalDirect()" class="px-4 py-2 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors">取消</button>
@@ -6060,9 +6101,13 @@ ${allQuestionsText || '（无）'}
         });
         return [...map.values()].sort((a, b) => b.chatCount - a.chatCount);
     },
-    renderAiStudentPickerModal() {
-        const cands = this.getAiStudentCandidates();
-        const items = cands.map(c => {
+    renderAiStudentPickerItems() {
+        const cands = this.getAiStudentCandidates().filter(c => this._aiPickerMatch('student', c.student));
+        if (!cands.length) {
+            const kw = ((this._aiPickerKeyword || {}).student || '').trim();
+            return `<div class="text-sm text-slate-500 col-span-2 text-center py-6">${kw ? '没有匹配的幼儿' : '当前范围内暂无幼儿对话数据'}</div>`;
+        }
+        return cands.map(c => {
             const escName = c.student.replace(/'/g, "\\'");
             const histLen = ((this._aiStudentReports || {})[c.student] || []).length;
             const histBadge = histLen ? `<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-400/30">📚 ${histLen}</span>` : '';
@@ -6074,17 +6119,22 @@ ${allQuestionsText || '（无）'}
                     </div>
                 </div>`;
         }).join('');
+    },
+    renderAiStudentPickerModal() {
         return `
             <div class="bg-slate-900 rounded-xl p-6 w-full">
-                <div class="flex items-center justify-between mb-5">
+                <div class="flex items-center justify-between mb-5 gap-3">
                     <h3 class="text-lg font-bold text-white">👶 选择幼儿进行 AI 分析</h3>
-                    <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
-                        <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        ${this.renderAiPickerSearch('student', '搜索幼儿姓名…')}
+                        <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                            <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
                 </div>
                 <div class="text-xs text-slate-400 mb-3">将基于该幼儿在 AI 总览所选时间范围内的全部对话数据，分析兴趣画像与阅读建议。</div>
-                <div class="grid grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
-                    ${items || '<div class="text-sm text-slate-500 col-span-2 text-center py-6">当前范围内暂无幼儿对话数据</div>'}
+                <div id="ai-student-picker-grid" class="grid grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
+                    ${this.renderAiStudentPickerItems()}
                 </div>
             </div>`;
     },
@@ -6102,9 +6152,13 @@ ${allQuestionsText || '（无）'}
         });
         return [...map.values()].sort((a, b) => b.chatCount - a.chatCount);
     },
-    renderAiBookPickerModal() {
-        const cands = this.getAiBookCandidates();
-        const items = cands.map(c => {
+    renderAiBookPickerItems() {
+        const cands = this.getAiBookCandidates().filter(c => this._aiPickerMatch('book', c.book));
+        if (!cands.length) {
+            const kw = ((this._aiPickerKeyword || {}).book || '').trim();
+            return `<div class="text-sm text-slate-500 col-span-2 text-center py-6">${kw ? '没有匹配的绘本' : '当前范围内暂无绘本对话数据'}</div>`;
+        }
+        return cands.map(c => {
             const escName = c.book.replace(/'/g, "\\'");
             const histLen = ((this._aiBookReports || {})[c.book] || []).length;
             const histBadge = histLen ? `<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-400/30">📚 ${histLen}</span>` : '';
@@ -6116,17 +6170,22 @@ ${allQuestionsText || '（无）'}
                     </div>
                 </div>`;
         }).join('');
+    },
+    renderAiBookPickerModal() {
         return `
             <div class="bg-slate-900 rounded-xl p-6 w-full">
-                <div class="flex items-center justify-between mb-5">
+                <div class="flex items-center justify-between mb-5 gap-3">
                     <h3 class="text-lg font-bold text-white">📖 选择绘本进行 AI 分析</h3>
-                    <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
-                        <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        ${this.renderAiPickerSearch('book', '搜索绘本名…')}
+                        <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                            <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
                 </div>
                 <div class="text-xs text-slate-400 mb-3">将基于该绘本在 AI 总览所选时间范围内的全部对话数据，分析热点问题与延伸建议。</div>
-                <div class="grid grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
-                    ${items || '<div class="text-sm text-slate-500 col-span-2 text-center py-6">当前范围内暂无绘本对话数据</div>'}
+                <div id="ai-book-picker-grid" class="grid grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
+                    ${this.renderAiBookPickerItems()}
                 </div>
             </div>`;
     },
@@ -6170,7 +6229,7 @@ ${allQuestionsText || '（无）'}
                 </div>
                 ${this.renderAiAnalysisRangeChips(rangeKey, 'App.selectAiClassAnalysisRange')}
                 <div class="text-xs text-slate-500 mb-2">当前可用对话样本（与班级明细展示范围一致）：</div>
-                ${this.renderAiSampleStatsRow(dialogues, ['chat', 'turns', 'books', 'type'], 'text-amber-300')}
+                ${this.renderAiSampleStatsRow(dialogues, ['chat', 'turns', 'books', 'students', 'type'], 'text-amber-300')}
                 <div class="flex items-center justify-end gap-3">
                     <button onclick="App.closeModalDirect()" class="px-4 py-2 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors">取消</button>
                     <button onclick="App.confirmAiClassAnalysis()" ${sampleCount === 0 ? 'disabled' : ''} class="px-4 py-2 rounded-lg text-sm font-medium transition-colors ${sampleCount === 0 ? 'cursor-not-allowed' : 'hover:opacity-90'}" style="${sampleCount === 0 ? 'background:#334155;color:#94a3b8;' : 'background:linear-gradient(to right,#f59e0b,#f97316);color:#ffffff;'}">开始分析</button>
@@ -6421,7 +6480,7 @@ ${allQuestionsText || '（无）'}
                         </button>
                     </div>
                 </div>
-                ${this.renderAiReportHeaderStats(entry, ['chat', 'turns', 'books', 'type'], 'text-amber-300')}
+                ${this.renderAiReportHeaderStats(entry, ['chat', 'turns', 'books', 'students', 'type'], 'text-amber-300')}
 
                 <div class="mb-4">
                     <h4 class="text-sm font-semibold text-amber-300 mb-2 flex items-center">🔥 班级核心关注主题 TOP${Math.min(10, top.length)}${clusterTag}</h4>
