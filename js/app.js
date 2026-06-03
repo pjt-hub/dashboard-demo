@@ -122,6 +122,7 @@ const App = {
         this.loadAiStudentReports();
         this.loadAiClassReports();
         this.initTheme();
+        this.initSidebarCollapse();
         this.initKindergartenSelection();
         this.updateTime();
         this.bindSidebarEvents();
@@ -381,15 +382,15 @@ const App = {
     computeAbilityDistributionForOverview() {
         // 9 维定义（颜色固定，跟具体能力绑定）。aliases 兼容现有 mock 的多套键名。
         const dims = [
-            { name: '品格养成', color: '#f59e0b', aliases: ['品格养成'] },
-            { name: '数学思维', color: '#38bdf8', aliases: ['逻辑思维', '科学认知'] },
-            { name: '社交力',   color: '#a855f7', aliases: ['社交力', '社交能力'] },
-            { name: '口语表达', color: '#ec4899', aliases: ['语言表达'] },
-            { name: '文学欣赏', color: '#06b6d4', aliases: ['文化素养'] },
-            { name: '科学认知', color: '#fb923c', aliases: ['科学认知'] },
-            { name: '情绪管理', color: '#22d3ee', aliases: ['情绪管理', '情感认知'] },
-            { name: '习惯养成', color: '#22c55e', aliases: ['习惯养成'] },
-            { name: '想象力',   color: '#a16207', aliases: ['想象力', '想象创造'] }
+            { name: '品格养成', color: '#FAAD14', aliases: ['品格养成'] },
+            { name: '数学思维', color: '#1677FF', aliases: ['逻辑思维', '科学认知'] },
+            { name: '社交力',   color: '#722ED1', aliases: ['社交力', '社交能力'] },
+            { name: '口语表达', color: '#EB2F96', aliases: ['语言表达'] },
+            { name: '文学欣赏', color: '#13C2C2', aliases: ['文化素养'] },
+            { name: '科学认知', color: '#FA8C16', aliases: ['科学认知'] },
+            { name: '情绪管理', color: '#2F54EB', aliases: ['情绪管理', '情感认知'] },
+            { name: '习惯养成', color: '#52C41A', aliases: ['习惯养成'] },
+            { name: '想象力',   color: '#9254DE', aliases: ['想象力', '想象创造'] }
         ];
 
         const studentIds = this.getStudentIdsForCurrentRole();
@@ -1293,6 +1294,24 @@ const App = {
     toggleFullscreen() {
         if (!document.fullscreenElement) document.documentElement.requestFullscreen();
         else document.exitFullscreen();
+    },
+
+    // 收起 / 展开左侧菜单
+    initSidebarCollapse() {
+        const collapsed = localStorage.getItem('sidebarCollapsed') === '1';
+        document.body.classList.toggle('sidebar-collapsed', collapsed);
+        this.updateSidebarToggleTitle(collapsed);
+    },
+    toggleSidebar() {
+        const collapsed = document.body.classList.toggle('sidebar-collapsed');
+        localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
+        this.updateSidebarToggleTitle(collapsed);
+        // 宽度过渡(300ms)结束后触发 resize，让 ECharts 图表自适应新布局
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 320);
+    },
+    updateSidebarToggleTitle(collapsed) {
+        const btn = document.getElementById('sidebar-toggle');
+        if (btn) btn.title = collapsed ? '展开菜单' : '收起菜单';
     },
 
     filterBanjunDistrict(district) {
@@ -2476,11 +2495,12 @@ const App = {
                   </div>`
                 : ''}
 
-            <!-- 图表第一行 -->
+            <!-- 图表第一行：园长视角下「类型占比」已删除、「能力分布」已迁移至园所数据页 -->
+            ${this.currentRole === 'principal' ? '' : `
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 ${this.card(this.chartTitle('幼儿绘本阅读类型占比', 'bg-blue-500', '统计范围：当前所选时间范围内全部绘本阅读记录。\n口径：按绘本"类型标签"聚合阅读次数后计算占比。\n用途：识别园所/班级近期偏好的内容方向，作为选书与活动设计参考。') + '<div id="book-type-chart" class="h-72"></div>')}
                 ${this.card(this.chartTitle('幼儿阅读绘本-能力分布', 'bg-emerald-500', '统计范围：当前所选时间范围内全部阅读记录。\n口径：每本绘本携带 1~多个能力标签（语言/社交/想象/逻辑/情感等），按"次数 × 能力标签"加权累计。\n用途：观察阅读对各能力维度的覆盖均衡度。') + '<div id="ability-distribution-chart" class="h-72"></div>')}
-            </div>
+            </div>`}
 
             ${this.currentRole === 'teacher' ? `
             <!-- 教师图表行 -->
@@ -2826,7 +2846,7 @@ const App = {
         const granularity = this.getOverviewSeriesGranularity(range);
 
         const bookTypes = MockData.bookTypes || [];
-        const typeColors = ['#3b82f6', '#06b6d4', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444'];
+        const typeColors = ['#1677FF', '#13C2C2', '#722ED1', '#FAAD14', '#52C41A', '#F5222D'];
 
         const dates = [];
         if (start && end) {
@@ -3084,7 +3104,7 @@ const App = {
         if (host) host.innerHTML = this.renderAiClassAnalysisHistoryPanel();
     },
 
-    // 幼儿 AI 分析历史记录列表（活跃幼儿明细下方）
+    // 幼儿 AI 分析历史记录列表（幼儿互动明细下方）
     renderAiStudentAnalysisHistoryPanel() {
         const reports = this._aiStudentReports || {};
         const flat = [];
@@ -3129,7 +3149,7 @@ const App = {
         if (host) host.innerHTML = this.renderAiStudentAnalysisHistoryPanel();
     },
 
-    // 绘本 AI 分析历史记录列表（互动绘本明细下方）
+    // 绘本 AI 分析历史记录列表（绘本互动明细下方）
     renderAiBookAnalysisHistoryPanel() {
         const reports = this._aiBookReports || {};
         const flat = [];
@@ -3456,13 +3476,15 @@ const App = {
                 <td class="px-3 py-2.5 text-center text-sm text-slate-200">${r.students.size}</td>
                 <td class="px-3 py-2.5 text-center text-sm text-slate-200">${r.classes.size}</td>
                 <td class="px-3 py-2.5 text-center text-xs text-slate-400">
-                    <span class="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 mr-1">阅读中 ${r.scopes.page}</span>
-                    <span class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300">阅读后 ${r.scopes.full}</span>
+                    <div class="flex flex-col items-center gap-1">
+                        <span class="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 whitespace-nowrap">阅读中 ${r.scopes.page}</span>
+                        <span class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 whitespace-nowrap">阅读后 ${r.scopes.full}</span>
+                    </div>
                 </td>
                 <td class="px-3 py-2.5 text-center text-xs text-slate-400">${r.latestTime || '-'}</td>
                 <td class="px-3 py-2.5 text-center">${analysisCell}</td>
                 <td class="px-3 py-2.5 text-center">
-                    <button onclick="App.viewAiBookDrilldown('${escBook}')" class="text-cyan-300 hover:text-cyan-200 text-xs">查看 ›</button>
+                    <button onclick="App.viewAiBookDrilldown('${escBook}')" class="text-cyan-300 hover:text-cyan-200 text-xs whitespace-nowrap">查看互动明细 ›</button>
                 </td>
             </tr>`;
         }).join('') : `<tr><td colspan="10" class="px-3 py-8 text-center text-slate-500 text-sm">当前时间范围内暂无绘本互动明细</td></tr>`;
@@ -3473,15 +3495,15 @@ const App = {
             { label: '累计轮次', align: 'center', width: '8%' },
             { label: '涉及幼儿', align: 'center', width: '8%' },
             { label: '涉及班级', align: 'center', width: '8%' },
-            { label: '对话类型分布', align: 'center', width: '18%' },
-            { label: '最近互动', align: 'center', width: '11%' },
+            { label: '对话类型分布', align: 'center', width: '14%' },
+            { label: '最近互动', align: 'center', width: '10%' },
             { label: 'AI分析', align: 'center', width: '16%' },
-            { label: '操作', align: 'center', width: '6%' }
+            { label: '操作', align: 'center', width: '11%' }
         ];
         return `
             <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-cyan-400/25 p-4 mt-4">
                 <div class="flex items-center justify-between mb-3">
-                    <h4 class="text-sm font-semibold text-cyan-300">📖 互动绘本明细</h4>
+                    <h4 class="text-sm font-semibold text-cyan-300">📖 绘本互动明细</h4>
                     <span class="text-xs text-slate-400">共 ${total} 本绘本</span>
                 </div>
                 <div class="overflow-x-auto rounded-xl border border-slate-700/40">
@@ -3558,14 +3580,16 @@ const App = {
                 <td class="px-3 py-2.5 text-center text-sm text-slate-200">${r.turns}</td>
                 <td class="px-3 py-2.5 text-center text-sm text-slate-200">${r.books.size}</td>
                 <td class="px-3 py-2.5 text-center text-xs text-slate-400">
-                    <span class="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 mr-1">阅读中 ${r.scopes.page}</span>
-                    <span class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300">阅读后 ${r.scopes.full}</span>
+                    <div class="flex flex-col items-center gap-1">
+                        <span class="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 whitespace-nowrap">阅读中 ${r.scopes.page}</span>
+                        <span class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 whitespace-nowrap">阅读后 ${r.scopes.full}</span>
+                    </div>
                 </td>
                 <td class="px-3 py-2.5 text-center text-xs text-slate-400">${r.latestTime || '-'}</td>
                 <td class="px-3 py-2.5 text-left text-xs text-amber-300">${r.latestBook ? `《${r.latestBook}》` : '-'}</td>
                 <td class="px-3 py-2.5 text-center">${analysisCell}</td>
                 <td class="px-3 py-2.5 text-center">
-                    <button onclick="App.viewAiStudentDrilldown('${escStudent}')" class="text-emerald-300 hover:text-emerald-200 text-xs">查看 ›</button>
+                    <button onclick="App.viewAiStudentDrilldown('${escStudent}')" class="text-emerald-300 hover:text-emerald-200 text-xs whitespace-nowrap">查看互动明细 ›</button>
                 </td>
             </tr>`;
         }).join('') : `<tr><td colspan="11" class="px-3 py-8 text-center text-slate-500 text-sm">当前时间范围内暂无幼儿互动明细</td></tr>`;
@@ -3576,16 +3600,16 @@ const App = {
             { label: '对话次数', align: 'center', width: '7%' },
             { label: '累计轮次', align: 'center', width: '7%' },
             { label: '互动绘本', align: 'center', width: '7%' },
-            { label: '对话类型分布', align: 'center', width: '15%' },
+            { label: '对话类型分布', align: 'center', width: '13%' },
             { label: '最近对话', align: 'center', width: '11%' },
-            { label: '最近绘本', align: 'left', width: '11%' },
+            { label: '最近绘本', align: 'left', width: '10%' },
             { label: 'AI分析', align: 'center', width: '15%' },
-            { label: '操作', align: 'center', width: '5%' }
+            { label: '操作', align: 'center', width: '10%' }
         ];
         return `
             <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-emerald-400/25 p-4 mt-4">
                 <div class="flex items-center justify-between mb-3">
-                    <h4 class="text-sm font-semibold text-emerald-300">👶 活跃幼儿明细</h4>
+                    <h4 class="text-sm font-semibold text-emerald-300">👶 幼儿互动明细</h4>
                     <span class="text-xs text-slate-400">共 ${total} 位幼儿</span>
                 </div>
                 <div class="overflow-x-auto rounded-xl border border-slate-700/40">
@@ -7371,6 +7395,27 @@ ${allQuestionsText || '（无）'}
             </div>
             <div>
                 ${this.chartTitle('绘本分类阅读数据', 'bg-emerald-500', '统计范围：当前所选时间范围内的全部阅读记录。\n口径：按绘本"类型"分组，统计阅读次数和阅读时长。\n用途：识别孩子近期偏好的内容分类，辅助选书与活动设计。')}
+                ${this.currentRole === 'principal' ? `
+                <div class="space-y-4">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+                        <div class="rounded-xl border border-slate-500/30 bg-slate-700/40 p-3 flex flex-col">
+                            <div class="text-xs text-slate-400 mb-1 px-1">类型阅读次数占比</div>
+                            <div id="school-category-pie" class="flex-1 min-h-[260px]"></div>
+                        </div>
+                        <div class="rounded-xl border border-slate-500/30 bg-slate-700/40 p-3 flex flex-col">
+                            <div class="text-xs text-slate-400 mb-1 px-1">幼儿阅读绘本-能力分布</div>
+                            <div id="school-ability-distribution-chart" class="flex-1 min-h-[260px]"></div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 auto-rows-fr">
+                        ${d.categoryData.map(cat => `
+                            <div class="bg-slate-700/50 rounded-xl p-3 flex items-center justify-between border border-slate-500/30 hover:border-blue-400/30 transition-colors h-full">
+                                <div><div class="text-sm font-medium text-slate-200">${cat.name}</div><div class="text-xs text-slate-500 mt-0.5">阅读时长 ${cat.duration}</div></div>
+                                <div class="text-lg font-bold text-blue-400">${cat.readCount}<span class="text-xs text-slate-500 ml-1">次</span></div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>` : `
                 <div class="grid grid-cols-1 lg:grid-cols-5 gap-4 items-stretch">
                     <div class="lg:col-span-2 rounded-xl border border-slate-500/30 bg-slate-700/40 p-3 flex flex-col">
                         <div class="text-xs text-slate-400 mb-1 px-1">类型阅读次数占比</div>
@@ -7384,7 +7429,7 @@ ${allQuestionsText || '（无）'}
                             </div>
                         `).join('')}
                     </div>
-                </div>
+                </div>`}
             </div>
             ${this.currentRole !== 'admin' ? this.renderSchoolFavoriteBoard() : ''}
         </div>`;
@@ -7395,6 +7440,10 @@ ${allQuestionsText || '（无）'}
         const overviewData = this.getSchoolOverviewDataForCurrentRange();
         if (overviewData && overviewData.categoryData) {
             Charts.safeInit(() => Charts.initSchoolCategoryPie(overviewData.categoryData));
+        }
+        // 园长视角：能力分布气泡图（从大数据总览页迁移至此，放在类型占比旁）
+        if (this.currentRole === 'principal') {
+            Charts.safeInit(() => Charts.initAbilityRadar(this.computeAbilityDistributionForOverview(), 'school-ability-distribution-chart'));
         }
         // principal 视角的"班级开课情况变化"图（admin 单园弹窗 / teacher 不渲染，DOM 不存在自动短路）
         const dom = document.getElementById('school-class-activity-chart');
@@ -8524,7 +8573,7 @@ ${allQuestionsText || '（无）'}
     // 构建幼儿能力分布气泡图数据（仅取当前 abilityStats 的当前值，散布到 4 象限）
     buildStudentAbilityBubble(student) {
         const stats = (student && student.abilityStats) || {};
-        const palette = ['#22d3ee', '#3b82f6', '#a855f7', '#f59e0b', '#10b981', '#ef4444', '#ec4899', '#fb923c', '#a16207'];
+        const palette = ['#1677FF', '#13C2C2', '#722ED1', '#FAAD14', '#52C41A', '#F5222D', '#EB2F96', '#FA8C16', '#2F54EB'];
         const entries = Object.entries(stats);
         if (!entries.length) return [];
         const sorted = entries.sort((a, b) => b[1] - a[1]);
@@ -8550,8 +8599,8 @@ ${allQuestionsText || '（无）'}
         const el = document.getElementById(domId);
         if (!el || typeof echarts === 'undefined') return;
         const typeColors = {
-            '日常生活': '#60a5fa', '人际交往': '#34d399', '情商品格': '#f59e0b',
-            '国学文化': '#a78bfa', '科普百科': '#22d3ee', '语言学习': '#f472b6'
+            '日常生活': '#1677FF', '人际交往': '#52C41A', '情商品格': '#FAAD14',
+            '国学文化': '#722ED1', '科普百科': '#13C2C2', '语言学习': '#EB2F96'
         };
         const data = (seriesData?.series || [])
             .map(s => ({ name: s.name, value: (s.values || []).reduce((a, b) => a + (b || 0), 0), itemStyle: { color: typeColors[s.name] || '#60a5fa' } }))
@@ -8581,7 +8630,7 @@ ${allQuestionsText || '（无）'}
         const el = document.getElementById(domId);
         if (!el || typeof echarts === 'undefined') return;
         const stats = (cls && cls.abilityStats) || {};
-        const palette = ['#22d3ee', '#3b82f6', '#a855f7', '#f59e0b', '#10b981', '#ef4444', '#ec4899', '#fb923c', '#a16207'];
+        const palette = ['#1677FF', '#13C2C2', '#722ED1', '#FAAD14', '#52C41A', '#F5222D', '#EB2F96', '#FA8C16', '#2F54EB'];
         const entries = Object.entries(stats).sort((a, b) => b[1] - a[1]);
         const anchors = [
             { x: 22, y: 70 }, { x: 46, y: 36 }, { x: 70, y: 78 },
@@ -9131,9 +9180,9 @@ ${allQuestionsText || '（无）'}
             'from-rose-500/35 to-amber-500/25 border-rose-400/30',
             'from-sky-500/35 to-cyan-400/25 border-sky-400/30',
             'from-emerald-500/35 to-teal-400/25 border-emerald-400/30',
-            'from-violet-500/35 to-fuchsia-400/25 border-violet-400/30',
+            'from-blue-500/35 to-cyan-400/25 border-blue-400/30',
             'from-orange-500/35 to-yellow-400/25 border-orange-400/30',
-            'from-indigo-500/35 to-blue-400/25 border-indigo-400/30'
+            'from-blue-500/35 to-sky-400/25 border-blue-400/30'
         ];
         const favoriteBooksHtml = s.favoriteBooks?.length > 0
             ? s.favoriteBooks.map((book, idx) => {
@@ -9587,9 +9636,9 @@ ${allQuestionsText || '（无）'}
     // 根据书名生成稳定的渐变色，避免每次渲染颜色跳动
     _bookCoverGradient(name) {
         const palettes = [
-            ['#a78bfa', '#7c3aed'], ['#60a5fa', '#2563eb'], ['#34d399', '#059669'],
+            ['#69b1ff', '#1677ff'], ['#60a5fa', '#2563eb'], ['#34d399', '#059669'],
             ['#fbbf24', '#d97706'], ['#f472b6', '#db2777'], ['#22d3ee', '#0891b2'],
-            ['#f87171', '#dc2626'], ['#c084fc', '#9333ea']
+            ['#f87171', '#dc2626'], ['#5cdbd3', '#13c2c2']
         ];
         let h = 0;
         for (let i = 0; i < String(name).length; i++) h = (h * 31 + String(name).charCodeAt(i)) >>> 0;
@@ -9791,7 +9840,7 @@ ${allQuestionsText || '（无）'}
         if (!top3.length) {
             return `<div class="text-sm text-slate-500">暂无累计阅读数据</div>`;
         }
-        const medal = ['#fbbf24', '#94a3b8', '#a78bfa'];
+        const medal = ['#fbbf24', '#94a3b8', '#d48806'];
         return `<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             ${top3.map((b, i) => `
                 <div class="rounded-2xl border border-slate-500/25 bg-slate-800/40 p-4 flex items-center gap-3">
@@ -9895,7 +9944,7 @@ ${allQuestionsText || '（无）'}
         const merged = this.getAggregatedBookTypeStats(classes);
         const schoolCls = { id: 'school', name: schoolName || '本园', bookTypeStats: merged };
         const top3 = this.buildSchoolFavoriteTop3(classes);
-        const medal = ['#fbbf24', '#94a3b8', '#a78bfa'];
+        const medal = ['#fbbf24', '#94a3b8', '#d48806'];
         const favHtml = top3.length
             ? `<div class="grid grid-cols-1 md:grid-cols-3 gap-4">${top3.map((b, i) => `
                 <div class="rounded-2xl border border-slate-500/25 bg-slate-800/40 p-4 flex items-center gap-3">
