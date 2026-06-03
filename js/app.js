@@ -3476,8 +3476,10 @@ const App = {
                 <td class="px-3 py-2.5 text-center text-sm text-slate-200">${r.students.size}</td>
                 <td class="px-3 py-2.5 text-center text-sm text-slate-200">${r.classes.size}</td>
                 <td class="px-3 py-2.5 text-center text-xs text-slate-400">
-                    <span class="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 mr-1">阅读中 ${r.scopes.page}</span>
-                    <span class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300">阅读后 ${r.scopes.full}</span>
+                    <div class="flex flex-col items-center gap-1">
+                        <span class="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 whitespace-nowrap">阅读中 ${r.scopes.page}</span>
+                        <span class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 whitespace-nowrap">阅读后 ${r.scopes.full}</span>
+                    </div>
                 </td>
                 <td class="px-3 py-2.5 text-center text-xs text-slate-400">${r.latestTime || '-'}</td>
                 <td class="px-3 py-2.5 text-center">${analysisCell}</td>
@@ -3493,10 +3495,10 @@ const App = {
             { label: '累计轮次', align: 'center', width: '8%' },
             { label: '涉及幼儿', align: 'center', width: '8%' },
             { label: '涉及班级', align: 'center', width: '8%' },
-            { label: '对话类型分布', align: 'center', width: '13%' },
+            { label: '对话类型分布', align: 'center', width: '14%' },
             { label: '最近互动', align: 'center', width: '10%' },
             { label: 'AI分析', align: 'center', width: '16%' },
-            { label: '操作', align: 'center', width: '12%' }
+            { label: '操作', align: 'center', width: '11%' }
         ];
         return `
             <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-cyan-400/25 p-4 mt-4">
@@ -3578,8 +3580,10 @@ const App = {
                 <td class="px-3 py-2.5 text-center text-sm text-slate-200">${r.turns}</td>
                 <td class="px-3 py-2.5 text-center text-sm text-slate-200">${r.books.size}</td>
                 <td class="px-3 py-2.5 text-center text-xs text-slate-400">
-                    <span class="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 mr-1">阅读中 ${r.scopes.page}</span>
-                    <span class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300">阅读后 ${r.scopes.full}</span>
+                    <div class="flex flex-col items-center gap-1">
+                        <span class="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 whitespace-nowrap">阅读中 ${r.scopes.page}</span>
+                        <span class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 whitespace-nowrap">阅读后 ${r.scopes.full}</span>
+                    </div>
                 </td>
                 <td class="px-3 py-2.5 text-center text-xs text-slate-400">${r.latestTime || '-'}</td>
                 <td class="px-3 py-2.5 text-left text-xs text-amber-300">${r.latestBook ? `《${r.latestBook}》` : '-'}</td>
@@ -3596,11 +3600,11 @@ const App = {
             { label: '对话次数', align: 'center', width: '7%' },
             { label: '累计轮次', align: 'center', width: '7%' },
             { label: '互动绘本', align: 'center', width: '7%' },
-            { label: '对话类型分布', align: 'center', width: '11%' },
+            { label: '对话类型分布', align: 'center', width: '13%' },
             { label: '最近对话', align: 'center', width: '11%' },
-            { label: '最近绘本', align: 'left', width: '9%' },
+            { label: '最近绘本', align: 'left', width: '10%' },
             { label: 'AI分析', align: 'center', width: '15%' },
-            { label: '操作', align: 'center', width: '11%' }
+            { label: '操作', align: 'center', width: '10%' }
         ];
         return `
             <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-emerald-400/25 p-4 mt-4">
@@ -9176,9 +9180,9 @@ ${allQuestionsText || '（无）'}
             'from-rose-500/35 to-amber-500/25 border-rose-400/30',
             'from-sky-500/35 to-cyan-400/25 border-sky-400/30',
             'from-emerald-500/35 to-teal-400/25 border-emerald-400/30',
-            'from-violet-500/35 to-fuchsia-400/25 border-violet-400/30',
+            'from-blue-500/35 to-cyan-400/25 border-blue-400/30',
             'from-orange-500/35 to-yellow-400/25 border-orange-400/30',
-            'from-indigo-500/35 to-blue-400/25 border-indigo-400/30'
+            'from-blue-500/35 to-sky-400/25 border-blue-400/30'
         ];
         const favoriteBooksHtml = s.favoriteBooks?.length > 0
             ? s.favoriteBooks.map((book, idx) => {
@@ -9836,7 +9840,7 @@ ${allQuestionsText || '（无）'}
         if (!top3.length) {
             return `<div class="text-sm text-slate-500">暂无累计阅读数据</div>`;
         }
-        const medal = ['#fbbf24', '#94a3b8', '#a78bfa'];
+        const medal = ['#fbbf24', '#94a3b8', '#d48806'];
         return `<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             ${top3.map((b, i) => `
                 <div class="rounded-2xl border border-slate-500/25 bg-slate-800/40 p-4 flex items-center gap-3">
@@ -9940,7 +9944,7 @@ ${allQuestionsText || '（无）'}
         const merged = this.getAggregatedBookTypeStats(classes);
         const schoolCls = { id: 'school', name: schoolName || '本园', bookTypeStats: merged };
         const top3 = this.buildSchoolFavoriteTop3(classes);
-        const medal = ['#fbbf24', '#94a3b8', '#a78bfa'];
+        const medal = ['#fbbf24', '#94a3b8', '#d48806'];
         const favHtml = top3.length
             ? `<div class="grid grid-cols-1 md:grid-cols-3 gap-4">${top3.map((b, i) => `
                 <div class="rounded-2xl border border-slate-500/25 bg-slate-800/40 p-4 flex items-center gap-3">
