@@ -10,7 +10,10 @@ const Charts = {
     },
 
     safeInit(fn) {
-        try { fn(); } catch (e) { console.warn('Chart init error:', e); }
+        try { fn(); } catch (e) {
+            // 用 error 而非 warn，并打出函数源码片段，方便定位是哪张图表初始化失败
+            console.error('Chart init error:', e, '\n源码片段:', String(fn).slice(0, 120));
+        }
     },
 
     // —— 园所班均使用 散点气泡图(管理员视角) ——
@@ -149,7 +152,7 @@ const Charts = {
         if (this._themesRegistered) return;
         if (typeof echarts === 'undefined') return;
         echarts.registerTheme('warm', {
-            color: ['#6366F1', '#8B5CF6', '#0EA5E9', '#F59E0B', '#10B981', '#EC4899', '#06B6D4', '#A855F7'],
+            color: ['#1677FF', '#13C2C2', '#FAAD14', '#EB2F96', '#52C41A', '#722ED1', '#F5222D', '#2F54EB'],
             backgroundColor: 'transparent',
             textStyle: { color: '#4A4D5E' },
             title: { textStyle: { color: '#1A1B25' }, subtextStyle: { color: '#9094A8' } },
@@ -243,131 +246,57 @@ const Charts = {
             kindergartenUsageSeries: null,
             bookTypeTimeSeries: null
         };
-        // 绘本类型图表：优先使用时间序列数据
-        this.safeInit(() => this.initBookTypePie(data.bookTypeTimeSeries || data.bookTypes));
+        // 绘本类型图表：饼图展示
+        this.safeInit(() => this.initBookTypePie(data.bookTypes));
         this.safeInit(() => this.initAbilityRadar(data.abilityDistribution));
         // 缓存活动数据 + 按当前选择类型渲染（折线 / 柱状）
         if (typeof App !== 'undefined') App._lastWeeklyActivityData = data.weeklyActivity;
         const weeklyTypes = (typeof App !== 'undefined' && App.weeklyActivityChartTypes) || ['line', 'bar'];
         this.safeInit(() => this.initWeeklyActivityBar(data.weeklyActivity, weeklyTypes));
-        // 管理员显示园所使用次数折线图，园长显示教师排名
-        if (App.currentRole === 'admin') {
-            const usageTypes = (typeof App !== 'undefined' && App.kindergartenUsageChartTypes) || ['line', 'bar'];
-            this.safeInit(() => this.initKindergartenUsageLine(data.kindergartenUsageSeries, usageTypes));
-        } else {
+        // admin 视角的"园所使用次数趋势"已搬到区域数据页 compare tab，总览页不再渲染
+        if (App.currentRole !== 'admin') {
             this.safeInit(() => this.initTeacherRankingBar(data.teacherRanking));
         }
-        // 班级排名图表（园长端可见）
-        if (App.currentRole === 'principal') {
-            this.safeInit(() => this.initClassRankingBar(data.classRanking));
-        }
+        // 班级 TOP10 图表已下线（园长视角去重，班级差异请去"园所数据-班级"tab）
         this.safeInit(() => this.initClassUsageCompareRadar(data.classUsageComparison));
     },
 
-    // 绘本类型阅读趋势 - 堆叠面积图
+    // 绘本类型阅读次数 - 饼图
     initBookTypePie(customData = null) {
         const chart = this.createChart('book-type-chart');
         if (!chart) return;
-        
-        // 如果传入的是时间序列数据，使用堆叠面积图
+
+        // 兼容时间序列入参：把堆叠总和聚合为饼图所需的 {name,value}
+        let pieData;
         if (customData && customData.series && customData.dates) {
-            const colors = ['#3b82f6', '#06b6d4', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444'];
-            const rotate = customData.dates.length > 7 ? 35 : 0;
-            const bottomGap = rotate ? 56 : 40;
-            
-            chart.setOption({
-                backgroundColor: 'transparent',
-                tooltip: {
-                    ...this.darkTheme.tooltip,
-                    trigger: 'axis',
-                    axisPointer: { type: 'cross', lineStyle: { color: 'rgba(99,102,241,0.3)' } },
-                    formatter: function(params) {
-                        if (!params || !params.length) return '';
-                        const date = params[0].axisValue;
-                        let total = 0;
-                        let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
-                        params.forEach(p => {
-                            total += p.value;
-                            html += `<div style="display:flex;align-items:center;gap:6px">
-                                <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${p.color}"></span>
-                                <span>${p.seriesName}: ${p.value}次</span>
-                            </div>`;
-                        });
-                        html += `<div style="margin-top:4px;border-top:1px solid rgba(255,255,255,0.1);padding-top:4px">合计: ${total}次</div>`;
-                        return html;
-                    }
-                },
-                legend: {
-                    bottom: 0,
-                    textStyle: { color: '#a0aec0', fontSize: 11 },
-                    type: 'scroll',
-                    pageTextStyle: { color: '#a0aec0' }
-                },
-                grid: { left: 50, right: 20, top: 20, bottom: bottomGap },
-                xAxis: {
-                    type: 'category',
-                    data: customData.dates,
-                    boundaryGap: false,
-                    axisLabel: {
-                        color: '#8896a6',
-                        fontSize: 11,
-                        rotate,
-                        hideOverlap: true,
-                        interval: 'auto'
-                    },
-                    axisLine: { lineStyle: { color: 'rgba(85,100,120,0.35)' } },
-                    axisTick: { show: false }
-                },
-                yAxis: {
-                    type: 'value',
-                    axisLabel: { color: '#8896a6', fontSize: 11 },
-                    splitLine: { lineStyle: { color: 'rgba(85,100,120,0.3)' } }
-                },
-                series: customData.series.map((item, index) => ({
-                    name: item.name,
-                    type: 'line',
-                    stack: 'Total',
-                    data: item.values,
-                    smooth: true,
-                    symbol: 'circle',
-                    symbolSize: 4,
-                    lineStyle: { width: 1.5, color: colors[index % colors.length] },
-                    itemStyle: { color: colors[index % colors.length] },
-                    areaStyle: {
-                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                            { offset: 0, color: colors[index % colors.length] + '60' },
-                            { offset: 1, color: colors[index % colors.length] + '10' }
-                        ])
-                    },
-                    emphasis: {
-                        focus: 'series'
-                    }
-                }))
-            });
+            pieData = customData.series.map(item => ({
+                name: item.name,
+                value: (item.values || []).reduce((s, v) => s + (v || 0), 0)
+            }));
         } else {
-            // 兼容旧数据格式，使用饼图
-            const data = customData || MockData.bookTypes;
-            chart.setOption({
-                backgroundColor: 'transparent',
-                tooltip: { ...this.darkTheme.tooltip, trigger: 'item', formatter: '{b}: {c}次 ({d}%)' },
-                legend: { bottom: 0, textStyle: { color: '#a0aec0', fontSize: 12 } },
-                color: ['#3b82f6', '#06b6d4', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444'],
-                series: [{
-                    type: 'pie', radius: ['40%', '65%'], center: ['50%', '45%'],
-                    avoidLabelOverlap: true,
-                    itemStyle: { borderRadius: 6, borderColor: 'rgba(120,160,220,0.35)', borderWidth: 2 },
-                    label: { show: true, formatter: '{b}\n{d}%', fontSize: 11, color: '#a0aec0' },
-                    emphasis: { label: { fontSize: 14, fontWeight: 'bold', color: '#f1f5f9' }, itemStyle: { shadowBlur: 20, shadowColor: 'rgba(59,130,246,0.3)' } },
-                    data: data.map(t => ({ name: t.name, value: t.value }))
-                }]
-            });
+            pieData = (customData || MockData.bookTypes).map(t => ({ name: t.name, value: t.value }));
         }
+
+        chart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: { ...this.darkTheme.tooltip, trigger: 'item', formatter: '{b}: {c}次 ({d}%)' },
+            legend: { bottom: 0, textStyle: { color: '#a0aec0', fontSize: 12 } },
+            color: ['#1677FF', '#13C2C2', '#FAAD14', '#EB2F96', '#52C41A', '#722ED1'],
+            series: [{
+                type: 'pie', radius: ['40%', '65%'], center: ['50%', '45%'],
+                avoidLabelOverlap: true,
+                itemStyle: { borderRadius: 6, borderColor: 'rgba(120,160,220,0.35)', borderWidth: 2 },
+                label: { show: true, formatter: '{b}\n{d}%', fontSize: 11, color: '#a0aec0' },
+                emphasis: { label: { fontSize: 14, fontWeight: 'bold', color: '#f1f5f9' }, itemStyle: { shadowBlur: 20, shadowColor: 'rgba(59,130,246,0.3)' } },
+                data: pieData
+            }]
+        });
         window.addEventListener('resize', () => chart.resize());
     },
 
     // 能力分布 - 气泡布局
-    initAbilityRadar(customData = null) {
-        const chart = this.createChart('ability-distribution-chart');
+    initAbilityRadar(customData = null, domId = 'ability-distribution-chart') {
+        const chart = this.createChart(domId);
         if (!chart) return;
         const data = (customData && customData.length) ? customData : [];
         const empty = !data.length || data.every(d => !d.value);
@@ -568,6 +497,134 @@ const Charts = {
         return true;
     },
 
+    // 园所数据页 - 班级开课情况变化（按时间序列，每个班一柱+一线）
+    buildSchoolClassActivityOption(data, chartType) {
+        const colors = ['#22d3ee', '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1'];
+        const seriesList = (data && data.series) || [];
+
+        let types;
+        if (Array.isArray(chartType)) {
+            types = chartType.length ? chartType : ['line'];
+        } else {
+            types = [chartType];
+        }
+        const showBar = types.includes('bar');
+        const showLine = types.includes('line');
+
+        const groupCount = Math.max(1, seriesList.length);
+        const barWidth = `${Math.max(8, Math.floor(60 / groupCount))}%`;
+
+        const barSeries = showBar ? seriesList.map((item, index) => ({
+            id: `bar-${index}`,
+            name: item.name + (showLine ? ' · 柱状' : ''),
+            type: 'bar',
+            data: item.values,
+            barWidth,
+            barGap: '20%',
+            z: 1,
+            itemStyle: {
+                borderRadius: [4, 4, 0, 0],
+                opacity: showLine ? 0.32 : 1,
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: colors[index % colors.length] },
+                    { offset: 1, color: colors[index % colors.length] + 'AA' }
+                ])
+            }
+        })) : [];
+
+        const lineSeries = showLine ? seriesList.map((item, index) => ({
+            id: `line-${index}`,
+            name: item.name + (showBar ? ' · 折线' : ''),
+            type: 'line',
+            data: item.values,
+            smooth: true,
+            symbol: 'circle',
+            symbolSize: showBar ? 7 : 6,
+            z: 10,
+            lineStyle: { width: showBar ? 2.5 : 2, color: colors[index % colors.length] },
+            itemStyle: { color: colors[index % colors.length], borderColor: '#fff', borderWidth: showBar ? 1.5 : 0 },
+            areaStyle: showBar ? undefined : {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: colors[index % colors.length] + '33' },
+                    { offset: 1, color: colors[index % colors.length] + '00' }
+                ])
+            }
+        })) : [];
+
+        const dates = (data && data.dates) || [];
+        const rotate = dates.length > 14 ? 35 : 0;
+
+        return {
+            backgroundColor: 'transparent',
+            tooltip: {
+                ...this.darkTheme.tooltip,
+                trigger: 'axis',
+                axisPointer: { type: 'cross', lineStyle: { color: 'rgba(99,102,241,0.3)' } },
+                formatter: function(params) {
+                    if (!params || !params.length) return '';
+                    const date = params[0].axisValue;
+                    let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
+                    const seen = new Set();
+                    params.forEach(p => {
+                        const baseName = String(p.seriesName || '').replace(/\s*·\s*(柱状|折线)$/, '');
+                        if (seen.has(baseName)) return;
+                        seen.add(baseName);
+                        html += `<div style="display:flex;align-items:center;gap:6px">
+                            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${p.color}"></span>
+                            <span>${baseName}: ${p.value}次</span>
+                        </div>`;
+                    });
+                    return html;
+                }
+            },
+            legend: {
+                bottom: 0,
+                textStyle: { color: '#a0aec0', fontSize: 11 },
+                type: 'scroll',
+                pageTextStyle: { color: '#a0aec0' }
+            },
+            grid: { left: 50, right: 24, top: 30, bottom: 40 },
+            xAxis: {
+                type: 'category',
+                data: dates,
+                axisLabel: { color: '#8896a6', fontSize: 11, rotate, interval: dates.length > 16 ? 2 : 0 },
+                axisLine: { lineStyle: { color: 'rgba(85,100,120,0.35)' } },
+                axisTick: { show: false }
+            },
+            yAxis: {
+                type: 'value',
+                axisLabel: { color: '#8896a6', fontSize: 11 },
+                splitLine: { lineStyle: { color: 'rgba(85,100,120,0.3)' } }
+            },
+            series: [...barSeries, ...lineSeries]
+        };
+    },
+
+    initSchoolClassActivityChart(data, chartType = ['line', 'bar']) {
+        const dom = document.getElementById('school-class-activity-chart');
+        if (!dom) return;
+        if (typeof echarts !== 'undefined') {
+            const existing = echarts.getInstanceByDom(dom);
+            if (existing && !existing.isDisposed()) {
+                existing.dispose();
+                this.instances = this.instances.filter(c => c !== existing);
+            }
+        }
+        const chart = this.createChart('school-class-activity-chart');
+        if (!chart) return;
+        chart.setOption(this.buildSchoolClassActivityOption(data, chartType), true);
+        window.addEventListener('resize', () => chart.resize());
+    },
+
+    updateSchoolClassActivityChart(data, chartType = ['line', 'bar']) {
+        const dom = document.getElementById('school-class-activity-chart');
+        if (!dom || typeof echarts === 'undefined') return false;
+        const chart = echarts.getInstanceByDom(dom);
+        if (!chart || chart.isDisposed()) return false;
+        chart.setOption(this.buildSchoolClassActivityOption(data, chartType), true);
+        return true;
+    },
+
     // 教师排名 - 横向柱状图
     initTeacherRankingBar(customData = null) {
         const chart = this.createChart('teacher-ranking-chart');
@@ -665,10 +722,15 @@ const Charts = {
                     if (!params || !params.length) return '';
                     const date = params[0].axisValue;
                     let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
+                    // 折线+柱状叠加时同一园所会出现两次（一柱一线），按"原始园所名"去重
+                    const seen = new Set();
                     params.forEach(p => {
+                        const baseName = String(p.seriesName || '').replace(/\s*·\s*(柱状|折线)$/, '');
+                        if (seen.has(baseName)) return;
+                        seen.add(baseName);
                         html += `<div style="display:flex;align-items:center;gap:6px">
-                            <span style="display:inline-block;width:10px;height:10px;border-radius:${p.seriesType === 'line' ? '50%' : '2px'};background:${p.color}"></span>
-                            <span>${p.seriesName}: ${p.value}次</span>
+                            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${p.color}"></span>
+                            <span>${baseName}: ${p.value}次</span>
                         </div>`;
                     });
                     return html;
@@ -779,7 +841,7 @@ const Charts = {
             backgroundColor: 'transparent',
             tooltip: { ...this.darkTheme.tooltip, trigger: 'item', formatter: '{b}: {c}次 ({d}%)' },
             legend: { bottom: 0, textStyle: { color: '#a0aec0', fontSize: 11 } },
-            color: ['#3b82f6', '#10b981', '#ef4444', '#f59e0b', '#8b5cf6', '#06b6d4'],
+            color: ['#1677FF', '#13C2C2', '#FAAD14', '#EB2F96', '#52C41A', '#722ED1'],
             series: [{
                 type: 'pie', radius: ['35%', '60%'], center: ['50%', '42%'],
                 itemStyle: { borderRadius: 4, borderColor: 'rgba(120,160,220,0.35)', borderWidth: 2 },
