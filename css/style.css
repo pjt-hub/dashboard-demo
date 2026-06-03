@@ -31,6 +31,58 @@ body {
     border-right: 1px solid var(--border-subtle);
 }
 
+/* —— 侧边栏收起态 —— */
+.sidebar-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    color: var(--text-muted);
+    transition: background var(--motion-base) var(--ease-standard),
+                color var(--motion-base) var(--ease-standard);
+}
+.sidebar-toggle-btn:hover {
+    background: var(--hover-overlay);
+    color: var(--text-secondary);
+}
+
+/* 收起后侧边栏只显示图标 */
+body.sidebar-collapsed #sidebar {
+    width: 4.5rem;
+}
+body.sidebar-collapsed main {
+    margin-left: 4.5rem;
+}
+main {
+    transition: margin-left var(--motion-base, 0.3s) var(--ease-standard, ease);
+}
+/* 收起态：隐藏所有文字标签 */
+body.sidebar-collapsed .sidebar-label {
+    opacity: 0;
+    width: 0;
+    overflow: hidden;
+    pointer-events: none;
+    white-space: nowrap;
+}
+/* 收起态：导航项与 logo / 头像居中显示图标 */
+body.sidebar-collapsed #sidebar .sidebar-nav-item,
+body.sidebar-collapsed #sidebar .px-4 > .flex {
+    justify-content: center;
+}
+body.sidebar-collapsed #sidebar .sidebar-nav-item {
+    gap: 0;
+}
+/* 收起态：强制收起角色切换器，避免展开溢出 */
+body.sidebar-collapsed #role-switcher {
+    display: none !important;
+}
+.sidebar-label {
+    transition: opacity var(--motion-base) var(--ease-standard);
+}
+
+
 .sidebar-nav-item {
     color: var(--text-muted);
     margin-bottom: 2px;
@@ -120,7 +172,7 @@ main {
 /* —— 指标卡图标背景(半透明) —— */
 .bg-blue-50    { background: color-mix(in oklab, var(--brand-500)   18%, transparent); }
 .bg-emerald-50 { background: color-mix(in oklab, var(--success-500) 18%, transparent); }
-.bg-purple-50  { background: color-mix(in oklab, #8B5CF6            18%, transparent); }
+.bg-purple-50  { background: color-mix(in oklab, #1677FF            18%, transparent); }
 .bg-amber-50   { background: color-mix(in oklab, var(--accent-500)  18%, transparent); }
 .bg-cyan-50    { background: color-mix(in oklab, var(--info-500)    18%, transparent); }
 .bg-green-50   { background: color-mix(in oklab, var(--success-500) 18%, transparent); }
@@ -129,7 +181,7 @@ main {
 /* 指标卡数值色 */
 .text-blue-600    { color: var(--brand-400); }
 .text-emerald-600 { color: var(--success-400); }
-.text-purple-600  { color: #A78BFA; }
+.text-purple-600  { color: #69B1FF; }
 .text-amber-600   { color: var(--accent-400); }
 .text-cyan-600    { color: var(--info-400); }
 .text-green-600   { color: var(--success-400); }
@@ -176,8 +228,8 @@ td .text-xs { color: var(--text-faint); }
     color: var(--success-400);
 }
 .rounded-full.text-xs.bg-purple-50 {
-    background: color-mix(in oklab, #8B5CF6 20%, transparent);
-    color: #A78BFA;
+    background: color-mix(in oklab, #1677FF 20%, transparent);
+    color: #69B1FF;
 }
 
 .bg-amber-100 {
@@ -454,7 +506,7 @@ button:disabled {
     position: absolute;
     top: 0; left: 0; right: 0;
     height: 3px;
-    background: linear-gradient(90deg, var(--info-400), var(--brand-500), #8B5CF6);
+    background: linear-gradient(90deg, var(--info-400), var(--brand-500), #1677FF);
     opacity: 0;
     transition: opacity var(--motion-slow) var(--ease-standard);
     border-radius: var(--radius-md) var(--radius-md) 0 0;
@@ -663,6 +715,36 @@ body:not(.theme-dark) .bg-blue-500\/10,
 body:not(.theme-dark) .bg-blue-500\/15,
 body:not(.theme-dark) .bg-blue-500\/20 { background-color: color-mix(in oklab, var(--brand-500) 12%, transparent); }
 
+/* —— 紫/靛/品红系背景统一锚到 AntD 蓝(覆盖 app.js 内联紫色工具类) —— */
+/* 实心强调底(500/600):用作图标点/标签底 → 主蓝 */
+body:not(.theme-dark) [class*="bg-violet-500"]:not([class*="\/"]),
+body:not(.theme-dark) [class*="bg-violet-600"]:not([class*="\/"]),
+body:not(.theme-dark) [class*="bg-purple-500"]:not([class*="\/"]),
+body:not(.theme-dark) [class*="bg-purple-600"]:not([class*="\/"]),
+body:not(.theme-dark) [class*="bg-indigo-500"]:not([class*="\/"]),
+body:not(.theme-dark) [class*="bg-indigo-600"]:not([class*="\/"]),
+body:not(.theme-dark) [class*="bg-fuchsia-500"]:not([class*="\/"]) {
+    background-color: var(--brand-500) !important;
+}
+/* 浅色卡片底(50/100):紫白 → 极浅蓝 */
+body:not(.theme-dark) [class*="bg-violet-50"],
+body:not(.theme-dark) [class*="bg-violet-100"],
+body:not(.theme-dark) [class*="bg-purple-50"],
+body:not(.theme-dark) [class*="bg-purple-100"],
+body:not(.theme-dark) [class*="bg-indigo-50"],
+body:not(.theme-dark) [class*="bg-indigo-100"],
+body:not(.theme-dark) [class*="bg-fuchsia-50"] {
+    background-color: var(--brand-50) !important;
+}
+/* 半透明紫/靛/品红块 → 淡蓝 */
+body:not(.theme-dark) [class*="bg-purple-500\/"],
+body:not(.theme-dark) [class*="bg-purple-400\/"],
+body:not(.theme-dark) [class*="bg-indigo-500\/"],
+body:not(.theme-dark) [class*="bg-indigo-400\/"],
+body:not(.theme-dark) [class*="bg-fuchsia-500\/"] {
+    background-color: color-mix(in oklab, var(--brand-500) 10%, transparent) !important;
+}
+
 /* active 态按钮:bg-blue-500/20 + text-blue-300 + border-blue-500/40 锚到品牌紫 */
 body:not(.theme-dark) button.bg-blue-500\/20,
 body:not(.theme-dark) button[class*="bg-blue-500\/15"],
@@ -685,6 +767,9 @@ body:not(.theme-dark) .bg-gradient-to-br[class*="from-cyan-500"],
 body:not(.theme-dark) .bg-gradient-to-br[class*="from-blue-500"],
 body:not(.theme-dark) .bg-gradient-to-br[class*="from-amber-500"],
 body:not(.theme-dark) .bg-gradient-to-br[class*="from-violet-500"],
+body:not(.theme-dark) .bg-gradient-to-br[class*="from-purple-500"],
+body:not(.theme-dark) .bg-gradient-to-br[class*="from-indigo-500"],
+body:not(.theme-dark) .bg-gradient-to-br[class*="from-fuchsia-500"],
 body:not(.theme-dark) .bg-gradient-to-br[class*="from-rose-500"] {
     background-image: linear-gradient(135deg, #FFFFFF, var(--brand-50));
     border: 1px solid var(--border-subtle);
@@ -697,7 +782,7 @@ body:not(.theme-dark) [class*="via-slate-"],
 body:not(.theme-dark) [class*="to-slate-"] {
     --tw-gradient-from: #FFFFFF !important;
     --tw-gradient-via: var(--brand-50) !important;
-    --tw-gradient-to:  #FAF5FF !important;
+    --tw-gradient-to:  #F5F5F5 !important;
 }
 body:not(.theme-dark) .bg-gradient-to-br[class*="from-slate-"],
 body:not(.theme-dark) .bg-gradient-to-b[class*="from-slate-"],
@@ -706,7 +791,7 @@ body:not(.theme-dark) .bg-gradient-to-t[class*="from-slate-"],
 body:not(.theme-dark) .bg-gradient-to-bl[class*="from-slate-"],
 body:not(.theme-dark) .bg-gradient-to-tl[class*="from-slate-"],
 body:not(.theme-dark) .bg-gradient-to-tr[class*="from-slate-"] {
-    background-image: linear-gradient(135deg, #FFFFFF 0%, var(--brand-50) 50%, #FAF5FF 100%);
+    background-image: linear-gradient(135deg, #FFFFFF 0%, var(--brand-50) 50%, #F5F5F5 100%);
     background-color: var(--surface-1);
     border-color: var(--border-subtle);
     box-shadow: var(--shadow-card);
@@ -725,9 +810,9 @@ body:not(.theme-dark) .bg-gradient-to-r[class*="from-["] {
 body:not(.theme-dark) [class*="bg-[radial-gradient"],
 body:not(.theme-dark) [class*="bg-[linear-gradient"] {
     background-image:
-        radial-gradient(circle at top left,  rgba(167, 139, 250, 0.16), transparent 30%),
-        radial-gradient(circle at top right, rgba(139, 92, 246, 0.14), transparent 32%),
-        linear-gradient(135deg, #FFFFFF, #FAF5FF);
+        radial-gradient(circle at top left,  rgba(64, 150, 255, 0.16), transparent 30%),
+        radial-gradient(circle at top right, rgba(22, 119, 255, 0.14), transparent 32%),
+        linear-gradient(135deg, #FFFFFF, #F5F5F5);
     background-color: var(--surface-1);
     border: 1px solid var(--border-subtle);
     box-shadow: var(--shadow-card);
@@ -942,8 +1027,8 @@ body:not(.theme-dark) .global-help-tip {
     box-shadow: 0 2px 8px rgba(6, 182, 212, 0.35);
 }
 .chart-toggle-btn--purple.is-active {
-    background: linear-gradient(135deg, #8b5cf6, #6d28d9);
-    box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
+    background: linear-gradient(135deg, #1677ff, #0958d9);
+    box-shadow: 0 2px 8px rgba(22, 119, 255, 0.35);
 }
 .chart-toggle-btn.is-inactive {
     color: #475569;
@@ -961,23 +1046,23 @@ body:not(.theme-dark) .global-help-tip {
 /* 浅色主题（warm） */
 body:not(.theme-dark) .chart-toggle-group {
     background: rgba(238, 242, 255, 0.7);
-    border-color: rgba(167, 139, 250, 0.35);
+    border-color: rgba(64, 150, 255, 0.35);
 }
 body:not(.theme-dark) .chart-toggle-btn.is-active {
     color: #ffffff;
-    background: linear-gradient(135deg, #6d28d9, #4c1d95);
+    background: linear-gradient(135deg, #0958d9, #003eb3);
     border-color: rgba(255, 255, 255, 0.5);
     box-shadow: 0 2px 8px rgba(76, 29, 149, 0.3);
 }
 body:not(.theme-dark) .chart-toggle-btn--purple.is-active {
-    background: linear-gradient(135deg, #6d28d9, #4c1d95);
+    background: linear-gradient(135deg, #0958d9, #003eb3);
 }
 body:not(.theme-dark) .chart-toggle-btn.is-inactive {
     color: #475569;
 }
 body:not(.theme-dark) .chart-toggle-btn.is-inactive:hover {
     color: #0f172a;
-    background: rgba(167, 139, 250, 0.18);
+    background: rgba(64, 150, 255, 0.18);
 }
 
 /* —— 阅读对话明细：原始语音播放按钮 —— */
@@ -1101,8 +1186,8 @@ body:not(.theme-dark) .voice-play-btn.is-playing {
 }
 
 body:not(.theme-dark) .compare-bar-cell::before {
-    background: linear-gradient(90deg, rgba(167, 139, 250, 0.22), rgba(124, 58, 237, 0.32));
-    border-color: rgba(124, 58, 237, 0.28);
+    background: linear-gradient(90deg, rgba(64, 150, 255, 0.22), rgba(9, 88, 217, 0.32));
+    border-color: rgba(9, 88, 217, 0.28);
 }
 body:not(.theme-dark) .compare-bar-cell.is-low::before {
     background: linear-gradient(90deg, rgba(251, 113, 133, 0.22), rgba(244, 63, 94, 0.32));
@@ -1130,7 +1215,7 @@ body:not(.theme-dark) .compare-bar-cell.is-high::before {
     color: #38bdf8;
 }
 body:not(.theme-dark) .sortable-th.is-sorted .sort-arrow {
-    color: #7c3aed;
+    color: #0958d9;
 }
 
 /* 表格顶部汇总行 */
@@ -1160,7 +1245,7 @@ body:not(.theme-dark) .compare-summary-row {
     color: #475569;
 }
 body:not(.theme-dark) .compare-summary-row td {
-    border-color: rgba(167, 139, 250, 0.25);
+    border-color: rgba(64, 150, 255, 0.25);
 }
 body:not(.theme-dark) .compare-summary-row td .summary-label {
     color: #64748b;
@@ -1222,9 +1307,9 @@ body:not(.theme-dark) .skeleton-block,
 body:not(.theme-dark) .skeleton-line {
     background: linear-gradient(
         90deg,
-        rgba(167, 139, 250, 0.10) 0%,
-        rgba(167, 139, 250, 0.20) 50%,
-        rgba(167, 139, 250, 0.10) 100%
+        rgba(64, 150, 255, 0.10) 0%,
+        rgba(64, 150, 255, 0.20) 50%,
+        rgba(64, 150, 255, 0.10) 100%
     );
     background-size: 200% 100%;
 }

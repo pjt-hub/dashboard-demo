@@ -4,6 +4,23 @@
 
 ---
 
+## [2026-05-27]
+
+### 变更
+- **大数据总览 vs 区域/园所数据 双视角职责重新划分** - 两页之前互相重复展示 KPI / TOP10 排名，这次按"总览=看动静、区域/园所=看差异+下钻"分清职责。
+  - **总览页 admin**：右侧两张 TOP10 排行卡（班均活动次数 / 班均参与人次）改为 **TOP3 摘要**，标题加"查看全部 →"按钮跳到区域数据页对比表
+  - **总览页 principal**：删除"班级 TOP10 图表"卡 + "阅读 TOP10 绘本"表格（与园所数据页 classes/books tab 重复）。教师 TOP10 保留作为首屏轻量信号。`Charts.initDataOverviewCharts` 不再调 `initClassRankingBar`
+  - **总览页 teacher**：阅读 TOP10 绘本表保留（本班视角无别处可看）
+  - **区域数据页 admin（未选学校）**：原"全区数据概述"tab 替换为「**园所横向对比**」表 —— 每行一个园所，列：活动总次数 / 总时长 / 参与人次 / 班均活动 / 设备使用次数；列头点击排序、汇总行、园所/区域拼音搜索、区域 chips 筛选、行末"打开详情"复用 `viewSchoolDetail`
+  - **园所数据页 principal · 数据概述 tab**：删除头部 5 KPI 重复卡（与总览页重复）；最顶新增「**本园关键差异速览**」4 项：高活跃班级数 / 低活跃班级数 / 教师活跃极差 / 设备使用极差，每条带"查看 →"跳到对应明细 tab。大模型 / 类型阅读 / 设备 / 推荐栏保留
+  - **园所数据页 6 个明细 tab**（班级 / 教师 / 幼儿 / 绘本 / 设备 / 不含活动流水）：数值列加 `.compare-bar-cell` 条件格式背景条按相对百分位渲染、列头可排序、表头汇总行（总数 / 均值 / 合计）。班级 tab 还按"园均±20%/-50%"标记 is-high / is-low 高低活跃
+  - **新增工具**：`App.barCell / barPct / sortableTh / schoolSort / toggleSort / sortByKey / getSchoolDiffSummary / renderSchoolDiffSummary / renderRegionalSchoolCompare / regionalCompareState / buildRegionalSchoolRows`，`tableWrap` 增加可选 `summary` 行参数 + sortable 列头
+  - **CSS 新增**：`.compare-bar-cell` (深浅主题分别配色) / `.sortable-th` / `.compare-summary-row`
+  - admin 单园弹窗（`viewSchoolDetail` 调 `renderSchoolOverview`）保持 5 KPI 概览不变（admin 第一次看到该园数据）；teacher 视角不动
+  - 文件：`js/app.js`、`js/charts.js`、`css/style.css`、`index.html`（style.css?v=17、charts.js?v=16、app.js?v=21）
+
+---
+
 ## [2026-05-26]
 
 ### 新增

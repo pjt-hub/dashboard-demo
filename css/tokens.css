@@ -1,83 +1,83 @@
 /* ============================================================
    AI绘本阅读室 · Design Tokens
-   默认主题:白紫(Lilac on White),tokens 是单一变量源
-   - .theme-dark  深色科技蓝(原默认,保留作可选)
+   默认主题:Ant Design / Vben5 亮色(拂晓蓝 on 中性灰白)
+   - .theme-dark  深色科技蓝(保留作可选)
    ============================================================ */
 
 :root {
-    /* —— 品牌主色:紫色(替代原蓝色) —— */
-    --brand-50:  #F5F3FF;
-    --brand-100: #EDE9FE;
-    --brand-200: #DDD6FE;
-    --brand-300: #C4B5FD;
-    --brand-400: #A78BFA;
-    --brand-500: #8B5CF6;
-    --brand-600: #7C3AED;
-    --brand-700: #6D28D9;
-    --brand-800: #5B21B6;
-    --brand-900: #4C1D95;
+    /* —— 品牌主色:Ant Design 拂晓蓝 #1677ff —— */
+    --brand-50:  #E6F4FF;
+    --brand-100: #BAE0FF;
+    --brand-200: #91CAFF;
+    --brand-300: #69B1FF;
+    --brand-400: #4096FF;
+    --brand-500: #1677FF;
+    --brand-600: #0958D9;
+    --brand-700: #003EB3;
+    --brand-800: #002C8C;
+    --brand-900: #001D66;
 
-    /* —— 强调色(琥珀,CTA / 高亮) —— */
-    --accent-400: #FBBF24;
-    --accent-500: #F59E0B;
-    --accent-600: #D97706;
+    /* —— 强调色(AntD 金,CTA / 高亮) —— */
+    --accent-400: #FFC53D;
+    --accent-500: #FAAD14;
+    --accent-600: #D48806;
 
-    /* —— 语义色 —— */
-    --success-400: #34D399;
-    --success-500: #10B981;
-    --warning-400: #FBBF24;
-    --warning-500: #F59E0B;
-    --danger-400:  #F87171;
-    --danger-500:  #EF4444;
-    --info-400:    #818CF8;
-    --info-500:    #6366F1;
+    /* —— 语义色(Ant Design) —— */
+    --success-400: #73D13D;
+    --success-500: #52C41A;
+    --warning-400: #FFC53D;
+    --warning-500: #FAAD14;
+    --danger-400:  #FF7875;
+    --danger-500:  #FF4D4F;
+    --info-400:    #4096FF;
+    --info-500:    #1677FF;
 
-    /* —— 表层(默认 = 白紫) —— */
-    --bg-base:        linear-gradient(135deg, #FFFFFF 0%, #FAF5FF 50%, #F5F3FF 100%);
-    --bg-app:         #FAF5FF;
+    /* —— 表层(默认 = AntD 中性灰白) —— */
+    --bg-base:        #F5F5F5;                  /* 页面底 */
+    --bg-app:         #F0F2F5;                  /* 经典 AntD 布局背景 */
     --surface-1:      #FFFFFF;                  /* 卡片 */
-    --surface-2:      #FAF5FF;                  /* 内嵌面板 / 筛选区 */
+    --surface-2:      #FAFAFA;                  /* 内嵌面板 / 筛选区 */
     --surface-3:      #FFFFFF;                  /* 表头 / 输入框 */
-    --surface-sidebar: linear-gradient(180deg, #FFFFFF 0%, #F5F3FF 100%);
+    --surface-sidebar: #FFFFFF;
     --surface-header: rgba(255, 255, 255, 0.92);
     --surface-modal:  #FFFFFF;
 
-    --border-subtle:   #EDE9FE;                 /* 极淡紫 */
-    --border-default:  #DDD6FE;                 /* 中淡紫 */
-    --border-strong:   #8B5CF6;                 /* 主紫 */
+    --border-subtle:   #F0F0F0;                 /* AntD 分割线 */
+    --border-default:  #D9D9D9;                 /* AntD 边框 */
+    --border-strong:   #1677FF;                 /* 主蓝 */
 
-    /* —— 文字 —— */
-    --text-primary:   #1E1B4B;                  /* 深紫黑 */
-    --text-secondary: #312E81;                  /* 紫黑 */
-    --text-muted:     #6D28D9;                  /* 紫调灰 */
-    --text-faint:     #8B7FB8;                  /* 浅紫灰 */
+    /* —— 文字(Ant Design 黑阶) —— */
+    --text-primary:   rgba(0, 0, 0, 0.88);      /* 标题 */
+    --text-secondary: rgba(0, 0, 0, 0.65);      /* 正文 */
+    --text-muted:     rgba(0, 0, 0, 0.45);      /* 次要 */
+    --text-faint:     rgba(0, 0, 0, 0.35);      /* 弱化 / 占位 */
     --text-on-brand:  #FFFFFF;
 
     /* —— 高亮态 —— */
-    --hover-overlay:  rgba(139, 92, 246, 0.08);
-    --active-overlay: rgba(139, 92, 246, 0.14);
-    --focus-ring:     rgba(139, 92, 246, 0.30);
+    --hover-overlay:  rgba(22, 119, 255, 0.06);
+    --active-overlay: rgba(22, 119, 255, 0.12);
+    --focus-ring:     rgba(22, 119, 255, 0.20);
 
-    /* —— 图表色板(白底紫调) —— */
-    --chart-1: #8B5CF6;   /* 紫主 */
-    --chart-2: #6366F1;   /* 靛 */
-    --chart-3: #F59E0B;   /* 琥珀 */
-    --chart-4: #EC4899;   /* 玫瑰 */
-    --chart-5: #14B8A6;   /* 青 */
-    --chart-6: #A78BFA;   /* 浅紫 */
-    --chart-7: #F472B6;   /* 浅粉 */
-    --chart-8: #2563EB;   /* 蓝 */
+    /* —— 图表色板(AntD 亮底) —— */
+    --chart-1: #1677FF;   /* 拂晓蓝 */
+    --chart-2: #13C2C2;   /* 青 */
+    --chart-3: #FAAD14;   /* 金 */
+    --chart-4: #EB2F96;   /* 洋红 */
+    --chart-5: #52C41A;   /* 绿 */
+    --chart-6: #722ED1;   /* 紫 */
+    --chart-7: #F5222D;   /* 红 */
+    --chart-8: #2F54EB;   /* 极客蓝 */
 
-    /* —— 阴影(柔紫调) —— */
-    --shadow-card:       0 1px 3px rgba(91, 33, 182, 0.06), 0 1px 2px rgba(91, 33, 182, 0.04);
-    --shadow-card-hover: 0 8px 24px rgba(139, 92, 246, 0.14), 0 2px 6px rgba(91, 33, 182, 0.06);
-    --shadow-modal:      0 24px 48px rgba(91, 33, 182, 0.16);
-    --shadow-button:     0 2px 8px rgba(139, 92, 246, 0.30);
+    /* —— 阴影(AntD 轻投影) —— */
+    --shadow-card:       0 1px 2px rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px rgba(0, 0, 0, 0.02);
+    --shadow-card-hover: 0 6px 16px rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 9px 28px 8px rgba(0, 0, 0, 0.05);
+    --shadow-modal:      0 6px 16px rgba(0, 0, 0, 0.08), 0 9px 28px 8px rgba(0, 0, 0, 0.05);
+    --shadow-button:     0 2px 0 rgba(5, 145, 255, 0.10);
 
-    --radius-sm: 6px;
-    --radius-md: 10px;
-    --radius-lg: 14px;
-    --radius-xl: 20px;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-xl: 12px;
 
     --motion-fast:   150ms;
     --motion-base:   200ms;
