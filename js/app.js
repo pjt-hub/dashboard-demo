@@ -3703,19 +3703,64 @@ const App = {
         this.openModal(this.renderAiDrilldownModal(), { size: 'xwide' });
     },
 
-    filterAiDrilldownStudent(student) {
+    filterAiDrilldownStudent(value, evt) {
         if (!this._aiDrilldown) return;
-        this._aiDrilldown.studentFilter = student || null;
+        this._aiDrilldown.studentFilter = value || null;
+        // 中文输入法组合(拼音)过程中不重渲染，否则会销毁重建 input 打断输入。
+        // 组合结束(compositionend)后会再触发一次 isComposing=false 的 input，届时再渲染。
+        if (evt && evt.isComposing) return;
+        this.rerenderAiDrilldownModal();
+    },
+
+    rerenderAiDrilldownModal() {
         const host = document.getElementById('modal-content');
-        if (host) {
-            host.innerHTML = this.renderAiDrilldownModal();
-            const input = document.getElementById('ai-drilldown-student-search');
-            if (input) {
-                input.focus();
-                const len = input.value.length;
-                input.setSelectionRange(len, len);
-            }
+        if (!host) return;
+        host.innerHTML = this.renderAiDrilldownModal();
+        const input = document.getElementById('ai-drilldown-student-search');
+        if (input) {
+            input.focus();
+            const len = input.value.length;
+            input.setSelectionRange(len, len);
         }
+    },
+
+    // 共用：把单条 AI 会话记录渲染为「时间｜页码｜scope｜N轮 + 每轮 Q/A」HTML
+    renderAiSessionItemHtml(item) {
+        const scopeBadge = item.scope === 'page'
+            ? '<span class="px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-400/30">阅读中</span>'
+            : '<span class="px-1.5 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">阅读后</span>';
+        const turnsHtml = (item.session || []).map((t, idx) => `
+            <div class="mb-3 last:mb-0">
+                <div class="flex items-center gap-2 mb-1.5">
+                    <span class="text-xs text-amber-400 font-semibold">第 ${idx + 1} 轮</span>
+                    ${scopeBadge}
+                </div>
+                <div class="bg-amber-500/10 border border-amber-400/20 rounded-lg px-3 py-2 mb-1.5">
+                    <div class="flex items-center justify-between gap-2 mb-0.5">
+                        <div class="text-[11px] text-amber-300">小朋友提问</div>
+                        ${this.voicePlayButton(t.q || '')}
+                    </div>
+                    <div class="text-sm text-amber-100 leading-relaxed">${t.q || ''}</div>
+                </div>
+                <div class="bg-slate-700/40 border border-slate-600/30 rounded-lg px-3 py-2">
+                    <div class="text-[11px] text-cyan-300 mb-0.5">AI 回复</div>
+                    <div class="text-sm text-slate-200 leading-relaxed">${t.a || ''}</div>
+                </div>
+            </div>
+        `).join('');
+        return `
+            <div class="px-4 py-3 border-b border-slate-700/30 last:border-b-0">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="text-xs text-slate-400">${item.time}</span>
+                    <span class="text-slate-600">|</span>
+                    <span class="text-xs text-slate-400">${item.page || '-'}</span>
+                    <span class="text-slate-600">|</span>
+                    ${scopeBadge}
+                    <span class="text-slate-600">|</span>
+                    <span class="text-xs text-blue-400">${item.session?.length || 0} 轮</span>
+                </div>
+                ${turnsHtml}
+            </div>`;
     },
 
     viewAiDrilldownSession(student, date, book) {
@@ -3738,44 +3783,7 @@ const App = {
         const className = firstItem.className || '-';
         const totalTurns = all.reduce((s, h) => s + (h.session?.length || 0), 0);
 
-        const dialogsHtml = all.map(item => {
-            const scopeBadge = item.scope === 'page'
-                ? '<span class="px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-400/30">阅读中</span>'
-                : '<span class="px-1.5 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">阅读后</span>';
-            const turnsHtml = (item.session || []).map((t, idx) => `
-                <div class="mb-3 last:mb-0">
-                    <div class="flex items-center gap-2 mb-1.5">
-                        <span class="text-xs text-amber-400 font-semibold">第 ${idx + 1} 轮</span>
-                        <span class="text-[11px] text-slate-500">${item.page || '-'}</span>
-                        ${scopeBadge}
-                    </div>
-                    <div class="bg-amber-500/10 border border-amber-400/20 rounded-lg px-3 py-2 mb-1.5">
-                        <div class="flex items-center justify-between gap-2 mb-0.5">
-                            <div class="text-[11px] text-amber-300">小朋友提问</div>
-                            ${this.voicePlayButton(t.q || '')}
-                        </div>
-                        <div class="text-sm text-amber-100 leading-relaxed">${t.q || ''}</div>
-                    </div>
-                    <div class="bg-slate-700/40 border border-slate-600/30 rounded-lg px-3 py-2">
-                        <div class="text-[11px] text-cyan-300 mb-0.5">AI 回复</div>
-                        <div class="text-sm text-slate-200 leading-relaxed">${t.a || ''}</div>
-                    </div>
-                </div>
-            `).join('');
-            return `
-                <div class="px-4 py-3 border-b border-slate-700/30 last:border-b-0">
-                    <div class="flex items-center gap-2 mb-2">
-                        <span class="text-xs text-slate-400">${item.time}</span>
-                        <span class="text-slate-600">|</span>
-                        <span class="text-xs text-slate-400">${item.page || '-'}</span>
-                        <span class="text-slate-600">|</span>
-                        ${scopeBadge}
-                        <span class="text-slate-600">|</span>
-                        <span class="text-xs text-blue-400">${item.session?.length || 0} 轮</span>
-                    </div>
-                    ${turnsHtml}
-                </div>`;
-        }).join('');
+        const dialogsHtml = all.map(item => this.renderAiSessionItemHtml(item)).join('');
 
         const content = `
             <div class="bg-slate-900 rounded-xl p-6 w-full max-w-4xl mx-auto">
@@ -3819,10 +3827,69 @@ const App = {
         }
     },
 
-    renderAiDrilldownModal() {
+    // 合并查看：把当前下钻 + 搜索条件下的全部对话平铺到一页，按每次阅读活动分组间隔
+    viewAiDrilldownMerged() {
         const dd = this._aiDrilldown || {};
         const isBook = dd.type === 'book';
+        const { filteredGroups, filteredChats, filteredTurns, filterValue } = this.buildAiDrilldownGroups();
+        if (!filteredGroups.length) return;
+
         const accent = isBook ? 'text-cyan-300' : 'text-emerald-300';
+        const totalReadings = filteredGroups.length;
+        // 标题：绘本下钻=《绘本》全部对话；学生下钻=某小朋友全部对话；带搜索词时附加
+        const baseTitle = isBook ? `《${dd.value}》全部对话` : `${dd.value} 的全部对话`;
+        const filterNote = filterValue ? `（筛选「${filterValue}」）` : '';
+
+        const groupsHtml = filteredGroups.map(g => {
+            const groupTurns = g.items.reduce((s, h) => s + (h.session?.length || 0), 0);
+            const dialogsHtml = g.items.map(item => this.renderAiSessionItemHtml(item)).join('');
+            return `
+                <div class="mb-5 last:mb-0">
+                    <div class="flex flex-wrap items-center gap-2 px-4 py-2.5 bg-slate-800/60 rounded-t-lg border border-slate-700/40">
+                        <span class="text-sm text-amber-300 font-medium">《${g.book}》</span>
+                        <span class="text-slate-600">·</span>
+                        <span class="text-sm ${accent}">${g.student}</span>
+                        <span class="text-slate-600">·</span>
+                        <span class="text-xs text-slate-400">${g.className}</span>
+                        <span class="text-slate-600">·</span>
+                        <span class="text-xs text-slate-400">${g.date}</span>
+                        <span class="ml-auto text-xs text-blue-400">${g.items.length} 次对话 · ${groupTurns} 轮</span>
+                    </div>
+                    <div class="border border-t-0 border-slate-700/40 rounded-b-lg">
+                        ${dialogsHtml}
+                    </div>
+                </div>`;
+        }).join('');
+
+        const content = `
+            <div class="bg-slate-900 rounded-xl p-6 w-full max-w-4xl mx-auto">
+                <div class="flex items-center justify-between mb-5">
+                    <div>
+                        <h3 class="text-lg font-bold text-white">📖 阅读对话明细（合并）</h3>
+                        <div class="text-xs text-slate-400 mt-1"><span class="${accent}">${baseTitle}</span>${filterNote} · ${totalReadings} 次阅读活动 · ${filteredChats} 次对话 · ${filteredTurns} 轮</div>
+                    </div>
+                    <div class="flex items-center">
+                        <button onclick="App.returnFromAiDrilldownSession()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-sm transition-colors mr-2">
+                            <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                            返回
+                        </button>
+                        <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                            <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="max-h-[60vh] overflow-y-auto pr-1">
+                    ${groupsHtml || '<div class="text-center text-slate-500 py-8">暂无对话内容</div>'}
+                </div>
+            </div>
+        `;
+        this.openModal(content, { size: 'wide' });
+    },
+
+    // 共用：按当前下钻条件(dd)构造分组数据，供下钻列表与合并查看复用
+    buildAiDrilldownGroups() {
+        const dd = this._aiDrilldown || {};
+        const isBook = dd.type === 'book';
         const all = this.getAiHistoryByRange()
             .filter(item => isBook ? item.book === dd.value : item.student === dd.value)
             .slice()
@@ -3840,23 +3907,46 @@ const App = {
         const sortedGroups = [...groups.values()]
             .sort((a, b) => b.items[b.items.length - 1].time.localeCompare(a.items[a.items.length - 1].time));
 
-        // 学生筛选（按名称搜索）
-        const studentFilterRaw = dd.studentFilter || '';
-        const studentFilter = studentFilterRaw.trim();
-        const filteredGroups = studentFilter
-            ? sortedGroups.filter(g => g.student.includes(studentFilter))
+        // 搜索维度：绘本下钻搜小朋友(student)，学生下钻搜绘本(book)
+        const filterField = isBook ? 'student' : 'book';
+        const filterRaw = dd.studentFilter || '';
+        const filterValue = filterRaw.trim();
+        const filteredGroups = filterValue
+            ? sortedGroups.filter(g => String(g[filterField] || '').includes(filterValue))
             : sortedGroups;
         const filteredChats = filteredGroups.reduce((s, g) => s + g.items.length, 0);
         const filteredTurns = filteredGroups.reduce((s, g) => s + g.items.reduce((ss, h) => ss + (h.session?.length || 0), 0), 0);
 
+        return { isBook, sortedGroups, filteredGroups, filteredChats, filteredTurns, filterField, filterRaw, filterValue };
+    },
+
+    renderAiDrilldownModal() {
+        const dd = this._aiDrilldown || {};
+        const accent = dd.type === 'book' ? 'text-cyan-300' : 'text-emerald-300';
+        const { isBook, sortedGroups, filteredGroups, filteredChats, filteredTurns, filterRaw, filterValue } = this.buildAiDrilldownGroups();
+
+        // 搜索维度文案：绘本下钻搜小朋友、学生下钻搜绘本
+        const searchLabel = isBook ? '搜索小朋友' : '搜索绘本';
+        const searchPlaceholder = isBook ? '输入小朋友姓名...' : '输入绘本名称...';
+        const studentFilterRaw = filterRaw;
+        const studentFilter = filterValue;
+
         const filterBar = `
             <div class="flex flex-wrap items-center gap-2 mb-4">
-                <span class="text-xs text-slate-400">搜索小朋友：</span>
+                <span class="text-xs text-slate-400">${searchLabel}：</span>
                 <div class="relative">
                     <svg class="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                    <input id="ai-drilldown-student-search" type="text" value="${studentFilterRaw.replace(/"/g, '&quot;')}" oninput="App.filterAiDrilldownStudent(this.value)" placeholder="输入小朋友姓名..." class="pl-8 pr-8 py-1.5 bg-slate-700/40 border border-slate-600/40 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-400/50 w-56">
+                    <input id="ai-drilldown-student-search" type="text" value="${studentFilterRaw.replace(/"/g, '&quot;')}" oninput="App.filterAiDrilldownStudent(this.value, event)" oncompositionend="App.filterAiDrilldownStudent(this.value)" placeholder="${searchPlaceholder}" class="pl-8 pr-8 py-1.5 bg-slate-700/40 border border-slate-600/40 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-400/50 w-56">
                     ${studentFilter ? `<button onclick="App.filterAiDrilldownStudent('')" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white" title="清除"><svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>` : ''}
                 </div>
+                <button onclick="App.filterAiDrilldownStudent(document.getElementById('ai-drilldown-student-search').value)" class="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs transition-colors bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-400/30" title="按当前关键词搜索">
+                    <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    搜索
+                </button>
+                <button onclick="App.viewAiDrilldownMerged()" ${filteredGroups.length ? '' : 'disabled'} class="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs transition-colors ${filteredGroups.length ? 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-400/30' : 'bg-slate-700/40 text-slate-500 border border-slate-600/30 cursor-not-allowed'}" title="把当前筛选下的全部对话合并到一页查看">
+                    <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                    合并查看
+                </button>
                 ${studentFilter ? `<span class="text-xs text-cyan-300">已筛选 "${studentFilter}" · 命中 ${filteredGroups.length} 条</span>` : `<span class="text-xs text-slate-500">共 ${sortedGroups.length} 次阅读活动</span>`}
             </div>`;
 
@@ -4143,7 +4233,6 @@ const App = {
                 <div class="mb-3">
                     <div class="flex items-center gap-2 mb-1.5">
                         <span class="text-xs text-amber-400 font-semibold">第 ${idx + 1} 轮</span>
-                        <span class="text-[11px] text-slate-500">${item.page || '-'}</span>
                         ${scopeBadge}
                     </div>
                     <div class="bg-amber-500/10 border border-amber-400/20 rounded-lg px-3 py-2 mb-1.5">
