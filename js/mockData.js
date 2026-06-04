@@ -238,6 +238,7 @@ const MockData = {
         activityDuration: 99.38,  // 绘本活动时长(h)
         participantCount: 191,    // 参与活动人次
         readingDuration: 7.37,    // 绘本阅读时长(h)
+        deviceUseCount: 4860,     // 设备使用次数
         llmBookCount: 168,        // 大模型绘本次数
         llmChatCount: 542         // 大模型对话次数
     },
@@ -1455,7 +1456,7 @@ const MockData = {
             { q: '小蝌蚪会变成什么？', a: '小蝌蚪长大以后会变成可爱的小青蛙哦～它们的尾巴慢慢消失，长出小腿，就能在荷叶上跳来跳去啦～' }
         ];
 
-        // ===== 同一孩子同一绘本的多次对话（同日 + 跨日，带针对绘本内容的专属问答） =====
+        // ===== 同一幼儿同一绘本的多次对话（同日 + 跨日，带针对绘本内容的专属问答） =====
         const repeatHistory = [
             // --- 张小明 · 猜猜我有多爱你 · 同日3次对话 ---
             { id: 'ai-r01', time: '2026-05-10 09:15', book: '猜猜我有多爱你', page: '第1页', scope: 'page', student: '张小明', className: '大一班',

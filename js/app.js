@@ -121,6 +121,7 @@ const App = {
         this.loadAiReports();
         this.loadAiStudentReports();
         this.loadAiClassReports();
+        this.loadAiDialogTrash();
         this.initTheme();
         this.initSidebarCollapse();
         this.initKindergartenSelection();
@@ -537,6 +538,13 @@ const App = {
         return this.currentRole === 'teacher' && !!this.selectedClass;
     },
 
+    // 园所视角：园长，或教育局管理员已下钻到某个具体园所。
+    // 用于让 admin 的单园详情完全复用园长版的园所数据页渲染。
+    isSchoolScope() {
+        return this.currentRole === 'principal'
+            || (this.currentRole === 'admin' && !!this.selectedSchool);
+    },
+
     getTeacherClassName() {
         return this.selectedClass?.name || '';
     },
@@ -749,13 +757,22 @@ const App = {
         const activeClass = active
             ? 'border-blue-400/60 bg-blue-500/10 ring-1 ring-blue-400/30'
             : 'border-slate-700/50 hover:border-blue-400/30';
-        const arrow = active ? '▴' : '▾';
+        const hintClass = active
+            ? 'bg-blue-500/20 text-blue-300'
+            : 'bg-slate-700/50 text-slate-400';
         return `
             <button type="button" class="text-left bg-slate-900/40 rounded-xl border ${activeClass} transition-colors p-4 relative" data-metric-tab="${key}" onclick="App.switchStudentMetricTab('${key}')">
-                <div class="text-2xl font-bold text-blue-400 text-center">${displayValue}</div>
-                <div class="text-xs text-slate-400 text-center">${unit}</div>
-                <div class="text-xs text-slate-500 text-center">${label}</div>
-                <span class="absolute top-2 right-3 text-[10px] text-slate-500" data-metric-arrow>${arrow}</span>
+                <div class="text-center">
+                    <span class="text-2xl font-bold text-blue-400">${displayValue}</span>
+                    <span class="text-xs text-slate-400 ml-1">${unit}</span>
+                </div>
+                <div class="text-xs text-slate-500 text-center mt-0.5">${label}</div>
+                <div class="mt-2 flex justify-center">
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] ${hintClass} transition-colors" data-metric-hint>
+                        <span data-metric-hint-text>${active ? '收起明细' : '展开明细'}</span>
+                        <svg class="w-2.5 h-2.5 transition-transform ${active ? 'rotate-180' : ''}" data-metric-arrow width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path></svg>
+                    </span>
+                </div>
             </button>
         `;
     },
@@ -798,8 +815,17 @@ const App = {
             btn.classList.toggle('ring-blue-400/30', active);
             btn.classList.toggle('border-slate-700/50', !active);
             btn.classList.toggle('hover:border-blue-400/30', !active);
+            const hint = btn.querySelector('[data-metric-hint]');
+            if (hint) {
+                hint.classList.toggle('bg-blue-500/20', active);
+                hint.classList.toggle('text-blue-300', active);
+                hint.classList.toggle('bg-slate-700/50', !active);
+                hint.classList.toggle('text-slate-400', !active);
+            }
+            const hintText = btn.querySelector('[data-metric-hint-text]');
+            if (hintText) hintText.textContent = active ? '收起明细' : '展开明细';
             const arrow = btn.querySelector('[data-metric-arrow]');
-            if (arrow) arrow.textContent = active ? '▴' : '▾';
+            if (arrow) arrow.classList.toggle('rotate-180', active);
         });
         document.querySelectorAll('[data-metric-panel]').forEach(panel => {
             panel.classList.toggle('hidden', panel.dataset.metricPanel !== next);
@@ -923,7 +949,8 @@ const App = {
                     activityCount: schoolData.activityTotal,
                     activityDuration: schoolData.activityDuration,
                     participantCount: schoolData.studentTotal,
-                    readingDuration: schoolData.bookReadDuration
+                    readingDuration: schoolData.bookReadDuration,
+                    deviceUseCount: schoolData.deviceUseCount
                 },
                 // 绘本类型占比使用园所分类数据
                 bookTypes: schoolData.categoryData.map(cat => ({
@@ -967,6 +994,7 @@ const App = {
                 activityDuration: totalDuration.toFixed(1),
                 participantCount,
                 readingDuration: (totalDuration * 0.42).toFixed(1),
+                deviceUseCount: Math.max(0, this.scaleNumber(source.stats.deviceUseCount || 0, ratio, activities.length ? 1 : 0)),
                 llmBookCount: Math.max(0, this.scaleNumber(MockData.dataOverviewStats.llmBookCount || 0, ratio, activities.length ? 1 : 0)),
                 llmChatCount: Math.max(0, this.scaleNumber(MockData.dataOverviewStats.llmChatCount || 0, ratio, activities.length ? 1 : 0))
             },
@@ -1115,7 +1143,7 @@ const App = {
             if (used.has(item.name)) continue;
             const meta = findBookMeta(item.name);
             push({ ...meta, name: item.name, type: meta.type || item.type }, '高互动',
-                `近 1 个月 AI 共读互动 ${item.count} 轮，孩子们提问活跃，适合扩大共读范围。`);
+                `近 1 个月 AI 共读互动 ${item.count} 轮，幼儿提问活跃，适合扩大共读范围。`);
             picked++;
         }
 
@@ -1343,6 +1371,38 @@ const App = {
         toast.innerHTML = `<span>${message}</span>`;
         container.appendChild(toast);
         setTimeout(() => { toast.classList.add('opacity-0', 'transition-opacity'); setTimeout(() => toast.remove(), 300); }, 3000);
+    },
+
+    // 二次确认弹层。confirmAction 存到 _confirmCallback，点击确认时执行
+    showConfirm({ title = '确认操作', message = '', confirmText = '确定', cancelText = '取消', danger = true, onConfirm } = {}) {
+        const overlay = document.getElementById('confirm-overlay');
+        const box = document.getElementById('confirm-box');
+        if (!overlay || !box) { if (onConfirm) onConfirm(); return; }
+        this._confirmCallback = onConfirm || null;
+        const confirmBtnCls = danger
+            ? 'bg-red-500/90 hover:bg-red-500 text-white'
+            : 'bg-blue-500/90 hover:bg-blue-500 text-white';
+        box.innerHTML = `
+            <h4 class="text-base font-semibold text-white mb-2">${title}</h4>
+            <p class="text-sm text-slate-300 leading-relaxed mb-5">${message}</p>
+            <div class="flex justify-end gap-2">
+                <button onclick="App.closeConfirm()" class="px-4 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm transition-colors">${cancelText}</button>
+                <button onclick="App.confirmConfirm()" class="px-4 py-1.5 rounded-lg ${confirmBtnCls} text-sm transition-colors">${confirmText}</button>
+            </div>`;
+        overlay.classList.remove('hidden');
+        overlay.setAttribute('aria-hidden', 'false');
+        requestAnimationFrame(() => box.querySelector('button:last-child')?.focus());
+    },
+    closeConfirm(e) {
+        if (e && e.target !== document.getElementById('confirm-overlay')) return;
+        const overlay = document.getElementById('confirm-overlay');
+        if (overlay) { overlay.classList.add('hidden'); overlay.setAttribute('aria-hidden', 'true'); }
+        this._confirmCallback = null;
+    },
+    confirmConfirm() {
+        const cb = this._confirmCallback;
+        this.closeConfirm();
+        if (typeof cb === 'function') cb();
     },
 
     openModal(html, options = {}) {
@@ -1638,7 +1698,7 @@ const App = {
         const topActivitySchool = schools.reduce((best, item) => item.avgActivityCount > best.avgActivityCount ? item : best, schools[0]);
         const topParticipantSchool = schools.reduce((best, item) => item.avgParticipantCount > best.avgParticipantCount ? item : best, schools[0]);
         const metricConfigs = [
-            { key: 'avgActivityCount', title: '班均活动次数', unit: '次/班', accent: 'sky', avgValue: data.summary.avgActivityCount },
+            { key: 'avgActivityCount', title: '班均绘本活动次数', unit: '次/班', accent: 'sky', avgValue: data.summary.avgActivityCount },
             { key: 'avgParticipantCount', title: '班均参与人次', unit: '人次/班', accent: 'blue', avgValue: data.summary.avgParticipantCount }
         ];
         const accentMap = {
@@ -1729,7 +1789,7 @@ const App = {
                         <div class="mt-1 text-xs text-slate-400">气泡大小 = 班级数,虚线 = 区域均值,4 象限快速识别园所表现</div>
                         <div class="mt-4 grid grid-cols-2 gap-3">
                             <div class="rounded-2xl border border-slate-600/20 bg-gradient-to-br from-[#0e7490]/15 to-slate-800/30 px-4 py-3">
-                                <div class="text-xs text-sky-100/80">区域平均班均活动次数</div>
+                                <div class="text-xs text-sky-100/80">区域平均班均绘本活动次数</div>
                                 <div class="mt-1 text-2xl font-bold text-white">${data.summary.avgActivityCount}<span class="text-xs text-slate-400 ml-1 font-normal">次/班</span></div>
                             </div>
                             <div class="rounded-2xl border border-slate-600/20 bg-gradient-to-br from-[#2563eb]/15 to-slate-800/30 px-4 py-3">
@@ -1752,7 +1812,7 @@ const App = {
                         <div id="banjun-scatter-chart" class="mt-3 flex-1 min-h-[300px]"></div>
                         <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
                             <div class="rounded-xl border border-slate-600/15 bg-slate-800/40 px-3 py-2">
-                                <div class="text-slate-500">活动次数最高</div>
+                                <div class="text-slate-500">绘本活动次数最高</div>
                                 <div class="mt-0.5 font-semibold text-white truncate">${topActivitySchool.name}</div>
                                 <div class="text-sky-300 font-bold">${topActivitySchool.avgActivityCount} <span class="text-slate-500 font-normal">次/班</span></div>
                             </div>
@@ -1797,9 +1857,9 @@ const App = {
         const summary = (cmp && cmp.summary) || {};
         const state = this.schoolMetricModalState;
         const metricMeta = {
-            avgActivityCount:    { title: '班均活动次数',  unit: '次/班',  avg: summary.avgActivityCount },
+            avgActivityCount:    { title: '班均绘本活动次数',  unit: '次/班',  avg: summary.avgActivityCount },
             avgParticipantCount: { title: '班均参与人次',  unit: '人次/班', avg: summary.avgParticipantCount },
-            avgActivityDuration: { title: '班均活动时长',  unit: 'h/班' },
+            avgActivityDuration: { title: '班均绘本活动时长',  unit: 'h/班' },
             avgDeviceUseCount:   { title: '班均设备使用次数', unit: '次/班' }
         };
         const meta = metricMeta[state.metric] || metricMeta.avgActivityCount;
@@ -1809,8 +1869,8 @@ const App = {
             { key: 'name', label: '园所', sortable: false, align: 'text-left' },
             { key: 'district', label: '区域', sortable: false, align: 'text-center' },
             { key: 'classCount', label: '班级数', sortable: true, align: 'text-center' },
-            { key: 'avgActivityCount', label: '班均活动次数', sortable: true, align: 'text-center' },
-            { key: 'avgActivityDuration', label: '班均活动时长(h)', sortable: true, align: 'text-center' },
+            { key: 'avgActivityCount', label: '班均绘本活动次数', sortable: true, align: 'text-center' },
+            { key: 'avgActivityDuration', label: '班均绘本活动时长(h)', sortable: true, align: 'text-center' },
             { key: 'avgParticipantCount', label: '班均参与人次', sortable: true, align: 'text-center' },
             { key: 'avgDeviceUseCount', label: '班均设备使用次数', sortable: true, align: 'text-center' }
         ];
@@ -2062,7 +2122,7 @@ const App = {
             <td class="text-center"><span class="summary-label">区域均值</span><span class="summary-value">${avgOfAvg.toFixed(1)}</span></td>
             <td class="text-center"><span class="summary-label">区域均值</span><span class="summary-value">${avgOfDev.toFixed(1)}</span></td>
             <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumAct}</span></td>
-            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumDur}h</span></td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumDur}</span></td>
             <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumPart}</span></td>
             <td></td>
         </tr>`;
@@ -2075,9 +2135,9 @@ const App = {
                 ${this.barCell(r.avgActivity, maxAvg, { format: () => r.avgActivity.toFixed(1) })}
                 ${this.barCell(r.avgDeviceUse, maxDev, { format: () => r.avgDeviceUse.toFixed(1) })}
                 ${this.barCell(r.totalActivity, maxAct)}
-                ${this.barCell(r.totalDuration, maxDur, { format: () => r.totalDuration + 'h' })}
+                ${this.barCell(r.totalDuration, maxDur, { format: () => String(r.totalDuration) })}
                 ${this.barCell(r.totalParticipant, maxPart)}
-                <td class="px-3 py-3 text-center"><button onclick="App.viewSchoolDetail(${r.id})" class="text-blue-400 hover:text-blue-300 text-sm">打开详情</button></td>
+                <td class="px-3 py-3 text-center"><button onclick="App.openSchoolPage(${r.id})" class="text-blue-400 hover:text-blue-300 text-sm">查看详情</button></td>
             </tr>`).join('');
 
         const empty = filtered.length ? '' : '<tr><td colspan="9" class="text-center text-slate-500 py-10">暂无符合条件的园所</td></tr>';
@@ -2097,7 +2157,7 @@ const App = {
             <div class="space-y-5">
                 <div class="space-y-4">
                     <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-                        ${this.chartTitle('园所横向对比', 'bg-cyan-500', '统计范围：当前所选时间范围内全区园所数据。\n口径：每行一个园所，对班均活动次数 / 班均设备使用次数 / 活动总次数 / 总时长 / 参与人次做横向对比。\n用法：\n· 列头点击切换排序\n· 默认仅展示前 5 条，点击"全部展示"查看全部\n· 行末"打开详情"进入该园 7 tab 完整下钻')}
+                        ${this.chartTitle('园所横向对比', 'bg-cyan-500', '统计范围：当前所选时间范围内全区园所数据。\n口径：每行一个园所，对班均活动次数 / 班均设备使用次数 / 活动总次数 / 总时长 / 参与人次做横向对比。\n用法：\n· 列头点击切换排序\n· 默认仅展示前 5 条，点击"全部展示"查看全部\n· 行末"查看详情"进入该园 7 tab 完整下钻')}
                         <div class="flex items-center gap-2">
                             <input type="text" value="${state.keyword.replace(/"/g, '&quot;')}"
                                 oninput="App.regionalCompareSetKeyword(this.value)"
@@ -2116,10 +2176,10 @@ const App = {
                                     <th class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider">序号</th>
                                     <th class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider">园所</th>
                                     ${renderTh('班级数', 'classCount')}
-                                    ${renderTh('班均活动次数', 'avgActivity')}
+                                    ${renderTh('班均绘本活动次数', 'avgActivity')}
                                     ${renderTh('班均设备使用次数', 'avgDeviceUse')}
-                                    ${renderTh('活动总次数', 'totalActivity')}
-                                    ${renderTh('活动总时长', 'totalDuration')}
+                                    ${renderTh('绘本活动总次数', 'totalActivity')}
+                                    ${renderTh('绘本活动总时长(h)', 'totalDuration')}
                                     ${renderTh('参与总人次', 'totalParticipant')}
                                     <th class="px-3 py-3 text-center text-xs font-medium uppercase tracking-wider">操作</th>
                                 </tr>
@@ -2145,7 +2205,7 @@ const App = {
         }
         rows = this.sortByKey(rows, state.sort);
 
-        const headers = ['序号', '园所', '班级数', '班均活动次数', '班均设备使用次数', '活动总次数', '活动总时长(h)', '参与总人次'];
+        const headers = ['序号', '园所', '班级数', '班均绘本活动次数', '班均设备使用次数', '绘本活动总次数', '绘本活动总时长(h)', '参与总人次'];
         const csvRows = [headers.join(',')];
         rows.forEach((r, i) => {
             const cells = [
@@ -2243,6 +2303,7 @@ const App = {
             return {
                 id: c.id,
                 name: c.name,
+                teacherName: c.teacherName || (c.teachers && c.teachers[0] && c.teachers[0].name) || '—',
                 grade: this.classGradeOf(c.name),
                 studentCount,
                 teacherCount: c.teacherCount || 0,
@@ -2262,7 +2323,7 @@ const App = {
         const gradeChips = grades.map(g => {
             const isActive = state.grade === g;
             const cnt = g === 'all' ? all.length : all.filter(r => r.grade === g).length;
-            const label = g === 'all' ? `全部 ${cnt}` : `${g} ${cnt}`;
+            const label = g === 'all' ? `全部 ${cnt}` : `${g}年级组`;
             return `<button onclick="App.classCompareSetGrade('${g}')"
                 class="px-2.5 py-1 rounded-full text-xs border transition-colors
                     ${isActive
@@ -2274,7 +2335,7 @@ const App = {
             <div class="space-y-5">
                 <div class="space-y-4">
                     <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-                        ${this.chartTitle('班级横向对比', 'bg-cyan-500', '统计范围：当前所选时间范围内本园全部班级数据。\n口径：每行一个班级，对班级人数 / 设备使用次数 / 活动总次数 / 总时长 / 参与人次做横向对比。\n用法：\n· 列头点击切换排序\n· 顶部段筛选可只看大/中/小班\n· 默认仅展示前 5 条，点击"全部展示"查看全部\n· 行末"打开详情"进入该班完整数据')}
+                        ${this.chartTitle('班级横向对比', 'bg-cyan-500', '统计范围：当前所选时间范围内本园全部班级数据。\n口径：每行一个班级，对班级人数 / 设备使用次数 / 活动总次数 / 总时长 / 参与人次做横向对比。\n用法：\n· 列头点击切换排序\n· 顶部段筛选可只看大/中/小班\n· 默认仅展示前 5 条，点击"全部展示"查看全部\n· 行末"查看详情"进入该班完整数据')}
                         <div class="flex items-center gap-2">
                             <input type="text" value="${state.keyword.replace(/"/g, '&quot;')}"
                                 oninput="App.classCompareSetKeyword(this.value)"
@@ -2337,11 +2398,11 @@ const App = {
         };
 
         const summaryRow = `<tr class="compare-summary-row">
-            <td colspan="2" class="text-left"><span class="summary-label">班级数</span><span class="summary-value">${totalClasses}</span></td>
+            <td colspan="3" class="text-left"><span class="summary-label">班级数</span><span class="summary-value">${totalClasses}</span></td>
             <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumStu}</span></td>
             <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumDev}</span></td>
             <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumAct}</span></td>
-            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumDur}h</span></td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumDur}</span></td>
             <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumPart}</span></td>
             <td></td>
         </tr>`;
@@ -2350,15 +2411,16 @@ const App = {
             <tr class="hover:bg-blue-500/10 transition-colors">
                 <td class="px-3 py-3 text-slate-500">${i + 1}</td>
                 <td class="px-3 py-3 font-medium text-slate-200">${r.name}</td>
+                <td class="px-3 py-3 text-slate-300">${r.teacherName}</td>
                 <td class="px-3 py-3 text-center text-slate-300 tabular-nums">${r.studentCount}</td>
                 ${this.barCell(r.deviceUseCount, maxDev)}
                 ${this.barCell(r.totalActivity, maxAct)}
-                ${this.barCell(r.totalDuration, maxDur, { format: () => r.totalDuration + 'h' })}
+                ${this.barCell(r.totalDuration, maxDur, { format: () => String(r.totalDuration) })}
                 ${this.barCell(r.totalParticipant, maxPart)}
-                <td class="px-3 py-3 text-center"><button onclick="App.viewClassDetail(${r.id})" class="text-blue-400 hover:text-blue-300 text-sm">打开详情</button></td>
+                <td class="px-3 py-3 text-center"><button onclick="App.viewClassDetail(${r.id}, 'subpage')" class="text-blue-400 hover:text-blue-300 text-sm">查看详情</button></td>
             </tr>`).join('');
 
-        const empty = filtered.length ? '' : '<tr><td colspan="8" class="text-center text-slate-500 py-10">暂无符合条件的班级</td></tr>';
+        const empty = filtered.length ? '' : '<tr><td colspan="9" class="text-center text-slate-500 py-10">暂无符合条件的班级</td></tr>';
 
         // 折叠按钮：仅当有溢出（>5）时显示
         const toggleBtn = overflow
@@ -2379,10 +2441,11 @@ const App = {
                         <tr class="bg-slate-900/50 text-slate-400 border-b border-slate-700/50">
                             <th class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider">序号</th>
                             <th class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider">班级</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider">教师</th>
                             ${renderTh('班级人数', 'studentCount')}
                             ${renderTh('设备使用次数', 'deviceUseCount')}
-                            ${renderTh('活动总次数', 'totalActivity')}
-                            ${renderTh('活动总时长', 'totalDuration')}
+                            ${renderTh('绘本活动总次数', 'totalActivity')}
+                            ${renderTh('绘本活动总时长(h)', 'totalDuration')}
                             ${renderTh('参与总人次', 'totalParticipant')}
                             <th class="px-3 py-3 text-center text-xs font-medium uppercase tracking-wider">操作</th>
                         </tr>
@@ -2405,7 +2468,7 @@ const App = {
         }
         rows = this.sortByKey(rows, state.sort);
 
-        const headers = ['序号', '班级', '班级人数', '设备使用次数', '活动总次数', '活动总时长(h)', '参与总人次'];
+        const headers = ['序号', '班级', '班级人数', '设备使用次数', '绘本活动总次数', '绘本活动总时长(h)', '参与总人次'];
         const csvRows = [headers.join(',')];
         rows.forEach((r, i) => {
             csvRows.push([
@@ -2446,6 +2509,7 @@ const App = {
         const iconClock = '<svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
         const iconUsers = '<svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>';
         const iconBolt = '<svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>';
+        const iconDevice = '<svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>';
 
         // 根据角色显示不同的标题
         let pageTitle = '安徽省合肥市蜀山区大数据总览';
@@ -2473,9 +2537,9 @@ const App = {
             <!-- 4个核心指标 -->
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 ${this.statCard('绘本活动次数', stats.activityCount, iconBook, 'blue', '较上一周期增长 15.6%')}
-                ${this.statCard('绘本活动时长', stats.activityDuration + 'h', iconClock, 'emerald', '较上一周期增长 12.3%')}
+                ${this.statCard('绘本阅读时长', stats.readingDuration + 'h', iconClock, 'emerald', '较上一周期增长 8.7%')}
                 ${this.statCard('参与活动人次', stats.participantCount, iconUsers, 'purple', '较上一周期增长 18.5%')}
-                ${this.statCard('绘本阅读时长', stats.readingDuration + 'h', iconBolt, 'amber', '较上一周期增长 8.7%')}
+                ${this.statCard('设备使用次数', stats.deviceUseCount, iconDevice, 'amber', '较上一周期增长 12.3%')}
             </div>
 
             ${this.currentRole === 'admin' ? '<div id="regional-school-compare-host"></div>' : ''}
@@ -2485,7 +2549,7 @@ const App = {
             ${this.currentRole === 'principal'
                 ? `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
                     ${this.card('<div id="school-class-activity-host"></div>')}
-                    ${this.card('<div class="flex flex-col h-full">' + this.renderWeeklyActivityChartHeader() + '<div class="mt-auto"><div id="weekly-activity-chart" class="h-72"></div></div></div>')}
+                    ${this.card('<div class="flex flex-col h-full">' + this.chartTitle('教师开课次数 Top10', 'bg-cyan-500', '统计范围：当前所选时间范围内本园全部教师的绘本活动（开课）记录。\n口径：按教师累计开课次数排序，取前 10 名。\n用途：识别园内最活跃的教师，辅助教研激励与经验推广。') + '<div class="mt-auto"><div id="teacher-top10-chart" class="h-72"></div></div></div>')}
                   </div>`
                 : ''}
 
@@ -2527,8 +2591,8 @@ const App = {
             { label: '排名', align: 'text-center' },
             { label: '绘本名称' },
             { label: '类型' },
-            { label: '阅读次数', align: 'text-center' },
-            { label: '阅读时长', align: 'text-center' }
+            { label: '绘本阅读次数', align: 'text-center' },
+            { label: '绘本阅读时长(h)', align: 'text-center' }
         ];
         const bookRanking = customBookRanking || MockData.bookRanking;
         const rows = bookRanking.map((book, i) => `
@@ -2541,6 +2605,25 @@ const App = {
             </tr>
         `).join('');
         wrap.innerHTML = this.tableWrap(headers, rows);
+    },
+
+    // 教师开课次数 Top10（园长视角，大数据总览页）：取全园教师 activityCount，
+    // 按顶部时间筛选比例缩放后排序取前 10
+    buildTeacherTop10() {
+        const teachers = (MockData.schoolData?.teachers || []);
+        const total = MockData.schoolData?.activities?.length || 0;
+        const inRange = this.getFilteredActivitiesByDateRange('dataOverview').length;
+        const ratio = total ? inRange / total : 0;
+        const scaleCount = v => ratio <= 0 ? 0 : Math.max(0, Math.round((Number(v) || 0) * ratio));
+        return teachers
+            .map(t => ({ name: t.name, count: scaleCount(t.activityCount) }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10);
+    },
+
+    refreshTeacherTop10Chart() {
+        const data = this.buildTeacherTop10();
+        Charts.safeInit(() => Charts.initTeacherTop10Bar(data));
     },
 
     // 区域/园所绘本活动次数图表头部（折线/柱状 多选，最少保留一个）
@@ -2903,7 +2986,7 @@ const App = {
         const pageTitle = isTeacher ? `${teacherClassName} · AI总览` : 'AI总览';
         const pageSub = isTeacher
             ? `仅展示「${teacherClassName}」的绘本大模型互动数据`
-            : '汇总园所内绘本大模型相关数据，洞察孩子的好奇心与互动偏好';
+            : '汇总园所内绘本大模型相关数据，洞察幼儿的好奇心与互动偏好';
         // 默认展开"班级数据"卡
         if (this._aiActiveMetric == null) this._aiActiveMetric = 'classData';
         return `
@@ -2915,6 +2998,10 @@ const App = {
                 </div>
                 <div class="flex items-center gap-3">
                     ${isTeacher ? `<span class="px-3 py-1.5 rounded-full bg-cyan-500/15 text-cyan-300 text-xs border border-cyan-400/30">👩‍🏫 ${teacherClassName}</span>` : ''}
+                    <button onclick="App.openAiDialogManager()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 text-xs border border-slate-500/40 transition-colors" title="对话记录回收站与操作记录">
+                        <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        记录管理
+                    </button>
                 </div>
             </div>
 
@@ -3232,6 +3319,7 @@ const App = {
         this._aiActiveMetric = key;
         if (!this._aiMetricPages) this._aiMetricPages = { chats: 1, books: 1, students: 1 };
         if (this._aiActiveMetric && this._aiActiveMetric !== 'classData') this._aiMetricPages[this._aiActiveMetric] = 1;
+        if (this._aiMetricKeyword) { this._aiMetricKeyword.books = ''; this._aiMetricKeyword.students = ''; }
         const grid = document.getElementById('ai-summary-grid');
         if (grid) grid.innerHTML = this.renderAiSummaryCards(this.getAiOverviewSummary());
         const wrapper = document.getElementById('ai-metric-panel-wrapper');
@@ -3253,6 +3341,44 @@ const App = {
         this._aiMetricPages[key] = page;
         const wrapper = document.getElementById('ai-metric-panel-wrapper');
         if (wrapper) wrapper.innerHTML = this.renderAiMetricPanel(key);
+    },
+
+    // 互动明细列表（绘本/幼儿）的搜索关键词
+    _aiMetricKeyword: { books: '', students: '' },
+    _aiDetailMatch(kw, name) {
+        kw = String(kw || '').trim().toLowerCase();
+        if (!kw) return true;
+        const n = String(name || '').toLowerCase();
+        if (n.includes(kw)) return true;
+        if (window.PinyinUtil && PinyinUtil.match) { try { return PinyinUtil.match(name, kw); } catch (e) {} }
+        return false;
+    },
+    // 明细列表标题旁的搜索框（仅替换表体，输入框 DOM 不重建，避免中文输入被打断）
+    renderAiDetailSearch(key, ph) {
+        const kw = ((this._aiMetricKeyword || {})[key] || '').replace(/"/g, '&quot;');
+        return `<div class="relative">
+            <input id="ai-detail-search-${key}" type="text" value="${kw}" placeholder="${ph}"
+                oninput="App.setAiMetricKeyword('${key}', this.value)"
+                class="w-44 pl-7 pr-2 py-1.5 rounded-lg bg-slate-800/70 border border-slate-600/50 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-400/60">
+            <svg class="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
+        </div>`;
+    },
+    setAiMetricKeyword(key, kw) {
+        if (!this._aiMetricKeyword) this._aiMetricKeyword = { books: '', students: '' };
+        this._aiMetricKeyword[key] = kw;
+        if (!this._aiMetricPages) this._aiMetricPages = { chats: 1, books: 1, students: 1 };
+        this._aiMetricPages[key] = 1;
+        if (key === 'books') {
+            const body = document.getElementById('ai-books-detail-body');
+            if (body) body.innerHTML = this.renderAiBooksDetailBody();
+            const count = document.getElementById('ai-books-detail-count');
+            if (count) count.textContent = `共 ${this.getAiBooksDetailRows().length} 本绘本`;
+        } else if (key === 'students') {
+            const body = document.getElementById('ai-students-detail-body');
+            if (body) body.innerHTML = this.renderAiStudentsDetailBody();
+            const count = document.getElementById('ai-students-detail-count');
+            if (count) count.textContent = `共 ${this.getAiStudentsDetailRows().length} 位幼儿`;
+        }
     },
 
     renderAiMetricPagination(key, total, currentPage, totalPages) {
@@ -3399,7 +3525,10 @@ const App = {
                     <td class="px-3 py-2.5 text-center text-sm text-blue-400">${turns}</td>
                     <td class="px-3 py-2.5 text-xs text-slate-300 truncate" title="${firstQ}">${firstQ}</td>
                     <td class="px-3 py-2.5 text-center">
-                        <button onclick="App.viewAiDialogDetail('${escId}')" class="text-blue-400 hover:text-blue-300 text-xs">查看 ›</button>
+                        <div class="flex items-center justify-center gap-2">
+                            <button onclick="App.viewAiDialogDetail('${escId}')" class="text-blue-400 hover:text-blue-300 text-xs">查看 ›</button>
+                            <button onclick="App.requestDeleteAiDialog('${escId}', 'chats')" class="text-red-400 hover:text-red-300 text-xs" title="删除该对话记录">删除</button>
+                        </div>
                     </td>
                 </tr>`;
             });
@@ -3434,6 +3563,51 @@ const App = {
     },
 
     renderAiBooksDetailPanel() {
+        const total = this.getAiBooksDetailRows().length;
+        const headers = [
+            { label: '#', align: 'center', width: '4%' },
+            { label: '绘本', align: 'left', width: '13%' },
+            { label: '对话次数', align: 'center', width: '8%' },
+            { label: '累计轮次', align: 'center', width: '8%' },
+            { label: '涉及幼儿', align: 'center', width: '8%' },
+            { label: '涉及班级', align: 'center', width: '8%' },
+            { label: '对话类型分布', align: 'center', width: '14%' },
+            { label: '最近互动', align: 'center', width: '10%' },
+            { label: 'AI分析', align: 'center', width: '16%' },
+            { label: '操作', align: 'center', width: '11%' }
+        ];
+        return `
+            <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-cyan-400/25 p-4 mt-4">
+                <div class="flex items-center justify-between mb-3 gap-3">
+                    <h4 class="text-sm font-semibold text-cyan-300 whitespace-nowrap">📖 绘本互动列表</h4>
+                    <div class="flex items-center gap-3">
+                        ${this.renderAiDetailSearch('books', '搜索绘本名…')}
+                        <span id="ai-books-detail-count" class="text-xs text-slate-400 whitespace-nowrap">共 ${total} 本绘本</span>
+                    </div>
+                </div>
+                <div id="ai-books-detail-body">${this.renderAiBooksDetailBody(headers)}</div>
+            </div>
+            <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-slate-500/35 p-5 mt-4">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="w-1.5 h-4 bg-cyan-400 rounded"></span>
+                        <h3 class="text-sm font-semibold text-slate-200">绘本 AI 分析历史报告</h3>
+                    </div>
+                    <div class="flex items-center gap-2">
+                    ${this.renderAiInlineHistSearch('book', '搜索绘本名…')}
+                    <button onclick="App.startAiBookAnalysisPick()" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 text-cyan-200 text-xs border border-cyan-400/40 transition-colors flex items-center gap-1.5" title="新增一次 AI 分析">
+                        <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                        新增 AI 分析
+                    </button>
+                    </div>
+                </div>
+                <div id="ai-book-analysis-history">${this.renderAiBookAnalysisHistoryPanel()}</div>
+            </div>
+        `;
+    },
+
+    // 绘本互动明细：聚合 + 关键词过滤 + 排序后的全量行
+    getAiBooksDetailRows() {
         const list = this.getAiHistoryByRange();
         const map = new Map();
         list.forEach(item => {
@@ -3447,7 +3621,26 @@ const App = {
             if (!stat.latestTime || item.time > stat.latestTime) stat.latestTime = item.time;
             if (item.scope === 'full') stat.scopes.full += 1; else stat.scopes.page += 1;
         });
-        const all = [...map.values()].sort((a, b) => b.chatCount - a.chatCount);
+        const kw = (this._aiMetricKeyword || {}).books || '';
+        return [...map.values()]
+            .filter(r => this._aiDetailMatch(kw, r.book))
+            .sort((a, b) => b.chatCount - a.chatCount);
+    },
+
+    renderAiBooksDetailBody(headers) {
+        headers = headers || [
+            { label: '#', align: 'center', width: '4%' },
+            { label: '绘本', align: 'left', width: '13%' },
+            { label: '对话次数', align: 'center', width: '8%' },
+            { label: '累计轮次', align: 'center', width: '8%' },
+            { label: '涉及幼儿', align: 'center', width: '8%' },
+            { label: '涉及班级', align: 'center', width: '8%' },
+            { label: '对话类型分布', align: 'center', width: '14%' },
+            { label: '最近互动', align: 'center', width: '10%' },
+            { label: 'AI分析', align: 'center', width: '16%' },
+            { label: '操作', align: 'center', width: '11%' }
+        ];
+        const all = this.getAiBooksDetailRows();
         const total = all.length;
         const pageSize = this._aiMetricPageSize;
         const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -3455,6 +3648,8 @@ const App = {
         if (currentPage > totalPages) { currentPage = totalPages; this._aiMetricPages.books = currentPage; }
         const rows = all.slice((currentPage - 1) * pageSize, currentPage * pageSize);
         const baseIdx = (currentPage - 1) * pageSize;
+        const kwActive = ((this._aiMetricKeyword || {}).books || '').trim();
+        const emptyMsg = kwActive ? '没有匹配的绘本' : '当前时间范围内暂无绘本互动列表';
         const tableRows = rows.length ? rows.map((r, idx) => {
             const cached = (this._aiBookAnalysis || {})[r.book];
             const history = (this._aiBookReports || {})[r.book] || [];
@@ -3484,28 +3679,11 @@ const App = {
                 <td class="px-3 py-2.5 text-center text-xs text-slate-400">${r.latestTime || '-'}</td>
                 <td class="px-3 py-2.5 text-center">${analysisCell}</td>
                 <td class="px-3 py-2.5 text-center">
-                    <button onclick="App.viewAiBookDrilldown('${escBook}')" class="text-cyan-300 hover:text-cyan-200 text-xs whitespace-nowrap">查看互动明细 ›</button>
+                    <button onclick="App.viewAiBookDrilldown('${escBook}')" class="text-cyan-300 hover:text-cyan-200 text-xs whitespace-nowrap">查看互动详情 ›</button>
                 </td>
             </tr>`;
-        }).join('') : `<tr><td colspan="10" class="px-3 py-8 text-center text-slate-500 text-sm">当前时间范围内暂无绘本互动明细</td></tr>`;
-        const headers = [
-            { label: '#', align: 'center', width: '4%' },
-            { label: '绘本', align: 'left', width: '13%' },
-            { label: '对话次数', align: 'center', width: '8%' },
-            { label: '累计轮次', align: 'center', width: '8%' },
-            { label: '涉及幼儿', align: 'center', width: '8%' },
-            { label: '涉及班级', align: 'center', width: '8%' },
-            { label: '对话类型分布', align: 'center', width: '14%' },
-            { label: '最近互动', align: 'center', width: '10%' },
-            { label: 'AI分析', align: 'center', width: '16%' },
-            { label: '操作', align: 'center', width: '11%' }
-        ];
+        }).join('') : `<tr><td colspan="10" class="px-3 py-8 text-center text-slate-500 text-sm">${emptyMsg}</td></tr>`;
         return `
-            <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-cyan-400/25 p-4 mt-4">
-                <div class="flex items-center justify-between mb-3">
-                    <h4 class="text-sm font-semibold text-cyan-300">📖 绘本互动明细</h4>
-                    <span class="text-xs text-slate-400">共 ${total} 本绘本</span>
-                </div>
                 <div class="overflow-x-auto rounded-xl border border-slate-700/40">
                     <table class="w-full table-fixed">
                         <thead class="bg-slate-800/60">
@@ -3515,27 +3693,56 @@ const App = {
                     </table>
                 </div>
                 ${this.renderAiMetricPagination('books', total, currentPage, totalPages)}
+        `;
+    },
+
+    renderAiStudentsDetailPanel() {
+        const total = this.getAiStudentsDetailRows().length;
+        const headers = [
+            { label: '#', align: 'center', width: '4%' },
+            { label: '幼儿', align: 'left', width: '10%' },
+            { label: '班级', align: 'center', width: '8%' },
+            { label: '对话次数', align: 'center', width: '7%' },
+            { label: '累计轮次', align: 'center', width: '7%' },
+            { label: '互动绘本', align: 'center', width: '7%' },
+            { label: '对话类型分布', align: 'center', width: '13%' },
+            { label: '最近对话', align: 'center', width: '11%' },
+            { label: '最近绘本', align: 'left', width: '10%' },
+            { label: 'AI分析', align: 'center', width: '15%' },
+            { label: '操作', align: 'center', width: '10%' }
+        ];
+        return `
+            <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-emerald-400/25 p-4 mt-4">
+                <div class="flex items-center justify-between mb-3 gap-3">
+                    <h4 class="text-sm font-semibold text-emerald-300 whitespace-nowrap">👶 幼儿互动列表</h4>
+                    <div class="flex items-center gap-3">
+                        ${this.renderAiDetailSearch('students', '搜索幼儿/班级…')}
+                        <span id="ai-students-detail-count" class="text-xs text-slate-400 whitespace-nowrap">共 ${total} 位幼儿</span>
+                    </div>
+                </div>
+                <div id="ai-students-detail-body">${this.renderAiStudentsDetailBody(headers)}</div>
             </div>
             <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-slate-500/35 p-5 mt-4">
                 <div class="flex items-center justify-between mb-3">
                     <div class="flex items-center gap-2">
-                        <span class="w-1.5 h-4 bg-cyan-400 rounded"></span>
-                        <h3 class="text-sm font-semibold text-slate-200">绘本 AI 分析历史报告</h3>
+                        <span class="w-1.5 h-4 bg-emerald-400 rounded"></span>
+                        <h3 class="text-sm font-semibold text-slate-200">幼儿 AI 分析历史报告</h3>
                     </div>
                     <div class="flex items-center gap-2">
-                    ${this.renderAiInlineHistSearch('book', '搜索绘本名…')}
-                    <button onclick="App.startAiBookAnalysisPick()" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 text-cyan-200 text-xs border border-cyan-400/40 transition-colors flex items-center gap-1.5" title="新增一次 AI 分析">
+                    ${this.renderAiInlineHistSearch('student', '搜索幼儿姓名…')}
+                    <button onclick="App.startAiStudentAnalysisPick()" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500/20 to-teal-500/20 hover:from-emerald-500/30 hover:to-teal-500/30 text-emerald-200 text-xs border border-emerald-400/40 transition-colors flex items-center gap-1.5" title="新增一次 AI 分析">
                         <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                         新增 AI 分析
                     </button>
                     </div>
                 </div>
-                <div id="ai-book-analysis-history">${this.renderAiBookAnalysisHistoryPanel()}</div>
+                <div id="ai-student-analysis-history">${this.renderAiStudentAnalysisHistoryPanel()}</div>
             </div>
         `;
     },
 
-    renderAiStudentsDetailPanel() {
+    // 幼儿互动明细：聚合 + 关键词过滤（姓名或班级）+ 排序后的全量行
+    getAiStudentsDetailRows() {
         const list = this.getAiHistoryByRange();
         const map = new Map();
         list.forEach(item => {
@@ -3551,7 +3758,27 @@ const App = {
             }
             if (item.scope === 'full') stat.scopes.full += 1; else stat.scopes.page += 1;
         });
-        const all = [...map.values()].sort((a, b) => b.chatCount - a.chatCount);
+        const kw = (this._aiMetricKeyword || {}).students || '';
+        return [...map.values()]
+            .filter(r => this._aiDetailMatch(kw, r.student) || this._aiDetailMatch(kw, r.className))
+            .sort((a, b) => b.chatCount - a.chatCount);
+    },
+
+    renderAiStudentsDetailBody(headers) {
+        headers = headers || [
+            { label: '#', align: 'center', width: '4%' },
+            { label: '幼儿', align: 'left', width: '10%' },
+            { label: '班级', align: 'center', width: '8%' },
+            { label: '对话次数', align: 'center', width: '7%' },
+            { label: '累计轮次', align: 'center', width: '7%' },
+            { label: '互动绘本', align: 'center', width: '7%' },
+            { label: '对话类型分布', align: 'center', width: '13%' },
+            { label: '最近对话', align: 'center', width: '11%' },
+            { label: '最近绘本', align: 'left', width: '10%' },
+            { label: 'AI分析', align: 'center', width: '15%' },
+            { label: '操作', align: 'center', width: '10%' }
+        ];
+        const all = this.getAiStudentsDetailRows();
         const total = all.length;
         const pageSize = this._aiMetricPageSize;
         const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -3559,6 +3786,8 @@ const App = {
         if (currentPage > totalPages) { currentPage = totalPages; this._aiMetricPages.students = currentPage; }
         const rows = all.slice((currentPage - 1) * pageSize, currentPage * pageSize);
         const baseIdx = (currentPage - 1) * pageSize;
+        const kwActive = ((this._aiMetricKeyword || {}).students || '').trim();
+        const emptyMsg = kwActive ? '没有匹配的幼儿' : '当前时间范围内暂无幼儿互动列表';
         const tableRows = rows.length ? rows.map((r, idx) => {
             const cached = (this._aiStudentAnalysis || {})[r.student];
             const history = (this._aiStudentReports || {})[r.student] || [];
@@ -3589,29 +3818,11 @@ const App = {
                 <td class="px-3 py-2.5 text-left text-xs text-amber-300">${r.latestBook ? `《${r.latestBook}》` : '-'}</td>
                 <td class="px-3 py-2.5 text-center">${analysisCell}</td>
                 <td class="px-3 py-2.5 text-center">
-                    <button onclick="App.viewAiStudentDrilldown('${escStudent}')" class="text-emerald-300 hover:text-emerald-200 text-xs whitespace-nowrap">查看互动明细 ›</button>
+                    <button onclick="App.viewAiStudentDrilldown('${escStudent}')" class="text-emerald-300 hover:text-emerald-200 text-xs whitespace-nowrap">查看互动详情 ›</button>
                 </td>
             </tr>`;
-        }).join('') : `<tr><td colspan="11" class="px-3 py-8 text-center text-slate-500 text-sm">当前时间范围内暂无幼儿互动明细</td></tr>`;
-        const headers = [
-            { label: '#', align: 'center', width: '4%' },
-            { label: '幼儿', align: 'left', width: '10%' },
-            { label: '班级', align: 'center', width: '8%' },
-            { label: '对话次数', align: 'center', width: '7%' },
-            { label: '累计轮次', align: 'center', width: '7%' },
-            { label: '互动绘本', align: 'center', width: '7%' },
-            { label: '对话类型分布', align: 'center', width: '13%' },
-            { label: '最近对话', align: 'center', width: '11%' },
-            { label: '最近绘本', align: 'left', width: '10%' },
-            { label: 'AI分析', align: 'center', width: '15%' },
-            { label: '操作', align: 'center', width: '10%' }
-        ];
+        }).join('') : `<tr><td colspan="11" class="px-3 py-8 text-center text-slate-500 text-sm">${emptyMsg}</td></tr>`;
         return `
-            <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-emerald-400/25 p-4 mt-4">
-                <div class="flex items-center justify-between mb-3">
-                    <h4 class="text-sm font-semibold text-emerald-300">👶 幼儿互动明细</h4>
-                    <span class="text-xs text-slate-400">共 ${total} 位幼儿</span>
-                </div>
                 <div class="overflow-x-auto rounded-xl border border-slate-700/40">
                     <table class="w-full table-fixed">
                         <thead class="bg-slate-800/60">
@@ -3621,31 +3832,18 @@ const App = {
                     </table>
                 </div>
                 ${this.renderAiMetricPagination('students', total, currentPage, totalPages)}
-            </div>
-            <div class="bg-slate-700/40 backdrop-blur-sm rounded-2xl border border-slate-500/35 p-5 mt-4">
-                <div class="flex items-center justify-between mb-3">
-                    <div class="flex items-center gap-2">
-                        <span class="w-1.5 h-4 bg-emerald-400 rounded"></span>
-                        <h3 class="text-sm font-semibold text-slate-200">幼儿 AI 分析历史报告</h3>
-                    </div>
-                    <div class="flex items-center gap-2">
-                    ${this.renderAiInlineHistSearch('student', '搜索幼儿姓名…')}
-                    <button onclick="App.startAiStudentAnalysisPick()" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500/20 to-teal-500/20 hover:from-emerald-500/30 hover:to-teal-500/30 text-emerald-200 text-xs border border-emerald-400/40 transition-colors flex items-center gap-1.5" title="新增一次 AI 分析">
-                        <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                        新增 AI 分析
-                    </button>
-                    </div>
-                </div>
-                <div id="ai-student-analysis-history">${this.renderAiStudentAnalysisHistoryPanel()}</div>
-            </div>
         `;
     },
+
     getAiHistoryByRange() {
         const range = this.dateRanges.aiOverview || {};
         const start = range?.startDate ? new Date(`${range.startDate}T00:00:00`).getTime() : null;
         const end = range?.endDate ? new Date(`${range.endDate}T23:59:59`).getTime() : null;
         const teacherClassName = this.isTeacherScope() ? this.getTeacherClassName() : null;
+        const deleted = this._aiDeletedIds instanceof Set ? this._aiDeletedIds : new Set();
         return (MockData.aiOverview?.history || []).filter(item => {
+            // 已软删除的记录不展示
+            if (item.id && deleted.has(item.id)) return false;
             // 教师作用域过滤
             if (teacherClassName && item.className !== teacherClassName) return false;
             if (start === null && end === null) return true;
@@ -3725,7 +3923,7 @@ const App = {
     },
 
     // 共用：把单条 AI 会话记录渲染为「时间｜页码｜scope｜N轮 + 每轮 Q/A」HTML
-    renderAiSessionItemHtml(item) {
+    renderAiSessionItemHtml(item, deleteCtx, deleteArg) {
         const scopeBadge = item.scope === 'page'
             ? '<span class="px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-400/30">阅读中</span>'
             : '<span class="px-1.5 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">阅读后</span>';
@@ -3748,6 +3946,7 @@ const App = {
                 </div>
             </div>
         `).join('');
+        const delBtn = deleteCtx ? this.aiDeleteBtn(item.id, deleteCtx, deleteArg) : '';
         return `
             <div class="px-4 py-3 border-b border-slate-700/30 last:border-b-0">
                 <div class="flex items-center gap-2 mb-2">
@@ -3758,6 +3957,7 @@ const App = {
                     ${scopeBadge}
                     <span class="text-slate-600">|</span>
                     <span class="text-xs text-blue-400">${item.session?.length || 0} 轮</span>
+                    ${delBtn ? `<span class="ml-auto">${delBtn}</span>` : ''}
                 </div>
                 ${turnsHtml}
             </div>`;
@@ -3783,7 +3983,7 @@ const App = {
         const className = firstItem.className || '-';
         const totalTurns = all.reduce((s, h) => s + (h.session?.length || 0), 0);
 
-        const dialogsHtml = all.map(item => this.renderAiSessionItemHtml(item)).join('');
+        const dialogsHtml = all.map(item => this.renderAiSessionItemHtml(item, 'session', { student, date, book: displayBook })).join('');
 
         const content = `
             <div class="bg-slate-900 rounded-xl p-6 w-full max-w-4xl mx-auto">
@@ -3842,7 +4042,7 @@ const App = {
 
         const groupsHtml = filteredGroups.map(g => {
             const groupTurns = g.items.reduce((s, h) => s + (h.session?.length || 0), 0);
-            const dialogsHtml = g.items.map(item => this.renderAiSessionItemHtml(item)).join('');
+            const dialogsHtml = g.items.map(item => this.renderAiSessionItemHtml(item, 'merged')).join('');
             return `
                 <div class="mb-5 last:mb-0">
                     <div class="flex flex-wrap items-center gap-2 px-4 py-2.5 bg-slate-800/60 rounded-t-lg border border-slate-700/40">
@@ -4169,8 +4369,9 @@ const App = {
             <div class="bg-slate-900 rounded-xl p-6 max-w-4xl">
                 <div class="flex items-center justify-between mb-5">
                     <h3 class="text-lg font-bold text-white">AI 对话详情</h3>
-                    <div class="flex items-center">
+                    <div class="flex items-center gap-2">
                         ${backBtn}
+                        ${this.aiDeleteBtn(item.id, 'dialogDetail')}
                         <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
                             <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
@@ -4204,7 +4405,7 @@ const App = {
         this._aiDialogReturnTo = null;
     },
 
-    // 查看孩子某天读某本绘本的完整对话明细
+    // 查看幼儿某天读某本绘本的完整对话明细
     viewAiReadingSession(student, date, book) {
         const dd = this._aiDrilldown || {};
         const isBook = dd.type === 'book';
@@ -4225,40 +4426,7 @@ const App = {
         const className = firstItem.className || '-';
         const totalTurns = all.reduce((s, h) => s + (h.session?.length || 0), 0);
 
-        const dialogsHtml = all.map(item => {
-            const scopeBadge = item.scope === 'page'
-                ? '<span class="px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-400/30">阅读中</span>'
-                : '<span class="px-1.5 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">阅读后</span>';
-            const turnsHtml = (item.session || []).map((t, idx) => `
-                <div class="mb-3">
-                    <div class="flex items-center gap-2 mb-1.5">
-                        <span class="text-xs text-amber-400 font-semibold">第 ${idx + 1} 轮</span>
-                        ${scopeBadge}
-                    </div>
-                    <div class="bg-amber-500/10 border border-amber-400/20 rounded-lg px-3 py-2 mb-1.5">
-                        <div class="text-[11px] text-amber-300 mb-0.5">小朋友提问</div>
-                        <div class="text-sm text-amber-100 leading-relaxed">${t.q || ''}</div>
-                    </div>
-                    <div class="bg-slate-700/40 border border-slate-600/30 rounded-lg px-3 py-2">
-                        <div class="text-[11px] text-cyan-300 mb-0.5">AI 回复</div>
-                        <div class="text-sm text-slate-200 leading-relaxed">${t.a || ''}</div>
-                    </div>
-                </div>
-            `).join('');
-            return `
-                <div class="px-4 py-3 border-b border-slate-700/30 last:border-b-0">
-                    <div class="flex items-center gap-2 mb-2">
-                        <span class="text-xs text-slate-400">${item.time}</span>
-                        <span class="text-slate-600">|</span>
-                        <span class="text-xs text-slate-400">${item.page || '-'}</span>
-                        <span class="text-slate-600">|</span>
-                        ${scopeBadge}
-                        <span class="text-slate-600">|</span>
-                        <span class="text-xs text-blue-400">${item.session?.length || 0} 轮</span>
-                    </div>
-                    ${turnsHtml}
-                </div>`;
-        }).join('');
+        const dialogsHtml = all.map(item => this.renderAiSessionItemHtml(item, 'reading', { student, date, book: displayBook })).join('');
 
         const content = `
             <div class="bg-slate-900 rounded-xl p-6 w-full max-w-4xl mx-auto">
@@ -4499,6 +4667,347 @@ const App = {
         `;
     },
 
+    // ---------- AI 对话记录：软删除 / 回收站 / 操作日志 ----------
+    _aiDialogDeletedKey: 'aiDialogDeletedIds',
+    _aiDialogTrashKey: 'aiDialogTrash',
+    _aiDialogOpLogKey: 'aiDialogOpLog',
+    _aiOpLogMax: 200,
+
+    loadAiDialogTrash() {
+        // 已删除 id 集合
+        try {
+            const raw = localStorage.getItem(this._aiDialogDeletedKey);
+            const arr = raw ? JSON.parse(raw) : [];
+            this._aiDeletedIds = new Set(Array.isArray(arr) ? arr : []);
+        } catch (e) { this._aiDeletedIds = new Set(); }
+        // 回收站快照（整条记录 + 删除元信息）
+        try {
+            const raw = localStorage.getItem(this._aiDialogTrashKey);
+            const arr = raw ? JSON.parse(raw) : [];
+            this._aiRecycleBin = Array.isArray(arr) ? arr : [];
+        } catch (e) { this._aiRecycleBin = []; }
+        // 操作日志
+        try {
+            const raw = localStorage.getItem(this._aiDialogOpLogKey);
+            const arr = raw ? JSON.parse(raw) : [];
+            this._aiOpLog = Array.isArray(arr) ? arr : [];
+        } catch (e) { this._aiOpLog = []; }
+    },
+
+    persistAiDialogTrash() {
+        try {
+            localStorage.setItem(this._aiDialogDeletedKey, JSON.stringify([...(this._aiDeletedIds || [])]));
+            localStorage.setItem(this._aiDialogTrashKey, JSON.stringify(this._aiRecycleBin || []));
+            localStorage.setItem(this._aiDialogOpLogKey, JSON.stringify(this._aiOpLog || []));
+        } catch (e) { /* 配额满则忽略 */ }
+    },
+
+    // 当前时间字符串 yyyy-MM-dd HH:mm:ss
+    _nowStamp() {
+        const d = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    },
+
+    // 记录一条操作日志
+    logAiDialogOp(action, item, extra) {
+        if (!this._aiOpLog) this._aiOpLog = [];
+        this._aiOpLog.unshift({
+            id: 'op' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            action, // 'delete' | 'restore' | 'purge'
+            time: this._nowStamp(),
+            operator: this.getCurrentUserName(),
+            dialogId: item?.id || '',
+            student: item?.student || '匿名',
+            className: item?.className || '-',
+            book: item?.book || '-',
+            dialogTime: item?.time || '',
+            turns: item?.session?.length || 0,
+            ...(extra || {})
+        });
+        if (this._aiOpLog.length > this._aiOpLogMax) this._aiOpLog.length = this._aiOpLogMax;
+    },
+
+    // 软删除一条对话记录（按 id）。存入回收站 + 记日志 + 持久化
+    deleteAiDialog(id) {
+        if (!id) return;
+        const item = (MockData.aiOverview?.history || []).find(x => x.id === id);
+        if (!item) return;
+        if (!this._aiDeletedIds) this._aiDeletedIds = new Set();
+        if (this._aiDeletedIds.has(id)) return;
+        this._aiDeletedIds.add(id);
+        // 回收站存整条快照，避免后续 MockData 变化影响
+        const snapshot = JSON.parse(JSON.stringify(item));
+        this._aiRecycleBin.unshift({
+            dialogId: id,
+            deletedAt: this._nowStamp(),
+            deletedBy: this.getCurrentUserName(),
+            snapshot
+        });
+        this.logAiDialogOp('delete', item);
+        this.persistAiDialogTrash();
+    },
+
+    // 从回收站恢复一条记录
+    restoreAiDialog(id) {
+        if (!id || !this._aiDeletedIds) return;
+        this._aiDeletedIds.delete(id);
+        const idx = (this._aiRecycleBin || []).findIndex(r => r.dialogId === id);
+        const entry = idx >= 0 ? this._aiRecycleBin[idx] : null;
+        if (idx >= 0) this._aiRecycleBin.splice(idx, 1);
+        this.logAiDialogOp('restore', entry?.snapshot || { id });
+        this.persistAiDialogTrash();
+    },
+
+    // 从回收站彻底删除（不可恢复，仅清回收站条目与日志标记，id 仍保留在已删集合以防 MockData 仍存在）
+    purgeAiDialog(id) {
+        if (!id) return;
+        const idx = (this._aiRecycleBin || []).findIndex(r => r.dialogId === id);
+        const entry = idx >= 0 ? this._aiRecycleBin[idx] : null;
+        if (idx >= 0) this._aiRecycleBin.splice(idx, 1);
+        // 保持 id 留在 _aiDeletedIds，确保 MockData 中的源记录不会重新出现
+        this.logAiDialogOp('purge', entry?.snapshot || { id });
+        this.persistAiDialogTrash();
+    },
+
+    // 清空回收站（彻底删除全部）
+    purgeAllAiDialogs() {
+        (this._aiRecycleBin || []).slice().forEach(r => {
+            this.logAiDialogOp('purge', r.snapshot || { id: r.dialogId });
+        });
+        this._aiRecycleBin = [];
+        this.persistAiDialogTrash();
+    },
+
+    // 统一删除入口：弹确认 → 软删除 → toast → 按上下文刷新当前视图
+    // ctx: 'chats' 明细表 | 'dialogDetail' 单条详情弹窗 | 'drilldown' 下钻弹窗
+    //      | 'session'/'reading' 单组对话弹窗 | 'merged' 合并查看弹窗
+    requestDeleteAiDialog(id, ctx, arg) {
+        const item = (MockData.aiOverview?.history || []).find(x => x.id === id);
+        if (!item) return;
+        const desc = `${item.student || '匿名'} · 《${item.book}》 · ${item.time}`;
+        this.showConfirm({
+            title: '删除对话记录',
+            message: `确定删除这条对话记录吗？<br><span class="text-slate-400 text-xs">${desc}</span><br><br>删除后可在「记录管理 › 回收站」中恢复。`,
+            confirmText: '删除',
+            danger: true,
+            onConfirm: () => {
+                this.deleteAiDialog(id);
+                this.showToast('已移入回收站，可在记录管理中恢复', 'success');
+                this._afterAiDialogChange(ctx, arg);
+            }
+        });
+    },
+
+    // 删除/恢复后刷新对应视图
+    _afterAiDialogChange(ctx, arg) {
+        // 始终刷新底层总览指标
+        this._refreshAiOverviewAfterModal();
+        const host = document.getElementById('modal-content');
+        if (ctx === 'chats') {
+            // 明细表在 ai-metric-panel-wrapper 内，刷新整个面板
+            this.refreshAiMetricPanel?.();
+            return;
+        }
+        if (!host) return;
+        if (ctx === 'drilldown') {
+            this.rerenderAiDrilldownModal();
+        } else if (ctx === 'dialogDetail') {
+            // 单条详情：该条已被删，按返回逻辑回到来源或关闭
+            if (this._aiDrilldown) this.rerenderAiDrilldownModal();
+            else this.closeModalDirect();
+        } else if (ctx === 'session' && arg) {
+            this.viewAiDrilldownSession(arg.student, arg.date, arg.book);
+        } else if (ctx === 'reading' && arg) {
+            this.viewAiReadingSession(arg.student, arg.date, arg.book);
+        } else if (ctx === 'merged') {
+            this.viewAiDrilldownMerged();
+        }
+    },
+
+    // 删除按钮 HTML（小垃圾桶图标），ctx/arg 透传给 requestDeleteAiDialog
+    aiDeleteBtn(id, ctx, arg) {
+        if (!id) return '';
+        const escId = String(id).replace(/'/g, "\\'");
+        const argStr = arg ? `, ${JSON.stringify(arg).replace(/"/g, '&quot;')}` : '';
+        return `<button onclick="App.requestDeleteAiDialog('${escId}', '${ctx}'${argStr})"
+            class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 text-xs border border-red-400/30 transition-colors whitespace-nowrap" title="删除该对话记录">
+            <svg class="w-3.5 h-3.5" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            删除
+        </button>`;
+    },
+
+    // ---------- 记录管理弹窗（回收站 + 操作记录） ----------
+    _aiDialogMgrTab: 'trash',
+
+    openAiDialogManager(tab) {
+        this._aiDialogMgrTab = tab || this._aiDialogMgrTab || 'trash';
+        this.openModal(this.renderAiDialogManager(), { size: 'wide' });
+    },
+
+    switchAiDialogMgrTab(tab) {
+        this._aiDialogMgrTab = tab;
+        const host = document.getElementById('modal-content');
+        if (host) host.innerHTML = this.renderAiDialogManager();
+    },
+
+    renderAiDialogManager() {
+        const tab = this._aiDialogMgrTab || 'trash';
+        const trashCount = (this._aiRecycleBin || []).length;
+        const logCount = (this._aiOpLog || []).length;
+        const tabBtn = (key, label, count) => {
+            const active = tab === key;
+            return `<button onclick="App.switchAiDialogMgrTab('${key}')"
+                class="px-4 py-2 text-sm font-medium rounded-lg transition-colors ${active ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'}">
+                ${label}<span class="ml-1.5 text-xs ${active ? 'text-cyan-300' : 'text-slate-500'}">${count}</span>
+            </button>`;
+        };
+        const body = tab === 'trash' ? this.renderAiTrashList() : this.renderAiOpLogList();
+        return `
+            <div class="bg-slate-900 rounded-xl p-6 w-full max-w-4xl mx-auto">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-bold text-white">🗂️ 对话记录管理</h3>
+                    <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
+                        <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="flex items-center gap-2 mb-4 border-b border-slate-700/50 pb-3">
+                    ${tabBtn('trash', '回收站', trashCount)}
+                    ${tabBtn('log', '操作记录', logCount)}
+                    ${tab === 'trash' && trashCount ? `<button onclick="App.confirmPurgeAllAiDialogs()" class="ml-auto px-3 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 text-xs border border-red-400/30 transition-colors">清空回收站</button>` : ''}
+                </div>
+                <div class="max-h-[60vh] overflow-y-auto pr-1">
+                    ${body}
+                </div>
+            </div>`;
+    },
+
+    confirmPurgeAllAiDialogs() {
+        const n = (this._aiRecycleBin || []).length;
+        if (!n) return;
+        this.showConfirm({
+            title: '清空回收站',
+            message: `确定彻底删除回收站中的全部 ${n} 条记录吗？<br><br><span class="text-red-300">此操作不可恢复。</span>`,
+            confirmText: '彻底删除',
+            danger: true,
+            onConfirm: () => {
+                this.purgeAllAiDialogs();
+                this.showToast(`已彻底删除 ${n} 条记录`, 'success');
+                const host = document.getElementById('modal-content');
+                if (host) host.innerHTML = this.renderAiDialogManager();
+            }
+        });
+    },
+
+    // 回收站列表
+    renderAiTrashList() {
+        const bin = this._aiRecycleBin || [];
+        if (!bin.length) {
+            return `<div class="rounded-xl border border-dashed border-slate-600/40 bg-slate-800/30 px-4 py-12 text-center text-sm text-slate-500">
+                回收站是空的<br><span class="text-xs">删除的对话记录会暂存在这里，可随时恢复</span>
+            </div>`;
+        }
+        const scopeText = s => s === 'page' ? '阅读中' : '阅读后';
+        return bin.map(entry => {
+            const item = entry.snapshot || {};
+            const escId = String(entry.dialogId).replace(/'/g, "\\'");
+            const firstQ = item.session?.[0]?.q || '';
+            return `
+                <div class="rounded-xl border border-slate-700/40 bg-slate-800/40 p-4 mb-3">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2 flex-wrap mb-1.5">
+                                <span class="text-sm text-amber-300 font-medium">《${item.book || '-'}》</span>
+                                <span class="text-slate-600">·</span>
+                                <span class="text-sm text-cyan-300">${item.student || '匿名'}</span>
+                                <span class="text-xs text-slate-400">${item.className || '-'}</span>
+                                <span class="px-1.5 py-0.5 rounded text-[10px] bg-slate-700/60 text-slate-300">${scopeText(item.scope)}</span>
+                                <span class="text-xs text-blue-400">${item.session?.length || 0} 轮</span>
+                            </div>
+                            <div class="text-xs text-slate-500 mb-1">对话时间：${item.time || '-'} · ${item.page || '-'}</div>
+                            ${firstQ ? `<div class="text-xs text-slate-400 truncate" title="${firstQ.replace(/"/g, '&quot;')}">首轮提问：${firstQ}</div>` : ''}
+                            <div class="text-[11px] text-slate-500 mt-1.5">🗑️ ${entry.deletedBy || '-'} 删除于 ${entry.deletedAt || '-'}</div>
+                        </div>
+                        <div class="flex flex-col gap-2 shrink-0">
+                            <button onclick="App.restoreAiDialogFromMgr('${escId}')" class="px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs border border-emerald-400/30 transition-colors whitespace-nowrap">恢复</button>
+                            <button onclick="App.confirmPurgeAiDialog('${escId}')" class="px-3 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 text-xs border border-red-400/30 transition-colors whitespace-nowrap">彻底删除</button>
+                        </div>
+                    </div>
+                </div>`;
+        }).join('');
+    },
+
+    restoreAiDialogFromMgr(id) {
+        this.restoreAiDialog(id);
+        this.showToast('已恢复对话记录', 'success');
+        this._refreshAiOverviewAfterModal();
+        const host = document.getElementById('modal-content');
+        if (host) host.innerHTML = this.renderAiDialogManager();
+    },
+
+    confirmPurgeAiDialog(id) {
+        const entry = (this._aiRecycleBin || []).find(r => r.dialogId === id);
+        const item = entry?.snapshot || {};
+        const desc = `${item.student || '匿名'} · 《${item.book || '-'}》 · ${item.time || ''}`;
+        this.showConfirm({
+            title: '彻底删除',
+            message: `确定彻底删除这条记录吗？<br><span class="text-slate-400 text-xs">${desc}</span><br><br><span class="text-red-300">此操作不可恢复。</span>`,
+            confirmText: '彻底删除',
+            danger: true,
+            onConfirm: () => {
+                this.purgeAiDialog(id);
+                this.showToast('已彻底删除', 'success');
+                const host = document.getElementById('modal-content');
+                if (host) host.innerHTML = this.renderAiDialogManager();
+            }
+        });
+    },
+
+    // 操作记录列表
+    renderAiOpLogList() {
+        const logs = this._aiOpLog || [];
+        if (!logs.length) {
+            return `<div class="rounded-xl border border-dashed border-slate-600/40 bg-slate-800/30 px-4 py-12 text-center text-sm text-slate-500">
+                暂无操作记录
+            </div>`;
+        }
+        const actionMeta = {
+            delete: { label: '删除', cls: 'bg-red-500/15 text-red-300 border-red-400/30', icon: '🗑️' },
+            restore: { label: '恢复', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-400/30', icon: '♻️' },
+            purge: { label: '彻底删除', cls: 'bg-slate-600/30 text-slate-300 border-slate-500/40', icon: '❌' }
+        };
+        return `
+            <div class="overflow-x-auto rounded-xl border border-slate-700/40">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-800/60">
+                        <tr>
+                            <th class="px-3 py-2.5 text-left text-xs font-medium text-slate-400 whitespace-nowrap">操作时间</th>
+                            <th class="px-3 py-2.5 text-center text-xs font-medium text-slate-400 whitespace-nowrap">操作</th>
+                            <th class="px-3 py-2.5 text-left text-xs font-medium text-slate-400 whitespace-nowrap">操作人</th>
+                            <th class="px-3 py-2.5 text-left text-xs font-medium text-slate-400">对话记录</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${logs.map(log => {
+                            const m = actionMeta[log.action] || { label: log.action, cls: 'bg-slate-700/40 text-slate-300 border-slate-600/40', icon: '•' };
+                            return `
+                            <tr class="border-t border-slate-700/40 hover:bg-slate-700/20">
+                                <td class="px-3 py-2.5 text-xs text-slate-300 whitespace-nowrap">${log.time}</td>
+                                <td class="px-3 py-2.5 text-center"><span class="px-2 py-0.5 rounded text-[11px] border ${m.cls} whitespace-nowrap">${m.icon} ${m.label}</span></td>
+                                <td class="px-3 py-2.5 text-xs text-slate-300 whitespace-nowrap">${log.operator || '-'}</td>
+                                <td class="px-3 py-2.5 text-xs text-slate-400">
+                                    <span class="text-cyan-300">${log.student || '匿名'}</span>
+                                    <span class="text-slate-600 mx-1">·</span>
+                                    <span class="text-amber-300">《${log.book || '-'}》</span>
+                                    <span class="text-slate-500 ml-1">${log.dialogTime || ''}${log.turns ? ` · ${log.turns}轮` : ''}</span>
+                                </td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>`;
+    },
+
     // ---------- AI 报告 localStorage 持久化 ----------
     _aiReportsStorageKey: 'aiBookReports',
     _aiReportsMaxPerBook: 50,
@@ -4573,7 +5082,7 @@ const App = {
         if (!this._aiBookAnalysis) this._aiBookAnalysis = {};
         this._aiBookAnalysis[book] = this.cloneAiReport(found);
         this._aiBookAnalysisCtx = { book, rangeKey: found.rangeKey };
-        this.openModal(this.renderAiBookAnalysisModal('done'), { size: 'xwide' });
+        this.openAiReportSubpage('book');
     },
 
     // —— AI 历史报告：全局遮罩弹框列表（绘本 / 幼儿 / 班级） ——
@@ -5061,7 +5570,7 @@ const App = {
         this._aiBookAnalysisCtx = { book, rangeKey };
         const placeholderId = this.insertGeneratingReport('book', book, rangeKey);
         if (this._aiBookAnalysis[book]) this._aiBookAnalysis[book].id = placeholderId;
-        this.openModal(this.renderAiBookAnalysisModal(), { size: 'xwide' });
+        this.openAiReportSubpage('book');
 
         const allQuestionsText = dialogues
             .flatMap(d => (d.session || []).map(t => t.q).filter(Boolean))
@@ -5069,8 +5578,8 @@ const App = {
             .map((q, i) => `${i + 1}. ${q}`)
             .join('\n');
 
-        const systemPrompt = '你是一个幼儿园教育与儿童心理分析专家，擅长基于幼儿与绘本AI助手的真实对话，洞察孩子的兴趣与认知发展需求。你需要先对提问进行语义聚类（同义不同表的归为一类），再给出教学建议。回复用简体中文。';
-        const userPrompt = `以下是${roleLabel}在${rangeLabel}内围绕绘本《${book}》产生的孩子提问数据。共 ${dialogues.length} 次对话。
+        const systemPrompt = '你是一个幼儿园教育与儿童心理分析专家，擅长基于幼儿与绘本AI助手的真实对话，洞察幼儿的兴趣与认知发展需求。你需要先对提问进行语义聚类（同义不同表的归为一类），再给出教学建议。回复用简体中文。';
+        const userPrompt = `以下是${roleLabel}在${rangeLabel}内围绕绘本《${book}》产生的幼儿提问数据。共 ${dialogues.length} 次对话。
 
 【全部提问（最多 200 条采样）】
 ${allQuestionsText || '（无）'}
@@ -5088,8 +5597,8 @@ ${allQuestionsText || '（无）'}
 要求：把表述不同但意图相同的问题（如"小兔子为什么爱妈妈"和"兔子为啥喜欢妈妈"）合并到同一类；representative 用通顺自然的一句中文；count 是该类合并后的总数；samples 给 2-4 条原始问句即可。
 
 第二段：紧接 JSON 块后输出 Markdown 分析正文（不要再放进代码块）：
-1) 简洁概述孩子最关注的核心主题与情感诉求（3 段内）；
-2) 指出孩子表现出的认知发展信号、潜在兴趣点；
+1) 简洁概述幼儿最关注的核心主题与情感诉求（3 段内）；
+2) 指出幼儿表现出的认知发展信号、潜在兴趣点；
 3) 给出 3-5 条可立即落地的教学/亲子互动建议；
 4) 全文 600-900 字，使用 ## 和 - 分小标题与列表，避免空话套话。`;
 
@@ -5235,7 +5744,7 @@ ${allQuestionsText || '（无）'}
         if (!rawText) return '';
         const cfg = this._llmConfig;
         const sys = '你是一个专业的儿童教育内容编辑，请把下文整理为结构清晰、措辞简洁、易于幼儿园教师快速阅读的分析报告。保留原意，但请：合并重复、统一小标题、突出关键结论与建议，避免空泛的客套。回复用简体中文，使用 Markdown（标题用 ## ，列表用 - ）。';
-        const usr = `以下是关于绘本《${book}》孩子提问分析的草稿，请整理润色。\n\n${rawText}`;
+        const usr = `以下是关于绘本《${book}》幼儿提问分析的草稿，请整理润色。\n\n${rawText}`;
         try {
             const res = await fetch(cfg.endpoint, {
                 method: 'POST',
@@ -5257,8 +5766,13 @@ ${allQuestionsText || '（无）'}
     },
 
     refreshAiBookAnalysisModal(phase) {
-        const host = document.getElementById('modal-content');
-        if (host) host.innerHTML = this.renderAiBookAnalysisModal(phase);
+        const sub = document.getElementById('ai-report-subpage-body');
+        if (sub) {
+            sub.innerHTML = this.renderAiReportPage('book');
+        } else {
+            const host = document.getElementById('modal-content');
+            if (host) host.innerHTML = this.renderAiBookAnalysisModal(phase);
+        }
         // 自动滚到最新输出
         const stream = document.getElementById('ai-analysis-stream');
         if (stream) stream.scrollTop = stream.scrollHeight;
@@ -5305,6 +5819,250 @@ ${allQuestionsText || '（无）'}
         });
         flushUl();
         return html;
+    },
+
+    // ============================================================
+    //  AI 分析报告 - 统一报告页（页面式，替代弹窗）
+    //  三类报告（绘本/幼儿/班级）共用同一版式，仅标题/点缀色/统计字段不同
+    // ============================================================
+    _aiReportMeta(type) {
+        if (type === 'book') {
+            const name = (this._aiBookAnalysisCtx || {}).book || '';
+            return {
+                type, name,
+                entry: (this._aiBookAnalysis || {})[name] || {},
+                kicker: '绘本热点问题分析',
+                title: `《${name}》AI 热点问题分析`,
+                accent: 'cyan',
+                topTitle: '热门问题',
+                statFields: ['chat', 'turns', 'students', 'classes', 'type'],
+                exportArg: "App._aiBookAnalysisCtx?.book",
+                regenFn: 'App.regenerateAiBookAnalysis()',
+                addFn: 'App.addAiBookAnalysis()',
+                histBtn: ''
+            };
+        }
+        if (type === 'student') {
+            const name = (this._aiStudentAnalysisCtx || {}).student || '';
+            return {
+                type, name,
+                entry: (this._aiStudentAnalysis || {})[name] || {},
+                kicker: '幼儿兴趣画像分析',
+                title: `${name} 的 AI 兴趣画像分析`,
+                accent: 'emerald',
+                topTitle: '核心关注主题',
+                statFields: ['chat', 'turns', 'books', 'type'],
+                exportArg: "App._aiStudentAnalysisCtx?.student",
+                regenFn: 'App.regenerateAiStudentAnalysis()',
+                addFn: 'App.addAiStudentAnalysis()',
+                histBtn: ''
+            };
+        }
+        // class
+        const name = (this._aiClassAnalysisCtx || {}).className || '';
+        return {
+            type, name,
+            entry: (this._aiClassAnalysis || {})[name] || {},
+            kicker: '班级 AI 画像分析',
+            title: `${name} · 班级 AI 画像分析`,
+            accent: 'amber',
+            topTitle: '班级核心关注主题',
+            statFields: ['chat', 'turns', 'books', 'students', 'type'],
+            exportArg: "App._aiClassAnalysisCtx?.className",
+            regenFn: 'App.regenerateAiClassAnalysis()',
+            addFn: 'App.addAiClassAnalysis()',
+            histBtn: ''
+        };
+    },
+
+    // 统一报告页渲染（页面式：封面带 + 三个分区）
+    renderAiReportPage(type) {
+        const m = this._aiReportMeta(type);
+        const entry = m.entry;
+        const top = entry.topQuestions || [];
+        const isGenerating = !!entry.generating;
+        const hasError = !!entry.error;
+        const isDone = !!entry.done;
+        const emoji = { cyan: '📊', emerald: '🌱', amber: '🏫' }[m.accent] || '📊';
+
+        const statusBadge = isGenerating
+            ? '<span class="px-2.5 py-1 rounded-full text-[11px] bg-cyan-500/15 text-cyan-700 border border-cyan-400/30 inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span>生成中</span>'
+            : isDone
+                ? `<span class="px-2.5 py-1 rounded-full text-[11px] bg-emerald-500/15 text-emerald-700 border border-emerald-400/30">已生成</span>`
+                : hasError
+                    ? '<span class="px-2.5 py-1 rounded-full text-[11px] bg-red-500/15 text-red-700 border border-red-400/30">生成失败</span>'
+                    : '';
+
+        const actionBtns = (isDone || hasError)
+            ? `${isDone ? `<button onclick="App.exportAiReport('${m.type}', ${m.exportArg})" class="ai-rpt-btn ai-rpt-btn--emerald"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>导出</button>` : ''}
+                ${m.histBtn}
+                <button onclick="${m.regenFn}" class="ai-rpt-btn ai-rpt-btn--violet" title="按当前报告所选时间范围重新生成"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>重新生成</button>
+                <button onclick="${m.addFn}" class="ai-rpt-btn ai-rpt-btn--amber" title="选择新的时间范围生成新报告"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>新增</button>`
+            : '';
+
+        const maxCount = top.reduce((mx, t) => Math.max(mx, t.count || 0), 0) || 1;
+        const clusterTag = entry.clusterMode === 'model'
+            ? '<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-violet-500/15 text-violet-700 border border-violet-400/30">AI 聚类</span>'
+            : (entry.clusterMode === 'fallback' && isDone ? '<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-slate-500/15 text-slate-500 border border-slate-400/30">字面统计</span>' : '');
+        const topRows = top.length
+            ? top.map((t, i) => {
+                const bs = (t.books || []).filter(b => b && b !== t.q);
+                const bookTag = bs.length ? ` <span class="text-xs text-violet-500">· ${bs.map(b => `《${b}》`).join('、')}</span>` : '';
+                const sampleAttr = (t.samples && t.samples.length)
+                    ? `title="原始提问示例：\n- ${t.samples.join('\n- ').replace(/"/g, '&quot;')}"` : '';
+                const pct = Math.round((t.count || 0) / maxCount * 100);
+                const rankCls = i < 3 ? 'ai-rpt-accent font-bold' : 'text-slate-400';
+                return `
+                <div class="grid grid-cols-[2rem_1fr_auto] items-center gap-3 py-2.5 border-b border-slate-500/15 last:border-0" ${sampleAttr}>
+                    <span class="text-sm tabular-nums ${rankCls}">${String(i + 1).padStart(2, '0')}</span>
+                    <div class="min-w-0">
+                        <div class="text-sm text-slate-200 truncate">${t.q}${bookTag}</div>
+                        <div class="mt-1.5 h-1 rounded-full bg-slate-500/20 overflow-hidden"><div class="h-full ai-rpt-fill rounded-full" style="width:${pct}%"></div></div>
+                    </div>
+                    <span class="text-xs text-slate-400 tabular-nums">${t.count} 次</span>
+                </div>`;
+            }).join('')
+            : '<div class="text-slate-400 text-sm py-6 text-center">暂无问题数据</div>';
+
+        const errorHtml = hasError
+            ? `<div class="bg-red-500/10 border border-red-400/30 rounded-xl p-4 text-sm text-red-600 mb-4">生成失败：${entry.error}。请检查网络或稍后重试。</div>`
+            : '';
+        const analysisHtml = entry.analysis
+            ? this.simpleMarkdown(this.stripClusterJson(entry.analysis))
+            : '<div class="text-slate-400 text-sm">正在思考分析中…</div>';
+
+        const sectionHead = (label) => `<div class="flex items-center gap-2.5 mb-4"><span class="w-1 h-5 rounded-full ai-rpt-bar"></span><h3 class="text-base font-semibold text-white">${label}</h3></div>`;
+
+        return `
+        <div class="ai-report-page max-w-5xl mx-auto px-5 lg:px-8 py-6" data-accent="${m.accent}">
+            <button onclick="App.closeAiReportSubpage()" class="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-200 transition-colors mb-5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                返回 AI 总览
+            </button>
+
+            <header class="ai-rpt-cover relative overflow-hidden rounded-3xl px-7 py-7 mb-7">
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] ai-rpt-accent mb-2.5">${emoji} AI 分析报告 · ${m.kicker}</div>
+                        <h2 class="text-2xl lg:text-[28px] font-bold text-white leading-tight">${m.title}</h2>
+                        <div class="mt-3">${statusBadge}</div>
+                    </div>
+                </div>
+                ${this._renderAiReportMetaRow(m, entry)}
+            </header>
+
+            <section class="mb-8">
+                ${sectionHead('数据概览')}
+                ${this._renderAiReportMetrics(m, entry)}
+            </section>
+
+            <section class="mb-8">
+                ${sectionHead(`${m.topTitle} TOP${Math.min(10, top.length)}`)}${clusterTag ? `<div class="-mt-2 mb-3 ml-3.5">${clusterTag}</div>` : ''}
+                <div class="rounded-2xl border border-slate-500/20 bg-slate-800/30 px-5 py-2">${topRows}</div>
+            </section>
+
+            <section>
+                ${sectionHead('AI 深度分析')}${isGenerating ? '<span class="inline-block w-2 h-3 -mt-3 mb-3 ml-3.5 ai-rpt-fill animate-pulse rounded-sm"></span>' : ''}
+                ${errorHtml}
+                <div id="ai-analysis-stream" class="ai-report-prose rounded-2xl border border-slate-500/20 bg-slate-800/30 px-6 py-5">
+                    ${analysisHtml}
+                </div>
+            </section>
+            ${actionBtns ? `<div class="ai-rpt-dock">${actionBtns}</div>` : ''}
+        </div>`;
+    },
+
+    // 报告页专用指标块：非均匀韵律（主指标大字 + 次指标 + 类型分布占比条）
+    // 不重复封面已有的范围/生成时间，避免冗余
+    _renderAiReportMetrics(m, entry) {
+        const stats = entry.stats || this.computeAiDialogueStats([]);
+        const all = {
+            chat: ['对话次数', stats.chatCount || 0],
+            turns: ['累计轮次', stats.turns || 0],
+            books: ['互动绘本', stats.bookCount || 0],
+            students: ['涉及幼儿', stats.studentCount || 0],
+            classes: ['涉及班级', stats.classCount || 0],
+        };
+        const keys = (m.statFields || []).filter(f => f !== 'type' && all[f]);
+        if (!keys.length) return '';
+        // 指标卡均分一行：按数量动态定列数，确保整齐不参差
+        const colClass = { 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3', 4: 'sm:grid-cols-4', 5: 'sm:grid-cols-5' }[keys.length] || 'sm:grid-cols-4';
+        const metricCells = keys.map(k => {
+            const [label, val] = all[k];
+            return `<div class="rounded-2xl border border-slate-500/20 bg-slate-800/30 px-5 py-4">
+                <div class="text-2xl font-semibold ai-rpt-accent tabular-nums leading-none">${val}</div>
+                <div class="text-xs text-slate-400 mt-2">${label}</div>
+            </div>`;
+        }).join('');
+        // 类型分布：占比条
+        let typeBlock = '';
+        if ((m.statFields || []).includes('type')) {
+            const r = stats.typeRead || 0, a = stats.typeAfter || 0, tot = r + a;
+            const rp = tot ? Math.round(r / tot * 100) : 0;
+            const ap = tot ? 100 - rp : 0;
+            typeBlock = `
+            <div class="rounded-2xl border border-slate-500/20 bg-slate-800/30 px-5 py-4 mt-3">
+                <div class="flex items-center justify-between mb-2.5">
+                    <span class="text-xs text-slate-400">对话类型分布</span>
+                    <span class="text-xs text-slate-400">共 ${tot} 次</span>
+                </div>
+                <div class="flex h-2 rounded-full overflow-hidden bg-slate-500/15">
+                    <div class="h-full bg-blue-500/70" style="width:${rp}%"></div>
+                    <div class="h-full bg-violet-500/60" style="width:${ap}%"></div>
+                </div>
+                <div class="flex items-center gap-4 mt-2.5 text-xs">
+                    <span class="inline-flex items-center gap-1.5 text-slate-300"><span class="w-2 h-2 rounded-full bg-blue-500/70"></span>阅读中 ${r}</span>
+                    <span class="inline-flex items-center gap-1.5 text-slate-300"><span class="w-2 h-2 rounded-full bg-violet-500/60"></span>阅读后 ${a}</span>
+                </div>
+            </div>`;
+        }
+        return `
+            <div class="grid grid-cols-2 ${colClass} gap-3">
+                ${metricCells}
+            </div>
+            ${typeBlock}`;
+    },
+
+    // 报告封面的元信息行（生成时间 / 分析范围 / 对话样本）
+    _renderAiReportMetaRow(m, entry) {
+        const range = entry.rangeKey ? this.formatAiRangeLabel(entry.rangeKey) : (entry.rangeLabel || '-');
+        const cell = (label, val) => `<div><div class="text-[11px] text-slate-400 mb-0.5">${label}</div><div class="text-sm text-slate-200">${val}</div></div>`;
+        return `<div class="relative mt-6 pt-5 border-t border-slate-500/20 grid grid-cols-2 sm:grid-cols-3 gap-y-3 gap-x-6">
+            ${cell('生成时间', entry.generatedAt || '—')}
+            ${cell('分析范围', `${entry.roleLabel || '-'} · ${range}`)}
+            ${cell('对话样本', `${entry.sampleCount || (entry.stats && entry.stats.chatCount) || 0} 次`)}
+        </div>`;
+    },
+
+    // 报告子页：宿主用 page-container，左上角返回 AI 总览
+    openAiReportSubpage(type) {
+        this._aiReportSubpageType = type;
+        const host = document.getElementById('page-container');
+        if (!host) return;
+        let container = document.getElementById('ai-report-subpage');
+        if (!container) {
+            this._aiReportReturnPage = this.currentPage || 'aiOverview';
+            container = document.createElement('div');
+            container.id = 'ai-report-subpage';
+            container.className = 'animate-fadeIn';
+            host.innerHTML = '';
+            host.appendChild(container);
+        }
+        container.innerHTML = `<div id="ai-report-subpage-body">${this.renderAiReportPage(type)}</div>`;
+        host.scrollTop = 0;
+        try { window.scrollTo({ top: 0 }); } catch (e) {}
+    },
+
+    closeAiReportSubpage() {
+        this._aiReportSubpageType = null;
+        const back = this._aiReportReturnPage || 'aiOverview';
+        this._aiReportReturnPage = null;
+        this.loadPage(back);
+    },
+
+    // 流式刷新目标：报告子页优先，否则回退到弹窗容器（兼容历史调用）
+    _aiReportRefreshHost() {
+        return document.getElementById('ai-report-subpage-body') || document.getElementById('modal-content');
     },
 
     renderAiBookAnalysisModal(phase) {
@@ -5560,7 +6318,7 @@ ${bodyHtml}
             return;
         }
         this._aiBookAnalysisCtx = { book, rangeKey: entry.rangeKey };
-        this.openModal(this.renderAiBookAnalysisModal('done'), { size: 'xwide' });
+        this.openAiReportSubpage('book');
     },
 
     // ============================================================
@@ -5628,7 +6386,7 @@ ${bodyHtml}
         if (!this._aiStudentAnalysis) this._aiStudentAnalysis = {};
         this._aiStudentAnalysis[student] = this.cloneAiReport(found);
         this._aiStudentAnalysisCtx = { student, rangeKey: found.rangeKey };
-        this.openModal(this.renderAiStudentAnalysisModal('done'), { size: 'xwide' });
+        this.openAiReportSubpage('student');
     },
 
     toggleAiStudentHistoryPopover(student) {
@@ -5830,7 +6588,7 @@ ${bodyHtml}
         this._aiStudentAnalysisCtx = { student, rangeKey };
         const placeholderId = this.insertGeneratingReport('student', student, rangeKey);
         if (this._aiStudentAnalysis[student]) this._aiStudentAnalysis[student].id = placeholderId;
-        this.openModal(this.renderAiStudentAnalysisModal(), { size: 'xwide' });
+        this.openAiReportSubpage('student');
 
         const allQuestionsText = dialogues
             .flatMap(d => (d.session || []).map(t => ({ q: t.q, book: d.book })).filter(x => x.q))
@@ -5838,7 +6596,7 @@ ${bodyHtml}
             .map((x, i) => `${i + 1}. [《${x.book || '未知'}》] ${x.q}`)
             .join('\n');
 
-        const systemPrompt = '你是一个幼儿园教育与儿童心理分析专家，擅长基于幼儿与绘本AI助手的真实对话，洞察单个孩子的兴趣方向、认知阶段与情感发展。你需要先对该孩子的提问做语义聚类（同义不同表归为一类），再给出兴趣画像与教学建议。回复用简体中文。';
+        const systemPrompt = '你是一个幼儿园教育与儿童心理分析专家，擅长基于幼儿与绘本AI助手的真实对话，洞察单个幼儿的兴趣方向、认知阶段与情感发展。你需要先对该幼儿的提问做语义聚类（同义不同表归为一类），再给出兴趣画像与教学建议。回复用简体中文。';
         const userPrompt = `以下是${roleLabel}在${rangeLabel}内与绘本 AI 助手的全部提问数据，共 ${dialogues.length} 次对话。
 
 【全部提问（最多 200 条采样，前缀方括号为对应绘本）】
@@ -5846,7 +6604,7 @@ ${allQuestionsText || '（无）'}
 
 请严格按以下两段式输出：
 
-第一段：在一个 \`\`\`json ... \`\`\` 代码块中输出该孩子最关注的 TOP10 主题/话题语义聚类（最多 10 个，按 count 倒序）。结构如下，不要添加多余字段：
+第一段：在一个 \`\`\`json ... \`\`\` 代码块中输出该幼儿最关注的 TOP10 主题/话题语义聚类（最多 10 个，按 count 倒序）。结构如下，不要添加多余字段：
 \`\`\`json
 {
   "clusters": [
@@ -5857,9 +6615,9 @@ ${allQuestionsText || '（无）'}
 要求：把表述不同但意图相同的问题合并为同一类；representative 用通顺自然的一句中文；count 是该类合并后的总数；samples 给 2-4 条原始问句即可。
 
 第二段：紧接 JSON 块后输出 Markdown 兴趣画像分析正文（不要再放进代码块）：
-1) 概述这个孩子的核心兴趣方向、思维特点与情感关注（3 段内）；
+1) 概述这个幼儿的核心兴趣方向、思维特点与情感关注（3 段内）；
 2) 指出其展现的认知发展信号、潜在优势与需要支持的方向；
-3) 给出 3-5 条针对该孩子可立即落地的个性化教学/亲子互动建议；
+3) 给出 3-5 条针对该幼儿可立即落地的个性化教学/亲子互动建议；
 4) 全文 600-900 字，使用 ## 和 - 分小标题与列表，避免空话套话。`;
 
         try {
@@ -5923,8 +6681,13 @@ ${allQuestionsText || '（无）'}
     },
 
     refreshAiStudentAnalysisModal(phase) {
-        const host = document.getElementById('modal-content');
-        if (host) host.innerHTML = this.renderAiStudentAnalysisModal(phase);
+        const sub = document.getElementById('ai-report-subpage-body');
+        if (sub) {
+            sub.innerHTML = this.renderAiReportPage('student');
+        } else {
+            const host = document.getElementById('modal-content');
+            if (host) host.innerHTML = this.renderAiStudentAnalysisModal(phase);
+        }
         const stream = document.getElementById('ai-analysis-stream');
         if (stream) stream.scrollTop = stream.scrollHeight;
     },
@@ -6022,7 +6785,7 @@ ${allQuestionsText || '（无）'}
             return;
         }
         this._aiStudentAnalysisCtx = { student, rangeKey: entry.rangeKey };
-        this.openModal(this.renderAiStudentAnalysisModal('done'), { size: 'xwide' });
+        this.openAiReportSubpage('student');
     },
 
     // ============================================================
@@ -6092,7 +6855,7 @@ ${allQuestionsText || '（无）'}
         if (!this._aiClassAnalysis) this._aiClassAnalysis = {};
         this._aiClassAnalysis[className] = this.cloneAiReport(found);
         this._aiClassAnalysisCtx = { className, rangeKey: found.rangeKey };
-        this.openModal(this.renderAiClassAnalysisModal('done'), { size: 'xwide' });
+        this.openAiReportSubpage('class');
     },
 
     // 入口：右上角按钮调用
@@ -6458,7 +7221,7 @@ ${allQuestionsText || '（无）'}
         // 在历史列表插入"生成中"占位，生成完成前用户点掉弹窗也能看到记录
         const placeholderId = this.insertGeneratingReport('class', className, rangeKey);
         this._aiClassAnalysis[className].id = placeholderId;
-        this.openModal(this.renderAiClassAnalysisModal(), { size: 'xwide' });
+        this.openAiReportSubpage('class');
 
         const allQuestionsText = dialogues
             .flatMap(d => (d.session || []).map(t => ({ q: t.q, book: d.book, student: d.student })).filter(x => x.q))
@@ -6466,10 +7229,10 @@ ${allQuestionsText || '（无）'}
             .map((x, i) => `${i + 1}. [${x.student || '匿名'} · 《${x.book || '未知'}》] ${x.q}`)
             .join('\n');
 
-        const systemPrompt = '你是一个幼儿园教育与儿童发展研究专家，擅长基于一个班级孩子与绘本AI助手的真实对话，洞察整班孩子的兴趣方向、认知阶段、情感诉求与潜在差异。你需要先对该班级所有孩子的提问做语义聚类（同义不同表归为一类），再给出班级层面的整体画像与教学建议。回复用简体中文。';
-        const userPrompt = `以下是${roleLabel}在${rangeLabel}内全部孩子与绘本 AI 助手的提问数据，共 ${dialogues.length} 次对话，涉及 ${studentSet.size} 个孩子、${bookCount.size} 本绘本。
+        const systemPrompt = '你是一个幼儿园教育与儿童发展研究专家，擅长基于一个班级幼儿与绘本AI助手的真实对话，洞察整班幼儿的兴趣方向、认知阶段、情感诉求与潜在差异。你需要先对该班级所有幼儿的提问做语义聚类（同义不同表归为一类），再给出班级层面的整体画像与教学建议。回复用简体中文。';
+        const userPrompt = `以下是${roleLabel}在${rangeLabel}内全部幼儿与绘本 AI 助手的提问数据，共 ${dialogues.length} 次对话，涉及 ${studentSet.size} 个幼儿、${bookCount.size} 本绘本。
 
-【全部提问（最多 220 条采样，前缀方括号为孩子姓名与对应绘本）】
+【全部提问（最多 220 条采样，前缀方括号为幼儿姓名与对应绘本）】
 ${allQuestionsText || '（无）'}
 
 请严格按以下两段式输出：
@@ -6486,7 +7249,7 @@ ${allQuestionsText || '（无）'}
 
 第二段：紧接 JSON 块后输出 Markdown 班级画像分析正文（不要再放进代码块）：
 1) 概述班级整体的核心兴趣方向、思维特点与情感关注（3 段内）；
-2) 指出班级整体认知发展信号、共性优势与可能存在的个体差异/需要关注的孩子方向（不点名）；
+2) 指出班级整体认知发展信号、共性优势与可能存在的个体差异/需要关注的幼儿方向（不点名）；
 3) 给出 4-6 条针对该班级可立即落地的集体教学/区角延伸/亲子互动建议；
 4) 全文 700-1000 字，使用 ## 和 - 分小标题与列表，避免空话套话。`;
 
@@ -6550,8 +7313,13 @@ ${allQuestionsText || '（无）'}
     },
 
     refreshAiClassAnalysisModal(phase) {
-        const host = document.getElementById('modal-content');
-        if (host) host.innerHTML = this.renderAiClassAnalysisModal(phase);
+        const sub = document.getElementById('ai-report-subpage-body');
+        if (sub) {
+            sub.innerHTML = this.renderAiReportPage('class');
+        } else {
+            const host = document.getElementById('modal-content');
+            if (host) host.innerHTML = this.renderAiClassAnalysisModal(phase);
+        }
         const stream = document.getElementById('ai-analysis-stream');
         if (stream) stream.scrollTop = stream.scrollHeight;
     },
@@ -6720,8 +7488,8 @@ ${allQuestionsText || '（无）'}
     renderSchoolDataPage() {
         // 基础标签页（园长和教师可见）
         const baseTabs = [
-            { id: 'overview', label: '数据概述', icon: Icons.chart('w-4 h-4') },
-            { id: 'activities', label: '绘本活动', icon: Icons.activity('w-4 h-4') },
+            { id: 'overview', label: '数据详情', icon: Icons.chart('w-4 h-4') },
+            { id: 'activities', label: 'AI绘本活动', icon: Icons.activity('w-4 h-4') },
             { id: 'books', label: '绘本', icon: Icons.book('w-4 h-4') },
             { id: 'classes', label: '班级', icon: Icons.school('w-4 h-4') },
             { id: 'teachers', label: '教师', icon: Icons.teacher('w-4 h-4') },
@@ -7019,19 +7787,19 @@ ${allQuestionsText || '（无）'}
                             </div>
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
-                                    <div class="text-sm text-slate-400">平均活动次数</div>
+                                    <div class="text-sm text-slate-400">班均绘本活动次数</div>
                                     <div class="text-lg font-semibold text-white">${(usage.avgActivityCount || 0).toFixed(1)}<span class="text-xs text-slate-500 ml-1">次/班</span></div>
                                 </div>
                                 <div>
-                                    <div class="text-sm text-slate-400">平均活动时长</div>
+                                    <div class="text-sm text-slate-400">班均绘本活动时长</div>
                                     <div class="text-lg font-semibold text-white">${(usage.avgActivityDuration || 0).toFixed(1)}<span class="text-xs text-slate-500 ml-1">h/班</span></div>
                                 </div>
                                 <div>
-                                    <div class="text-sm text-slate-400">设备使用次数</div>
+                                    <div class="text-sm text-slate-400">班均设备使用次数</div>
                                     <div class="text-lg font-semibold text-white">${(usage.avgDeviceUseCount || 0).toFixed(1)}<span class="text-xs text-slate-500 ml-1">次/班</span></div>
                                 </div>
                                 <div>
-                                    <div class="text-sm text-slate-400">平均参与人数</div>
+                                    <div class="text-sm text-slate-400">班均参与人次</div>
                                     <div class="text-lg font-semibold text-white">${(usage.avgParticipantCount || 0).toFixed(1)}<span class="text-xs text-slate-500 ml-1">人/次</span></div>
                                 </div>
                             </div>
@@ -7039,7 +7807,7 @@ ${allQuestionsText || '（无）'}
 
                         <!-- 操作按钮 -->
                         <div class="relative mt-4 flex justify-end">
-                            <button onclick="App.viewSchoolDetail(${school.id})" class="px-4 py-2 rounded-lg bg-cyan-400/10 border border-cyan-400/20 text-cyan-300 text-sm font-medium hover:bg-cyan-400/20 hover:border-cyan-400/30 transition-all flex items-center gap-2">
+                            <button onclick="App.openSchoolPage(${school.id})" class="px-4 py-2 rounded-lg bg-cyan-400/10 border border-cyan-400/20 text-cyan-300 text-sm font-medium hover:bg-cyan-400/20 hover:border-cyan-400/30 transition-all flex items-center gap-2">
                                 <span>查看详情</span>
                                 <span class="text-xs">→</span>
                             </button>
@@ -7050,46 +7818,7 @@ ${allQuestionsText || '（无）'}
             </div>`;
     },
 
-    // 查看学校详情：弹窗展示该园所的"数据概述"内容，右上角"打开详情"跳转完整页
-    viewSchoolDetail(schoolId) {
-        const school = MockData.kindergartens.find(k => k.id === schoolId);
-        if (!school) return;
-
-        // 临时把 selectedSchool 切到目标园所，复用现有 renderSchoolOverview 的渲染
-        const prevSchool = this.selectedSchool;
-        this.selectedSchool = school;
-        const overviewHtml = this.renderSchoolOverview();
-        this.selectedSchool = prevSchool;
-
-        const html = `
-            <div class="p-6 lg:p-8 space-y-5">
-                <!-- 头部：学校信息 + 操作 -->
-                <div class="flex items-start justify-between gap-3 pb-4 border-b border-slate-500/30">
-                    <div class="flex items-center gap-3">
-                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-400/20 to-blue-500/20 border border-cyan-400/20 flex items-center justify-center text-cyan-300">
-                            ${Icons.school('w-6 h-6')}
-                        </div>
-                        <div>
-                            <h3 class="text-xl font-bold text-white">${school.name}</h3>
-                            <p class="text-xs text-slate-400 mt-0.5">${school.district} · 班级 ${school.classCount} · 幼儿 ${school.studentCount} · 教师 ${school.teacherCount}</p>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-2 shrink-0">
-                        <button onclick="App.openSchoolPage(${school.id})" class="px-3.5 py-1.5 rounded-lg bg-cyan-400/15 border border-cyan-400/30 text-cyan-200 text-sm font-medium hover:bg-cyan-400/25 transition-all flex items-center gap-1.5" title="进入该学校完整数据页">
-                            <span>打开详情</span>
-                            <svg class="w-4 h-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 3h7v7M10 14L21 3M21 14v7H3V3h7"/></svg>
-                        </button>
-                        <button onclick="App.closeModalDirect()" class="px-2 py-1.5 rounded-lg bg-slate-600/50 border border-slate-500/30 text-slate-300 text-sm hover:bg-slate-500/50 transition-all" title="关闭">✕</button>
-                    </div>
-                </div>
-
-                <!-- 园所数据概述（与"园所数据页-数据概述"一致） -->
-                <div class="school-modal-overview">${overviewHtml}</div>
-            </div>`;
-        this.openModal(html, { size: 'xxwide' });
-    },
-
-    // 弹窗"打开详情"按钮：关闭弹窗并跳到该学校的园所数据页
+    // 园所"查看详情"：直接跳转到该园所的园所数据页（数据概述 tab）
     openSchoolPage(schoolId) {
         const school = MockData.kindergartens.find(k => k.id === schoolId);
         if (!school) return;
@@ -7167,7 +7896,7 @@ ${allQuestionsText || '（无）'}
         }
     },
 
-    // 园所数据 - 数据概述
+    // 园所数据 - 数据详情
     // 工具：返回数值在数组中的相对百分位（0-100）。用于 .compare-bar-cell 的 --pct
     barPct(value, max) {
         const v = Number(value) || 0;
@@ -7287,6 +8016,19 @@ ${allQuestionsText || '（无）'}
         types: ['line', 'bar']
     },
     selectedClassesForLine: null, // 第一次访问时初始化为活动次数 TOP3 班
+    expandedClassGrades: null, // 班级下拉中已展开的年级段集合（默认全部收起）
+    // 按年级段（大班/中班/小班/其他）对班级分组，返回有序数组
+    groupClassesByGrade(classes) {
+        const order = ['大班', '中班', '小班', '其他'];
+        const map = new Map(order.map(g => [g, []]));
+        (classes || []).forEach(c => {
+            const g = this.classGradeOf(c.name);
+            (map.get(g) || map.get('其他')).push(c);
+        });
+        return order
+            .map(g => ({ grade: g, items: map.get(g) || [] }))
+            .filter(group => group.items.length);
+    },
     initSelectedClassesForLineIfEmpty() {
         if (this.selectedClassesForLine && this.selectedClassesForLine.length) return;
         const ranked = (MockData.classes || [])
@@ -7383,15 +8125,36 @@ ${allQuestionsText || '（无）'}
                         <span class="truncate">${selectedNames.length > 0 ? selectedNames.join('、') : '请选择班级'}</span>
                         <svg class="w-4 h-4 transition-transform" width="16" height="16" id="school-class-dropdown-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                     </button>
-                    <div id="school-class-dropdown-menu" class="hidden absolute top-full left-0 right-0 mt-1 bg-slate-800/95 border border-slate-500/30 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto">
-                        ${allClasses.map(c => `
-                            <div onclick="event.stopPropagation();App.toggleClassForLine('${c.name.replace(/'/g, "\\'")}')" class="flex items-center gap-2 px-3 py-2 text-xs cursor-pointer transition-all hover:bg-purple-500/10 ${selected.includes(c.name) ? 'bg-purple-500/15 text-purple-300' : 'text-slate-300'}">
-                                <span class="w-4 h-4 rounded border flex items-center justify-center ${selected.includes(c.name) ? 'bg-purple-500 border-purple-500' : 'border-slate-500'}">
-                                    ${selected.includes(c.name) ? '<svg class="w-3 h-3 text-white" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : ''}
-                                </span>
-                                <span class="truncate">${c.name}${c.teacherName ? ` · ${c.teacherName}` : ''}</span>
-                            </div>
-                        `).join('')}
+                    <div id="school-class-dropdown-menu" class="hidden absolute top-full left-0 right-0 mt-1 bg-slate-800/95 border border-slate-500/30 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto">
+                        ${this.groupClassesByGrade(allClasses).map(group => {
+                            const expanded = (this.expandedClassGrades || []).includes(group.grade);
+                            const names = group.items.map(c => c.name);
+                            const selectedCount = names.filter(n => selected.includes(n)).length;
+                            const allSelected = selectedCount === names.length && names.length > 0;
+                            const checkboxCls = allSelected ? 'bg-purple-500 border-purple-500' : (selectedCount > 0 ? 'bg-purple-500/40 border-purple-400' : '');
+                            const checkboxStyle = (allSelected || selectedCount > 0) ? '' : 'style="border-color:#94a3b8"';
+                            return `
+                            <div class="border-b border-slate-700/40 last:border-b-0">
+                                <div class="flex items-center gap-2 px-3 py-2 text-xs cursor-pointer transition-all hover:bg-purple-500/10 ${selectedCount > 0 ? 'text-purple-300' : 'text-slate-200'}"
+                                    onclick="event.stopPropagation();App.selectGradeGroup('${group.grade}')">
+                                    <span class="w-4 h-4 rounded border flex items-center justify-center ${checkboxCls}" ${checkboxStyle}>
+                                        ${allSelected ? '<svg class="w-3 h-3 text-white" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : ''}
+                                    </span>
+                                    <span class="flex-1 font-medium">${group.grade}<span class="text-slate-500 ml-1">(${names.length})</span></span>
+                                    <button onclick="event.stopPropagation();App.toggleGradeGroup('${group.grade}')" class="p-0.5 rounded hover:bg-slate-600/40" title="${expanded ? '收起' : '展开'}">
+                                        <svg class="w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                    </button>
+                                </div>
+                                ${expanded ? group.items.map(c => `
+                                    <div onclick="event.stopPropagation();App.toggleClassForLine('${c.name.replace(/'/g, "\\'")}')" class="flex items-center gap-2 pl-8 pr-3 py-2 text-xs cursor-pointer transition-all hover:bg-purple-500/10 ${selected.includes(c.name) ? 'bg-purple-500/15 text-purple-300' : 'text-slate-300'}">
+                                        <span class="w-4 h-4 rounded border flex items-center justify-center ${selected.includes(c.name) ? 'bg-purple-500 border-purple-500' : ''}" ${selected.includes(c.name) ? '' : 'style="border-color:#94a3b8"'}>
+                                            ${selected.includes(c.name) ? '<svg class="w-3 h-3 text-white" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : ''}
+                                        </span>
+                                        <span class="truncate">${c.name}${c.teacherName ? ` · ${c.teacherName}` : ''}</span>
+                                    </div>
+                                `).join('') : ''}
+                            </div>`;
+                        }).join('')}
                     </div>
                 </div>
             </div>`;
@@ -7412,6 +8175,35 @@ ${allQuestionsText || '（无）'}
             list.push(name);
         }
         this.selectedClassesForLine = list;
+        this.refreshSchoolClassActivityChart({ headerOnly: true, keepDropdown: true });
+    },
+    // 展开/收起某个年级段（仅影响下拉显示，不改选中）
+    toggleGradeGroup(grade) {
+        const list = Array.isArray(this.expandedClassGrades) ? this.expandedClassGrades.slice() : [];
+        const idx = list.indexOf(grade);
+        if (idx > -1) list.splice(idx, 1);
+        else list.push(grade);
+        this.expandedClassGrades = list;
+        this.refreshSchoolClassActivityChart({ headerOnly: true, keepDropdown: true });
+    },
+    // 点击年级段标题：选中该段下全部班级；若该段已全选则取消（全局至少保留一个班级）
+    selectGradeGroup(grade) {
+        this.initSelectedClassesForLineIfEmpty();
+        const groupNames = (MockData.classes || [])
+            .filter(c => this.classGradeOf(c.name) === grade)
+            .map(c => c.name);
+        if (!groupNames.length) return;
+        const selected = this.selectedClassesForLine.slice();
+        const allSelected = groupNames.every(n => selected.includes(n));
+        let next;
+        if (allSelected) {
+            // 取消该段；若会清空则保留该段第一个，确保至少有一个班级
+            next = selected.filter(n => !groupNames.includes(n));
+            if (!next.length) next = [groupNames[0]];
+        } else {
+            next = Array.from(new Set([...selected, ...groupNames]));
+        }
+        this.selectedClassesForLine = next;
         this.refreshSchoolClassActivityChart({ headerOnly: true, keepDropdown: true });
     },
     toggleSchoolClassChartType(type) {
@@ -7459,20 +8251,20 @@ ${allQuestionsText || '（无）'}
         const scopeLabel = this.isTeacherScope()
             ? '本班'
             : (this.currentRole === 'admin' && !this.selectedSchool ? '全区' : '园所');
-        // 是否需要 5 KPI 概览：admin（全区合计或单园弹窗）和 teacher（本班概览）保留；
-        // principal 视角下与总览页 KPI 重复，删除
-        const showKpiOverview = this.currentRole !== 'principal';
+        // 是否需要 5 KPI 概览：全区 admin（未下钻园所）与 teacher（本班概览）保留；
+        // 园所视角（园长 / admin 单园）下与总览页 KPI 重复，删除
+        const showKpiOverview = !this.isSchoolScope();
         return `
         <div class="space-y-6">
             ${showKpiOverview ? `
             <div>
-                ${this.chartTitle(scopeLabel + '绘本活动概览', 'bg-blue-500', '统计范围：当前所选时间范围内 ' + scopeLabel + ' 全部绘本活动。\n指标说明：\n· 绘本活动总次数：发起的绘本活动场次\n· 绘本活动总时长：所有活动累计时长\n· 绘本总数：参与活动覆盖的绘本数（去重）\n· 绘本阅读次数 / 时长：含教师朗读、AI 共读、自由阅读全部触达')}
+                ${this.chartTitle(scopeLabel + '绘本活动概览', 'bg-blue-500', '统计范围：当前所选时间范围内 ' + scopeLabel + ' 全部绘本活动。\n指标说明：\n· 绘本活动总次数：发起的绘本活动场次\n· 绘本活动总时长：所有活动累计时长\n· 绘本总数：参与活动覆盖的绘本数（去重）\n· 绘本阅读总次数 / 总时长：含教师朗读、AI 共读、自由阅读全部触达')}
                 <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
                     ${this.miniStat('绘本活动总次数', d.activityTotal, 'blue')}
                     ${this.miniStat('绘本活动总时长', d.activityDuration + 'h', 'emerald')}
                     ${this.miniStat('绘本总数', d.bookTotal, 'purple')}
-                    ${this.miniStat('绘本阅读次数', d.bookReadCount, 'amber')}
-                    ${this.miniStat('绘本阅读时长', d.bookReadDuration + 'h', 'cyan')}
+                    ${this.miniStat('绘本阅读总次数', d.bookReadCount, 'amber')}
+                    ${this.miniStat('绘本阅读总时长', d.bookReadDuration + 'h', 'cyan')}
                 </div>
             </div>` : ''}
             <div>
@@ -7483,12 +8275,12 @@ ${allQuestionsText || '（无）'}
                 </div>
             </div>
             <div>
-                ${this.chartTitle('绘本分类阅读数据', 'bg-emerald-500', '统计范围：当前所选时间范围内的全部阅读记录。\n口径：按绘本"类型"分组，统计阅读次数和阅读时长。\n用途：识别孩子近期偏好的内容分类，辅助选书与活动设计。')}
-                ${this.currentRole === 'principal' ? `
+                ${this.chartTitle('绘本分类阅读数据', 'bg-emerald-500', '统计范围：当前所选时间范围内的全部阅读记录。\n口径：按绘本"类型"分组，统计阅读次数和阅读时长。\n用途：识别幼儿近期偏好的内容分类，辅助选书与活动设计。')}
+                ${this.isSchoolScope() ? `
                 <div class="space-y-4">
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
                         <div class="rounded-xl border border-slate-500/30 bg-slate-700/40 p-3 flex flex-col">
-                            <div class="text-xs text-slate-400 mb-1 px-1">类型阅读次数占比</div>
+                            <div class="text-xs text-slate-400 mb-1 px-1">幼儿绘本阅读类型占比</div>
                             <div id="school-category-pie" class="flex-1 min-h-[260px]"></div>
                         </div>
                         <div class="rounded-xl border border-slate-500/30 bg-slate-700/40 p-3 flex flex-col">
@@ -7499,7 +8291,7 @@ ${allQuestionsText || '（无）'}
                     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 auto-rows-fr">
                         ${d.categoryData.map(cat => `
                             <div class="bg-slate-700/50 rounded-xl p-3 flex items-center justify-between border border-slate-500/30 hover:border-blue-400/30 transition-colors h-full">
-                                <div><div class="text-sm font-medium text-slate-200">${cat.name}</div><div class="text-xs text-slate-500 mt-0.5">阅读时长 ${cat.duration}</div></div>
+                                <div><div class="text-sm font-medium text-slate-200">${cat.name}</div><div class="text-xs text-slate-500 mt-0.5">绘本阅读时长 ${cat.duration}</div></div>
                                 <div class="text-lg font-bold text-blue-400">${cat.readCount}<span class="text-xs text-slate-500 ml-1">次</span></div>
                             </div>
                         `).join('')}
@@ -7507,20 +8299,20 @@ ${allQuestionsText || '（无）'}
                 </div>` : `
                 <div class="grid grid-cols-1 lg:grid-cols-5 gap-4 items-stretch">
                     <div class="lg:col-span-2 rounded-xl border border-slate-500/30 bg-slate-700/40 p-3 flex flex-col">
-                        <div class="text-xs text-slate-400 mb-1 px-1">类型阅读次数占比</div>
+                        <div class="text-xs text-slate-400 mb-1 px-1">幼儿绘本阅读类型占比</div>
                         <div id="school-category-pie" class="flex-1 min-h-[260px]"></div>
                     </div>
                     <div class="lg:col-span-3 grid grid-cols-2 lg:grid-cols-3 gap-3 auto-rows-fr">
                         ${d.categoryData.map(cat => `
                             <div class="bg-slate-700/50 rounded-xl p-3 flex items-center justify-between border border-slate-500/30 hover:border-blue-400/30 transition-colors h-full">
-                                <div><div class="text-sm font-medium text-slate-200">${cat.name}</div><div class="text-xs text-slate-500 mt-0.5">阅读时长 ${cat.duration}</div></div>
+                                <div><div class="text-sm font-medium text-slate-200">${cat.name}</div><div class="text-xs text-slate-500 mt-0.5">绘本阅读时长 ${cat.duration}</div></div>
                                 <div class="text-lg font-bold text-blue-400">${cat.readCount}<span class="text-xs text-slate-500 ml-1">次</span></div>
                             </div>
                         `).join('')}
                     </div>
                 </div>`}
             </div>
-            ${this.currentRole !== 'admin' ? this.renderSchoolFavoriteBoard() : ''}
+            ${(this.isSchoolScope() || this.isTeacherScope()) ? this.renderSchoolFavoriteBoard() : ''}
         </div>`;
     },
 
@@ -7530,8 +8322,8 @@ ${allQuestionsText || '（无）'}
         if (overviewData && overviewData.categoryData) {
             Charts.safeInit(() => Charts.initSchoolCategoryPie(overviewData.categoryData));
         }
-        // 园长视角：能力分布气泡图（从大数据总览页迁移至此，放在类型占比旁）
-        if (this.currentRole === 'principal') {
+        // 园所视角（园长 / admin 单园）：能力分布气泡图（从大数据总览页迁移至此，放在类型占比旁）
+        if (this.isSchoolScope()) {
             Charts.safeInit(() => Charts.initAbilityRadar(this.computeAbilityDistributionForOverview(), 'school-ability-distribution-chart'));
         }
         // principal 视角的"班级开课情况变化"图（admin 单园弹窗 / teacher 不渲染，DOM 不存在自动短路）
@@ -7568,7 +8360,7 @@ ${allQuestionsText || '（无）'}
                 <td class="px-4 py-3 text-slate-200">${a.teacher}</td>
                 <td class="px-4 py-3 text-slate-200">${a.className}</td>
                 <td class="px-4 py-3 text-center text-slate-300">${a.studentCount}人</td>
-                <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewActivityDetail(${a.id})">查看</button></td>
+                <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewActivityDetail(${a.id}, 'subpage')">查看</button></td>
             </tr>
         `).join('');
 
@@ -7625,14 +8417,13 @@ ${allQuestionsText || '（无）'}
             { label: '绘本名称' },
             { label: 'ISBN号' },
             { label: '绘本类型' },
-            { label: '阅读次数', align: 'text-center', sortKey: 'readCount', sortScope: 'books' },
-            { label: '阅读时长', align: 'text-center', sortKey: 'readDurationNum', sortScope: 'books' },
+            { label: '绘本阅读次数', align: 'text-center', sortKey: 'readCount', sortScope: 'books' },
+            { label: '绘本阅读时长(h)', align: 'text-center', sortKey: 'readDurationNum', sortScope: 'books' },
             { label: '操作', align: 'text-center' }
         ];
         const summary = `<tr class="compare-summary-row">
             <td colspan="4" class="text-left">
                 <span class="summary-label">绘本数</span><span class="summary-value">${total}</span>
-                <span class="summary-label" style="margin-left:16px">书均阅读</span><span class="summary-value">${avgRead.toFixed(1)}</span>
             </td>
             <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumRead}</span></td>
             <td class="text-center text-slate-500">—</td>
@@ -7646,7 +8437,7 @@ ${allQuestionsText || '（无）'}
                 <td class="px-4 py-3">${this.badge(b.type)}</td>
                 ${this.barCell(b.readCount, maxRead)}
                 ${this.barCell(b.readDurationNum || 0, maxDur, { format: () => b.readDuration })}
-                <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewBookDetail(${b.id})">查看</button></td>
+                <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewBookDetail(${b.id}, 'subpage')">查看详情</button></td>
             </tr>`).join('');
 
         const teacherHint = isTeacher ? (() => {
@@ -7720,17 +8511,17 @@ ${allQuestionsText || '（无）'}
             const durationUnit = String(c.activityDuration || '').replace(durationMatch ? durationMatch[1] : '', '').trim();
             const scaledDuration = ratio <= 0 ? 0 : durationNum * ratio;
             const scaledParticipant = scaleCount(c.participantCount);
-            // 累计阅读绘本时长 ≈ 参与人次 × 活动时长 × 0.6（粗略口径：活动中孩子合计阅读绘本时间）
+            // 累计阅读绘本时长 ≈ 参与人次 × 活动时长 × 0.6（粗略口径：活动中幼儿合计阅读绘本时间）
             const cumulativeReadingHours = scaledDuration * scaledParticipant * 0.6;
             return {
                 ...c,
                 activityCount: scaleCount(c.activityCount),
                 activityDurationNum: scaledDuration,
-                activityDuration: durationMatch ? `${scaledDuration.toFixed(1)}${durationUnit}` : c.activityDuration,
+                activityDuration: durationMatch ? `${scaledDuration.toFixed(1)}` : c.activityDuration,
                 deviceUseCount: scaleCount(c.deviceUseCount),
                 participantCount: scaledParticipant,
                 cumulativeReadingNum: cumulativeReadingHours,
-                cumulativeReadingText: `${cumulativeReadingHours.toFixed(1)}h`
+                cumulativeReadingText: `${cumulativeReadingHours.toFixed(1)}`
             };
         });
         // 排序
@@ -7756,11 +8547,11 @@ ${allQuestionsText || '（无）'}
             {label:'班级'},
             {label:'教师数量', align:'text-center'},
             {label:'幼儿数量', align:'text-center'},
-            {label:'活动总次数', align:'text-center', sortKey:'activityCount', sortScope:'classes'},
-            {label:'活动总时长', align:'text-center', sortKey:'activityDurationNum', sortScope:'classes'},
+            {label:'绘本活动总次数', align:'text-center', sortKey:'activityCount', sortScope:'classes'},
+            {label:'绘本活动总时长(h)', align:'text-center', sortKey:'activityDurationNum', sortScope:'classes'},
             {label:'设备使用次数', align:'text-center', sortKey:'deviceUseCount', sortScope:'classes'},
             {label:'参与总人次', align:'text-center', sortKey:'participantCount', sortScope:'classes'},
-            {label:'累计阅读绘本时长', align:'text-center', sortKey:'cumulativeReadingNum', sortScope:'classes'},
+            {label:'累计阅读绘本时长(h)', align:'text-center', sortKey:'cumulativeReadingNum', sortScope:'classes'},
             {label:'操作', align:'text-center'}
         ];
         const summary = isTeacher ? '' : `<tr class="compare-summary-row">
@@ -7773,7 +8564,7 @@ ${allQuestionsText || '（无）'}
             <td class="text-center text-slate-500">—</td>
             <td class="text-center text-slate-500">—</td>
             <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumParticipant}</span></td>
-            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumReading}h</span></td>
+            <td class="text-center"><span class="summary-label">合计</span><span class="summary-value">${sumReading}</span></td>
             <td></td>
         </tr>`;
         const rows = pageData.map((c,i) => {
@@ -7790,7 +8581,7 @@ ${allQuestionsText || '（无）'}
                 ${this.barCell(c.deviceUseCount, maxDevice)}
                 ${this.barCell(c.participantCount, maxParticipant)}
                 ${this.barCell(c.cumulativeReadingNum || 0, maxReading, { format: () => c.cumulativeReadingText })}
-                <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewClassDetail(${c.id})">查看</button></td>
+                <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewClassDetail(${c.id}, 'subpage')">查看详情</button></td>
             </tr>`;
         }).join('');
         return `<div>
@@ -7828,7 +8619,7 @@ ${allQuestionsText || '（无）'}
                 ...t,
                 activityCount: ratio <= 0 ? 0 : Math.max(0, Math.round((Number(t.activityCount) || 0) * ratio)),
                 activityDurationNum: scaledDuration,
-                activityDuration: durationMatch ? `${scaledDuration.toFixed(1)}${durationUnit}` : t.activityDuration
+                activityDuration: durationMatch ? `${scaledDuration.toFixed(1)}` : t.activityDuration
             };
         });
         data = this.sortByKey(data, this.schoolSort.teachers);
@@ -7845,7 +8636,7 @@ ${allQuestionsText || '（无）'}
             {label:'序号'},
             {label:'教师姓名'},
             {label:'绘本活动次数', align:'text-center', sortKey:'activityCount', sortScope:'teachers'},
-            {label:'绘本活动时长', align:'text-center', sortKey:'activityDurationNum', sortScope:'teachers'},
+            {label:'绘本活动时长(h)', align:'text-center', sortKey:'activityDurationNum', sortScope:'teachers'},
             {label:'操作', align:'text-center'}
         ];
         const summary = isTeacher ? '' : `<tr class="compare-summary-row">
@@ -7863,7 +8654,7 @@ ${allQuestionsText || '（无）'}
                 <td class="px-4 py-3 font-medium text-slate-200">${t.name}</td>
                 ${this.barCell(t.activityCount, maxAct)}
                 ${this.barCell(t.activityDurationNum || 0, maxDur, { format: () => t.activityDuration })}
-                <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewTeacherActivities('${t.name}')">查看绘本活动记录</button></td>
+                <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewTeacherActivities('${t.name}', 'subpage')">查看绘本活动记录</button></td>
             </tr>`).join('');
         return `<div>
             ${isTeacher ? '' : this.filterBar(`
@@ -7942,7 +8733,7 @@ ${allQuestionsText || '（无）'}
                 ${this.barCell(s.activityCount, maxAct)}
                 ${this.barCell(s.activityDurationNum || 0, maxDur, { format: () => s.activityDuration })}
                 ${this.barCell(s.bookCount, maxBook)}
-                <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewStudentReport(${s.id})">查看阅读报告</button></td>
+                <td class="px-4 py-3 text-center"><button class="text-blue-400 hover:text-blue-300 text-sm" onclick="App.viewStudentReport(${s.id}, 'subpage')">查看阅读报告</button></td>
             </tr>`).join('');
         return `<div>
             ${this.filterBar(`
@@ -7973,7 +8764,7 @@ ${allQuestionsText || '（无）'}
                 ...d,
                 useCount: ratio <= 0 ? 0 : Math.max(0, Math.round((Number(d.useCount) || 0) * ratio)),
                 useDurationNum: scaledDuration,
-                useDuration: durationMatch ? `${scaledDuration.toFixed(1)}${durationUnit}` : d.useDuration
+                useDuration: durationMatch ? `${scaledDuration.toFixed(1)}` : d.useDuration
             };
         });
         data = this.sortByKey(data, this.schoolSort.devices);
@@ -7991,7 +8782,7 @@ ${allQuestionsText || '（无）'}
             {label:'设备SN号'},
             {label:'设备编号'},
             {label:'设备使用次数', align:'text-center', sortKey:'useCount', sortScope:'devices'},
-            {label:'设备使用时长', align:'text-center', sortKey:'useDurationNum', sortScope:'devices'},
+            {label:'设备使用时长(h)', align:'text-center', sortKey:'useDurationNum', sortScope:'devices'},
             {label:'最近使用时间', align:'text-center'}
         ];
         const summary = `<tr class="compare-summary-row">
@@ -8090,7 +8881,7 @@ ${allQuestionsText || '（无）'}
         const offlineCount = data.filter(d => d.status==='离线').length;
         const totalUse = data.reduce((s,d) => s+d.useCount, 0);
 
-        const headers = [{label:'序号'},{label:'设备SN号'},{label:'设备编号'},{label:'状态',align:'text-center'},{label:'绑定园所'},{label:'绑定班级'},{label:'使用次数',align:'text-center'},{label:'使用时长',align:'text-center'},{label:'最近使用',align:'text-center'},{label:'操作',align:'text-center'}];
+        const headers = [{label:'序号'},{label:'设备SN号'},{label:'设备编号'},{label:'状态',align:'text-center'},{label:'绑定园所'},{label:'绑定班级'},{label:'设备使用次数',align:'text-center'},{label:'设备使用时长(h)',align:'text-center'},{label:'最近使用',align:'text-center'},{label:'操作',align:'text-center'}];
         const rows = pageData.map((d,i) => `
             <tr class="hover:bg-blue-500/10 transition-colors">
                 <td class="px-4 py-3 text-slate-500">${(p.page-1)*p.pageSize+i+1}</td>
@@ -8100,7 +8891,7 @@ ${allQuestionsText || '（无）'}
                 <td class="px-4 py-3 text-slate-300">${d.bindSchool}</td>
                 <td class="px-4 py-3 text-slate-300">${d.bindClass}</td>
                 <td class="px-4 py-3 text-center text-blue-400 font-semibold">${d.useCount}</td>
-                <td class="px-4 py-3 text-center text-slate-300">${d.useDuration}</td>
+                <td class="px-4 py-3 text-center text-slate-300">${String(d.useDuration ?? '').replace(/h$/, '')}</td>
                 <td class="px-4 py-3 text-center text-slate-500 text-xs">${d.lastUseTime}</td>
                 <td class="px-4 py-3 text-center">
                     <button class="text-blue-400 hover:text-blue-300 text-sm mr-2" onclick="App.editDevice(${d.id})">编辑</button>
@@ -8116,7 +8907,7 @@ ${allQuestionsText || '（无）'}
                 ${this.miniStat('设备总数', data.length, 'blue')}
                 ${this.miniStat('在线设备', onlineCount, 'emerald')}
                 ${this.miniStat('离线设备', offlineCount, 'amber')}
-                ${this.miniStat('总使用次数', totalUse, 'cyan')}
+                ${this.miniStat('设备使用总次数', totalUse, 'cyan')}
             </div>
             ${this.card(`
                 ${this.filterBar(`
@@ -8409,7 +9200,7 @@ ${allQuestionsText || '（无）'}
             {label: '所属班级'},
             {label: '阅读开始时间'},
             {label: '阅读结束时间'},
-            {label: '阅读时长'},
+            {label: '绘本阅读时长'},
             {label: '是否读完', align: 'text-center'}
         ];
         
@@ -8461,8 +9252,8 @@ ${allQuestionsText || '（无）'}
                                     <th class="px-4 py-3 text-left text-xs font-medium text-slate-400">绘本名称</th>
                                     <th class="px-4 py-3 text-left text-xs font-medium text-slate-400">ISBN号</th>
                                     <th class="px-4 py-3 text-left text-xs font-medium text-slate-400">绘本类型</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-slate-400">阅读次数</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-slate-400">阅读时长</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-slate-400">绘本阅读次数</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-slate-400">绘本阅读时长(h)</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -8471,7 +9262,7 @@ ${allQuestionsText || '（无）'}
                                     <td class="px-4 py-3 text-slate-400 text-sm">${b.isbn}</td>
                                     <td class="px-4 py-3 text-slate-300">${b.type}</td>
                                     <td class="px-4 py-3 text-blue-400">${b.readCount}次</td>
-                                    <td class="px-4 py-3 text-slate-300">${b.readDuration}</td>
+                                    <td class="px-4 py-3 text-slate-300">${String(b.readDuration ?? '').replace(/h$/, '')}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -8824,8 +9615,8 @@ ${allQuestionsText || '（无）'}
             {label: '序号', align: 'text-center', width: 'w-16'},
             {label: '幼儿姓名'},
             {label: '幼儿编号'},
-            {label: '阅读次数', align: 'text-center'},
-            {label: '阅读时长', align: 'text-center'},
+            {label: '绘本阅读次数', align: 'text-center'},
+            {label: '绘本阅读时长(h)', align: 'text-center'},
             {label: '阅读绘本', align: 'text-center'},
             {label: '完整读完', align: 'text-center'},
             {label: '操作', align: 'text-center'}
@@ -8838,11 +9629,11 @@ ${allQuestionsText || '（无）'}
                     <td class="px-4 py-3 text-slate-200">${s.name}</td>
                     <td class="px-4 py-3 text-slate-400 text-sm">${s.code}</td>
                     <td class="px-4 py-3 text-center text-blue-400">${s.activityCount}次</td>
-                    <td class="px-4 py-3 text-center text-slate-300">${s.activityDuration}</td>
+                    <td class="px-4 py-3 text-center text-slate-300">${String(s.activityDuration ?? '').replace(/h$/, '')}</td>
                     <td class="px-4 py-3 text-center text-slate-300">${s.bookCount}本</td>
                     <td class="px-4 py-3 text-center text-slate-300">${Math.floor(s.bookCount * 0.7)}本</td>
                     <td class="px-4 py-3 text-center">
-                        <button onclick="App.viewStudentReport(${s.id})" class="text-blue-400 hover:text-blue-300 text-sm">幼儿阅读报告</button>
+                        <button onclick="App.viewStudentReport(${s.id}, 'subpage')" class="text-blue-400 hover:text-blue-300 text-sm">幼儿阅读报告</button>
                     </td>
                 </tr>
             `).join('')
@@ -8853,7 +9644,7 @@ ${allQuestionsText || '（无）'}
             {label: '序号', align: 'text-center', width: 'w-16'},
             {label: '教师姓名'},
             {label: '绘本活动次数', align: 'text-center'},
-            {label: '绘本活动时长', align: 'text-center'},
+            {label: '绘本活动时长(h)', align: 'text-center'},
             {label: '操作', align: 'text-center'}
         ];
         
@@ -8864,9 +9655,9 @@ ${allQuestionsText || '（无）'}
                     <td class="px-4 py-3 text-center text-slate-300">${idx + 1}</td>
                     <td class="px-4 py-3 text-slate-200">${t.name}</td>
                     <td class="px-4 py-3 text-center text-blue-400">${t.activityCount}次</td>
-                    <td class="px-4 py-3 text-center text-slate-300">${t.activityDuration}</td>
+                    <td class="px-4 py-3 text-center text-slate-300">${String(t.activityDuration ?? '').replace(/h$/, '')}</td>
                     <td class="px-4 py-3 text-center">
-                        <button onclick="App.viewTeacherActivities('${t.name}')" class="text-blue-400 hover:text-blue-300 text-sm">查看活动</button>
+                        <button onclick="App.viewTeacherActivities('${t.name}', 'subpage')" class="text-blue-400 hover:text-blue-300 text-sm">查看活动</button>
                     </td>
                 </tr>
             `).join('')
@@ -8921,7 +9712,7 @@ ${allQuestionsText || '（无）'}
                                     <span class="text-slate-200">${cls.activityDuration}</span>
                                 </div>
                                 <div class="flex justify-between items-center py-2">
-                                    <span class="text-slate-400 text-sm">孩子参与总人次：</span>
+                                    <span class="text-slate-400 text-sm">参与总人次：</span>
                                     <span class="text-slate-200">${cls.participantCount}次</span>
                                 </div>
                             </div>
@@ -8940,7 +9731,20 @@ ${allQuestionsText || '（无）'}
                         </div>
                     </div>
                 </div>
-                
+
+                <!-- 阅读绘本类型趋势 -->
+                <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden mb-6">
+                    <div class="px-4 py-3 bg-slate-700/30 border-b border-slate-700/50">
+                        <h3 class="text-sm font-semibold text-slate-200">阅读绘本类型趋势</h3>
+                    </div>
+                    <div class="p-4">
+                        ${hasBookTypeData
+                            ? `<div class="text-xs text-slate-500 mb-2">统计周期：${periodLabel}　·　各类型绘本阅读本数随时间变化</div>
+                               <div id="class-booktype-trend-chart" class="w-full" style="height:300px"></div>`
+                            : '<div class="h-64 flex items-center justify-center"><span class="text-slate-500 text-sm">抱歉，没有统计到阅读数据，无法分析类型趋势</span></div>'}
+                    </div>
+                </div>
+
                 <!-- 幼儿列表 -->
                 <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden mb-6">
                     <div class="px-4 py-3 bg-slate-700/30 border-b border-slate-700/50 flex justify-between items-center">
@@ -9000,6 +9804,7 @@ ${allQuestionsText || '（无）'}
             requestAnimationFrame(() => {
                 if (hasBookTypeData) {
                     this.renderClassBookTypePieFromSeries(bookTypeSeriesData, 'class-book-type-chart');
+                    try { Charts.initClassBookTypeLine(bookTypeSeriesData, 'class-booktype-trend-chart'); } catch (e) {}
                 }
                 if (hasAbilityData) {
                     this.renderClassAbilityBubble(clsOriginal, 'class-ability-chart');
@@ -9160,7 +9965,9 @@ ${allQuestionsText || '（无）'}
         `;
         
         if (mode === 'subpage') {
-            // 子页面模式：先关闭弹窗，然后在当前标签页内容区域内渲染
+            // 子页面模式：先记录来源班级（closeModal 会清空 _currentClassDetailId），再关闭弹窗并内嵌渲染
+            const fromClass = document.getElementById('class-subpage-container');
+            this._pendingTeacherFromClassId = fromClass ? (this._currentClassDetailId ?? null) : null;
             this.closeModal();
             this.openTeacherSubpage(content);
         } else {
@@ -9174,6 +9981,10 @@ ${allQuestionsText || '（无）'}
         // 找到当前标签页内容容器
         const tabContent = document.getElementById('school-tab-content');
         if (!tabContent) return;
+
+        // 若从"班级详情"子页内打开，记录来源班级，便于关闭后返回班级详情
+        this._teacherActFromClassId = (this._pendingTeacherFromClassId != null) ? this._pendingTeacherFromClassId : null;
+        this._pendingTeacherFromClassId = null;
 
         // 保存当前 tab 状态
         this._previousSchoolDataTab = this.schoolDataTab;
@@ -9210,6 +10021,16 @@ ${allQuestionsText || '（无）'}
             this._hiddenTeacherFilterBar = null;
         }
 
+        // 若从"班级详情"进入，则返回班级详情，而不是跳到教师列表
+        const fromClassId = this._teacherActFromClassId;
+        this._teacherActFromClassId = null;
+        this._originalTeacherTabContent = null;
+        if (fromClassId != null) {
+            this._previousSchoolDataTab = null;
+            this.viewClassDetail(fromClassId, 'subpage');
+            return;
+        }
+
         // 恢复到之前保存的 tab 状态
         const previousTab = this._previousSchoolDataTab || 'teachers';
         this.schoolDataTab = previousTab;
@@ -9221,7 +10042,6 @@ ${allQuestionsText || '（无）'}
         });
 
         // 清理保存的内容
-        this._originalTeacherTabContent = null;
         this._previousSchoolDataTab = null;
     },
 
@@ -9369,7 +10189,7 @@ ${allQuestionsText || '（无）'}
                             });
                             const m = parseInt(bestDate.slice(5, 7), 10);
                             const d = parseInt(bestDate.slice(8, 10), 10);
-                            return `<span class="text-[11px] text-amber-300">${m}月${d}日阅读了${bestStat.duration}分钟${bestStat.books.size}本书，是最勤奋的一天！</span>`;
+                            return `<span class="text-[11px] text-amber-300">${m}月${d}日阅读了${bestStat.duration}分钟，合计${bestStat.books.size}本书，是最勤奋的一天！</span>`;
                         })()}
                     </div>
                     ${(() => {
@@ -9377,8 +10197,8 @@ ${allQuestionsText || '（无）'}
                         this._studentMetricTab = null;
                         const activeKey = this._studentMetricTab;
                         const tabs = [
-                            { key: 'duration', label: '阅读时长', unit: '分钟', displayValue: s.readDurationMinutes },
-                            { key: 'times', label: '阅读次数', unit: '次', displayValue: s.readTimes },
+                            { key: 'duration', label: '绘本阅读时长', unit: '分钟', displayValue: s.readDurationMinutes },
+                            { key: 'times', label: '绘本阅读次数', unit: '次', displayValue: s.readTimes },
                             { key: 'books', label: '阅读绘本', unit: '本', displayValue: s.bookCount },
                             { key: 'completed', label: '完整读完', unit: '本', displayValue: s.completedBooks }
                         ];
@@ -9414,7 +10234,7 @@ ${allQuestionsText || '（无）'}
 
                         const panels = [
                             this.renderStudentMetricPanel({
-                                key: 'duration', label: '阅读时长',
+                                key: 'duration', label: '绘本阅读时长',
                                 hint: `共 ${s.readDurationMinutes} 分钟，由以下 ${detail.records.length} 次阅读组成：`,
                                 records: detail.records,
                                 columns: [
@@ -9427,7 +10247,7 @@ ${allQuestionsText || '（无）'}
                                 ]
                             }),
                             this.renderStudentMetricPanel({
-                                key: 'times', label: '阅读次数',
+                                key: 'times', label: '绘本阅读次数',
                                 hint: `共 ${s.readTimes} 次阅读：`,
                                 records: detail.records,
                                 columns: [
@@ -9447,7 +10267,7 @@ ${allQuestionsText || '（无）'}
                                 columns: [
                                     { label: '绘本', render: r => r.bookName },
                                     { label: '类型', render: r => r.bookType },
-                                    { label: '阅读次数', render: r => `${r.times}次` },
+                                    { label: '绘本阅读次数', render: r => `${r.times}次` },
                                     { label: '累计时长', render: r => `${r.duration}分钟` },
                                     { label: '最近阅读', render: r => r.lastDate }
                                 ]
@@ -9460,7 +10280,7 @@ ${allQuestionsText || '（无）'}
                                 columns: [
                                     { label: '绘本', render: r => r.bookName },
                                     { label: '类型', render: r => r.bookType },
-                                    { label: '阅读次数', render: r => `${r.times}次` },
+                                    { label: '绘本阅读次数', render: r => `${r.times}次` },
                                     { label: '完整读完日期', render: r => r.date },
                                     { label: '最近时长', render: r => `${r.duration}分钟` }
                                 ]
@@ -9527,7 +10347,9 @@ ${allQuestionsText || '（无）'}
         `;
         
         if (mode === 'subpage') {
-            // 子页面模式：先关闭弹窗，然后在当前标签页内容区域内渲染
+            // 子页面模式：先记录来源班级（closeModal 会清空 _currentClassDetailId），再关闭弹窗并内嵌渲染
+            const fromClass = document.getElementById('class-subpage-container');
+            this._pendingStudentFromClassId = fromClass ? (this._currentClassDetailId ?? null) : null;
             this.closeModal();
             this.openStudentSubpage(content);
         } else {
@@ -10083,7 +10905,10 @@ ${allQuestionsText || '（无）'}
             const teacherClassId = this.selectedClass ? this.selectedClass.id : null;
             if (teacherClassId) classes = classes.filter(c => c.id === teacherClassId);
         } else if (this.selectedSchool) {
-            classes = classes.filter(c => c.kindergartenId === this.selectedSchool.id);
+            const scoped = classes.filter(c => c.kindergartenId === this.selectedSchool.id);
+            // mock 数据中班级仅挂在 kindergartenId=1；选中其它园所时回退到全部班级，
+            // 与 admin 单园其它指标复用 schoolData.overview 的口径一致，确保榜单始终渲染
+            classes = scoped.length ? scoped : classes;
         }
         if (!classes.length) return '';
 
@@ -10136,7 +10961,11 @@ ${allQuestionsText || '（无）'}
         // 找到当前标签页内容容器
         const tabContent = document.getElementById('school-tab-content');
         if (!tabContent) return;
-        
+
+        // 若从"班级详情"子页内打开，记录来源班级，便于关闭后返回班级详情
+        this._studentReportFromClassId = (this._pendingStudentFromClassId != null) ? this._pendingStudentFromClassId : null;
+        this._pendingStudentFromClassId = null;
+
         // 保存原始内容
         this._originalStudentTabContent = tabContent.innerHTML;
         
@@ -10162,20 +10991,26 @@ ${allQuestionsText || '（无）'}
     closeStudentSubpage() {
         const tabContent = document.getElementById('school-tab-content');
         if (!tabContent) return;
-        
+
         // 恢复筛选栏
         if (this._hiddenStudentFilterBar) {
             this._hiddenStudentFilterBar.style.display = '';
             this._hiddenStudentFilterBar = null;
         }
-        
+
+        // 若从"班级详情"进入，则返回班级详情，而不是跳到幼儿列表
+        const fromClassId = this._studentReportFromClassId;
+        this._studentReportFromClassId = null;
+        this._originalStudentTabContent = null;
+        this._currentStudentReportId = null;
+        if (fromClassId != null) {
+            this.viewClassDetail(fromClassId, 'subpage');
+            return;
+        }
+
         // 恢复到幼儿列表界面
         this.schoolDataTab = 'students';
         this.renderSchoolTabContent('students');
-        
-        // 清理保存的内容
-        this._originalStudentTabContent = null;
-        this._currentStudentReportId = null;
     },
 
     // ============================================================
@@ -10620,7 +11455,7 @@ ${allQuestionsText || '（无）'}
                     },
                     yAxis: {
                         type: 'value',
-                        name: '阅读次数',
+                        name: '绘本阅读次数',
                         nameTextStyle: { fontSize: 10 },
                         axisLabel: { fontSize: 10 }
                     },
@@ -10801,11 +11636,11 @@ ${allQuestionsText || '（无）'}
                         <h3 class="text-sm font-semibold text-gray-900 mb-3">阅读统计</h3>
                         <div class="grid grid-cols-2 gap-3">
                             <div class="bg-blue-50 rounded-lg p-3 text-center">
-                                <div class="text-xs text-blue-600 mb-1">阅读时长</div>
+                                <div class="text-xs text-blue-600 mb-1">绘本阅读时长</div>
                                 <div class="text-xl font-bold text-blue-600">${s.readDurationMinutes}分钟</div>
                             </div>
                             <div class="bg-green-50 rounded-lg p-3 text-center">
-                                <div class="text-xs text-green-600 mb-1">阅读次数</div>
+                                <div class="text-xs text-green-600 mb-1">绘本阅读次数</div>
                                 <div class="text-xl font-bold text-green-600">${s.readTimes}次</div>
                             </div>
                             <div class="bg-purple-50 rounded-lg p-3 text-center">
@@ -11051,7 +11886,7 @@ ${allQuestionsText || '（无）'}
                     },
                     yAxis: {
                         type: 'value',
-                        name: '阅读次数',
+                        name: '绘本阅读次数',
                         nameTextStyle: { fontSize: 10 },
                         axisLabel: { fontSize: 10 }
                     },

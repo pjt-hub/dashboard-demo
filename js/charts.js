@@ -252,7 +252,12 @@ const Charts = {
         // 缓存活动数据 + 按当前选择类型渲染（折线 / 柱状）
         if (typeof App !== 'undefined') App._lastWeeklyActivityData = data.weeklyActivity;
         const weeklyTypes = (typeof App !== 'undefined' && App.weeklyActivityChartTypes) || ['line', 'bar'];
-        this.safeInit(() => this.initWeeklyActivityBar(data.weeklyActivity, weeklyTypes));
+        // 园长视角：大数据总览页用「教师开课次数 Top10」替代原「园所绘本活动次数」趋势图
+        if (typeof App !== 'undefined' && App.currentRole === 'principal') {
+            this.safeInit(() => this.initTeacherTop10Bar(App.buildTeacherTop10()));
+        } else {
+            this.safeInit(() => this.initWeeklyActivityBar(data.weeklyActivity, weeklyTypes));
+        }
         // admin 视角的"园所使用次数趋势"已搬到区域数据页 compare tab，总览页不再渲染
         if (App.currentRole !== 'admin') {
             this.safeInit(() => this.initTeacherRankingBar(data.teacherRanking));
@@ -654,6 +659,67 @@ const Charts = {
         window.addEventListener('resize', () => chart.resize());
     },
 
+    // 教师开课次数 Top10（园长视角，大数据总览页）—— 竖柱状图，X 轴教师、Y 轴开课次数
+    initTeacherTop10Bar(customData = null) {
+        const dom = document.getElementById('teacher-top10-chart');
+        if (!dom) return;
+        if (typeof echarts !== 'undefined') {
+            const existing = echarts.getInstanceByDom(dom);
+            if (existing && !existing.isDisposed()) {
+                existing.dispose();
+                this.instances = this.instances.filter(c => c !== existing);
+            }
+        }
+        const chart = this.createChart('teacher-top10-chart');
+        if (!chart) return;
+        const data = (customData || []).slice();
+        const rotate = data.length > 6 ? 30 : 0;
+        chart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: {
+                ...this.darkTheme.tooltip,
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function(params) {
+                    if (!params || !params.length) return '';
+                    const p = params[0];
+                    return `<div style="font-weight:600;margin-bottom:4px">${p.axisValue}</div>
+                        <div style="display:flex;align-items:center;gap:6px">
+                            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${p.color}"></span>
+                            <span>开课次数: ${p.value}次</span>
+                        </div>`;
+                }
+            },
+            grid: { left: 50, right: 24, top: 30, bottom: rotate ? 56 : 40 },
+            xAxis: {
+                type: 'category',
+                data: data.map(d => d.name),
+                axisLabel: { color: '#8896a6', fontSize: 11, interval: 0, rotate },
+                axisLine: { lineStyle: { color: 'rgba(85,100,120,0.35)' } },
+                axisTick: { show: false }
+            },
+            yAxis: {
+                type: 'value',
+                axisLabel: { color: '#8896a6', fontSize: 11 },
+                splitLine: { lineStyle: { color: 'rgba(85,100,120,0.3)' } }
+            },
+            series: [{
+                type: 'bar',
+                barWidth: '50%',
+                itemStyle: {
+                    borderRadius: [4, 4, 0, 0],
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#22d3ee' },
+                        { offset: 1, color: '#22d3eeAA' }
+                    ])
+                },
+                data: data.map(d => d.count),
+                label: { show: true, position: 'top', color: '#8896a6', fontSize: 11, formatter: '{c}' }
+            }]
+        });
+        window.addEventListener('resize', () => chart.resize());
+    },
+
     // 园所使用次数趋势（管理员端）。chartType: 字符串 'combo'|'bar'|'line' 或 数组 ['line','bar']
     // 纯函数：构造园所使用次数趋势 option
     buildKindergartenUsageOption(data, chartType) {
@@ -854,8 +920,8 @@ const Charts = {
     },
 
     // ========== 班级报告 - 阅读绘本类型趋势折线图 ==========
-    initClassBookTypeLine(seriesData) {
-        const chart = this.createChart('class-book-type-chart');
+    initClassBookTypeLine(seriesData, domId = 'class-book-type-chart') {
+        const chart = this.createChart(domId);
         if (!chart) return;
         if (!seriesData || !seriesData.dates || !seriesData.dates.length) {
             chart.setOption({

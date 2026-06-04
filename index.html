@@ -52,7 +52,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <link rel="stylesheet" href="css/tokens.css?v=9">
-    <link rel="stylesheet" href="css/style.css?v=25">
+    <link rel="stylesheet" href="css/style.css?v=32">
 </head>
 <body class="min-h-screen font-sans flex">
 
@@ -166,9 +166,14 @@
     <!-- Toast通知 -->
     <div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2"></div>
 
-    <script src="js/mockData.js?v=8"></script>
+    <!-- 二次确认弹层（层级高于主模态框） -->
+    <div id="confirm-overlay" class="fixed inset-0 bg-black/60 z-[80] hidden flex items-center justify-center px-4" aria-hidden="true" onclick="App.closeConfirm(event)">
+        <div id="confirm-box" role="alertdialog" aria-modal="true" class="bg-slate-800 rounded-xl shadow-2xl border border-slate-600/50 w-full max-w-sm p-5" onclick="event.stopPropagation()"></div>
+    </div>
+
+    <script src="js/mockData.js?v=10"></script>
     <script src="js/services.js?v=8"></script>
-    <script src="js/charts.js?v=24"></script>
-    <script src="js/app.js?v=73"></script>
+    <script src="js/charts.js?v=27"></script>
+    <script src="js/app.js?v=102"></script>
 </body>
 </html>
