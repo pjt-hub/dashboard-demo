@@ -252,7 +252,7 @@ const Charts = {
         // 缓存活动数据 + 按当前选择类型渲染（折线 / 柱状）
         if (typeof App !== 'undefined') App._lastWeeklyActivityData = data.weeklyActivity;
         const weeklyTypes = (typeof App !== 'undefined' && App.weeklyActivityChartTypes) || ['line', 'bar'];
-        // 园长视角：大数据总览页用「教师开课次数 Top10」替代原「园所绘本活动次数」趋势图
+        // 园长视角：大数据总览页用「教师活动次数 Top10」替代原「园所绘本活动次数」趋势图
         if (typeof App !== 'undefined' && App.currentRole === 'principal') {
             this.safeInit(() => this.initTeacherTop10Bar(App.buildTeacherTop10()));
         } else {
@@ -502,7 +502,7 @@ const Charts = {
         return true;
     },
 
-    // 园所数据页 - 班级开课情况变化（按时间序列，每个班一柱+一线）
+    // 园所数据页 - 班级活动情况变化（按时间序列，每个班一柱+一线）
     buildSchoolClassActivityOption(data, chartType) {
         const colors = ['#22d3ee', '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1'];
         const seriesList = (data && data.series) || [];
@@ -659,7 +659,7 @@ const Charts = {
         window.addEventListener('resize', () => chart.resize());
     },
 
-    // 教师开课次数 Top10（园长视角，大数据总览页）—— 竖柱状图，X 轴教师、Y 轴开课次数
+    // 教师活动次数 Top10（园长视角，大数据总览页）—— 竖柱状图，X 轴教师、Y 轴活动次数
     initTeacherTop10Bar(customData = null) {
         const dom = document.getElementById('teacher-top10-chart');
         if (!dom) return;
@@ -686,7 +686,7 @@ const Charts = {
                     return `<div style="font-weight:600;margin-bottom:4px">${p.axisValue}</div>
                         <div style="display:flex;align-items:center;gap:6px">
                             <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${p.color}"></span>
-                            <span>开课次数: ${p.value}次</span>
+                            <span>活动次数: ${p.value}次</span>
                         </div>`;
                 }
             },

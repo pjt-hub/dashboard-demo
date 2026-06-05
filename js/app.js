@@ -1207,7 +1207,7 @@ const App = {
         // 教师视角下"园所数据"菜单显示为"班级数据"
         const schoolDataLabel = document.getElementById('nav-schoolData-label');
         if (schoolDataLabel) {
-            schoolDataLabel.textContent = this.currentRole === 'teacher' ? '班级数据' : '园所数据';
+            schoolDataLabel.textContent = this.currentRole === 'teacher' ? '班级数据' : '园所阅读数据';
         }
     },
 
@@ -1257,8 +1257,8 @@ const App = {
                 ? '首页 / 班级数据'
                 : this.currentRole === 'admin'
                     ? `首页 / 大数据总览 / ${this.selectedSchool ? this.selectedSchool.name : '园所详情'}`
-                    : '首页 / 园所数据',
-            aiOverview: '首页 / AI总览',
+                    : '首页 / 园所阅读数据',
+            aiOverview: '首页 / AI阅读详情',
         };
         document.getElementById('breadcrumb').textContent = breadcrumbMap[pageName] || '首页';
         Charts.dispose();
@@ -1302,7 +1302,7 @@ const App = {
                     // 班级横向对比表
                     const classHost = document.getElementById('class-compare-host');
                     if (classHost) classHost.innerHTML = this.renderClassCompare();
-                    // 班级开课情况变化（原来在园所数据 - 数据概述）
+                    // 班级活动情况变化（原来在园所数据 - 数据概述）
                     const classActHost = document.getElementById('school-class-activity-host');
                     if (classActHost) {
                         classActHost.innerHTML = this.renderSchoolClassActivityHeader() + '<div id="school-class-activity-chart" class="h-72"></div>';
@@ -2323,7 +2323,7 @@ const App = {
         const gradeChips = grades.map(g => {
             const isActive = state.grade === g;
             const cnt = g === 'all' ? all.length : all.filter(r => r.grade === g).length;
-            const label = g === 'all' ? `全部 ${cnt}` : `${g}年级组`;
+            const label = g === 'all' ? `全部 ${cnt}` : g;
             return `<button onclick="App.classCompareSetGrade('${g}')"
                 class="px-2.5 py-1 rounded-full text-xs border transition-colors
                     ${isActive
@@ -2516,7 +2516,7 @@ const App = {
         let scopeBadge = '';
         if (this.currentRole === 'principal') {
             pageTitle = this.selectedSchool ? `${this.selectedSchool.name} 大数据总览` : '本园大数据总览';
-            scopeBadge = `<span class="role-badge principal inline-flex items-center gap-1">${Icons.school()} 园所数据</span>`;
+            scopeBadge = `<span class="role-badge principal inline-flex items-center gap-1">${Icons.school()} 园所阅读数据</span>`;
         } else {
             scopeBadge = `<span class="role-badge admin inline-flex items-center gap-1">${Icons.admin()} 全区数据</span>`;
         }
@@ -2549,7 +2549,7 @@ const App = {
             ${this.currentRole === 'principal'
                 ? `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
                     ${this.card('<div id="school-class-activity-host"></div>')}
-                    ${this.card('<div class="flex flex-col h-full">' + this.chartTitle('教师开课次数 Top10', 'bg-cyan-500', '统计范围：当前所选时间范围内本园全部教师的绘本活动（开课）记录。\n口径：按教师累计开课次数排序，取前 10 名。\n用途：识别园内最活跃的教师，辅助教研激励与经验推广。') + '<div class="mt-auto"><div id="teacher-top10-chart" class="h-72"></div></div></div>')}
+                    ${this.card('<div class="flex flex-col h-full">' + this.chartTitle('教师活动次数 Top10', 'bg-cyan-500', '统计范围：当前所选时间范围内本园全部教师的绘本活动记录。\n口径：按教师累计活动次数排序，取前 10 名。\n用途：识别园内最活跃的教师，辅助教研激励与经验推广。') + '<div class="mt-auto"><div id="teacher-top10-chart" class="h-72"></div></div></div>')}
                   </div>`
                 : ''}
 
@@ -2607,7 +2607,7 @@ const App = {
         wrap.innerHTML = this.tableWrap(headers, rows);
     },
 
-    // 教师开课次数 Top10（园长视角，大数据总览页）：取全园教师 activityCount，
+    // 教师活动次数 Top10（园长视角，大数据总览页）：取全园教师 activityCount，
     // 按顶部时间筛选比例缩放后排序取前 10
     buildTeacherTop10() {
         const teachers = (MockData.schoolData?.teachers || []);
@@ -2983,7 +2983,7 @@ const App = {
         const summary = this.getAiOverviewSummary();
         const isTeacher = this.isTeacherScope();
         const teacherClassName = isTeacher ? this.getTeacherClassName() : '';
-        const pageTitle = isTeacher ? `${teacherClassName} · AI总览` : 'AI总览';
+        const pageTitle = isTeacher ? `${teacherClassName} · AI阅读详情` : 'AI阅读详情';
         const pageSub = isTeacher
             ? `仅展示「${teacherClassName}」的绘本大模型互动数据`
             : '汇总园所内绘本大模型相关数据，洞察幼儿的好奇心与互动偏好';
@@ -5471,7 +5471,7 @@ const App = {
         return `
             <div class="bg-slate-900 rounded-xl p-6 w-full">
                 <div class="flex items-center justify-between mb-5">
-                    <h3 class="text-lg font-bold text-white">✨ 生成 AI 热点问题分析</h3>
+                    <h3 class="text-lg font-bold text-white">✨ 生成 AI 阅读热点问题分析</h3>
                     <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
                         <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
@@ -5831,8 +5831,8 @@ ${allQuestionsText || '（无）'}
             return {
                 type, name,
                 entry: (this._aiBookAnalysis || {})[name] || {},
-                kicker: '绘本热点问题分析',
-                title: `《${name}》AI 热点问题分析`,
+                kicker: '绘本阅读热点问题分析',
+                title: `《${name}》的 AI 阅读热点问题分析`,
                 accent: 'cyan',
                 topTitle: '热门问题',
                 statFields: ['chat', 'turns', 'students', 'classes', 'type'],
@@ -5847,8 +5847,8 @@ ${allQuestionsText || '（无）'}
             return {
                 type, name,
                 entry: (this._aiStudentAnalysis || {})[name] || {},
-                kicker: '幼儿兴趣画像分析',
-                title: `${name} 的 AI 兴趣画像分析`,
+                kicker: '幼儿阅读兴趣画像分析',
+                title: `${name} 的 AI 阅读兴趣画像分析`,
                 accent: 'emerald',
                 topTitle: '核心关注主题',
                 statFields: ['chat', 'turns', 'books', 'type'],
@@ -5863,8 +5863,8 @@ ${allQuestionsText || '（无）'}
         return {
             type, name,
             entry: (this._aiClassAnalysis || {})[name] || {},
-            kicker: '班级 AI 画像分析',
-            title: `${name} · 班级 AI 画像分析`,
+            kicker: '班级 AI 阅读画像分析',
+            title: `${name} · 班级 AI 阅读画像分析`,
             accent: 'amber',
             topTitle: '班级核心关注主题',
             statFields: ['chat', 'turns', 'books', 'students', 'type'],
@@ -5937,7 +5937,7 @@ ${allQuestionsText || '（无）'}
         <div class="ai-report-page max-w-5xl mx-auto px-5 lg:px-8 py-6" data-accent="${m.accent}">
             <button onclick="App.closeAiReportSubpage()" class="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-200 transition-colors mb-5">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
-                返回 AI 总览
+                返回 AI 阅读详情
             </button>
 
             <header class="ai-rpt-cover relative overflow-hidden rounded-3xl px-7 py-7 mb-7">
@@ -6106,7 +6106,7 @@ ${allQuestionsText || '（无）'}
             <div class="bg-slate-900 rounded-xl p-6 w-full">
                 <div class="flex items-center justify-between mb-4">
                     <div class="flex items-center gap-3">
-                        <h3 class="text-lg font-bold text-white">📊 《${book}》AI 热点问题分析</h3>
+                        <h3 class="text-lg font-bold text-white">📊 《${book}》的 AI 阅读热点问题分析</h3>
                         ${statusBadge}
                     </div>
                     <div class="flex items-center">
@@ -6173,9 +6173,9 @@ ${allQuestionsText || '（无）'}
 
     _buildAiReportMarkdown(type, entry) {
         const titleMap = {
-            book: `《${entry.book}》AI 热点问题分析`,
-            student: `${entry.student} 的 AI 兴趣画像分析`,
-            class: `${entry.className} · 班级 AI 画像分析`
+            book: `《${entry.book}》的 AI 阅读热点问题分析`,
+            student: `${entry.student} 的 AI 阅读兴趣画像分析`,
+            class: `${entry.className} · 班级 AI 阅读画像分析`
         };
         const title = titleMap[type] || 'AI 分析报告';
         const meta = [
@@ -6481,7 +6481,7 @@ ${bodyHtml}
         return `
             <div class="bg-slate-900 rounded-xl p-6 w-full">
                 <div class="flex items-center justify-between mb-5">
-                    <h3 class="text-lg font-bold text-white">✨ 生成 AI 兴趣画像分析</h3>
+                    <h3 class="text-lg font-bold text-white">✨ 生成 AI 阅读兴趣画像分析</h3>
                     <button class="text-slate-400 hover:text-white transition-colors" onclick="App.closeModalDirect()">
                         <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
@@ -6733,7 +6733,7 @@ ${allQuestionsText || '（无）'}
             <div class="bg-slate-900 rounded-xl p-6 w-full">
                 <div class="flex items-center justify-between mb-4">
                     <div class="flex items-center gap-3">
-                        <h3 class="text-lg font-bold text-white">📊 ${student} 的 AI 兴趣画像分析</h3>
+                        <h3 class="text-lg font-bold text-white">📊 ${student} 的 AI 阅读兴趣画像分析</h3>
                         ${statusBadge}
                     </div>
                     <div class="flex items-center">
@@ -6951,7 +6951,7 @@ ${allQuestionsText || '（无）'}
                         </button>
                     </div>
                 </div>
-                <div class="text-xs text-slate-400 mb-3">将基于该班级在 AI 总览所选时间范围内的全部对话数据，分析班级整体兴趣画像与教学建议。</div>
+                <div class="text-xs text-slate-400 mb-3">将基于该班级在 AI 阅读详情所选时间范围内的全部对话数据，分析班级整体兴趣画像与教学建议。</div>
                 <div id="ai-class-picker-grid" class="grid grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
                     ${this.renderAiClassPickerItems()}
                 </div>
@@ -7028,7 +7028,7 @@ ${allQuestionsText || '（无）'}
                         </button>
                     </div>
                 </div>
-                <div class="text-xs text-slate-400 mb-3">将基于该幼儿在 AI 总览所选时间范围内的全部对话数据，分析兴趣画像与阅读建议。</div>
+                <div class="text-xs text-slate-400 mb-3">将基于该幼儿在 AI 阅读详情所选时间范围内的全部对话数据，分析兴趣画像与阅读建议。</div>
                 <div id="ai-student-picker-grid" class="grid grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
                     ${this.renderAiStudentPickerItems()}
                 </div>
@@ -7079,7 +7079,7 @@ ${allQuestionsText || '（无）'}
                         </button>
                     </div>
                 </div>
-                <div class="text-xs text-slate-400 mb-3">将基于该绘本在 AI 总览所选时间范围内的全部对话数据，分析热点问题与延伸建议。</div>
+                <div class="text-xs text-slate-400 mb-3">将基于该绘本在 AI 阅读详情所选时间范围内的全部对话数据，分析热点问题与延伸建议。</div>
                 <div id="ai-book-picker-grid" class="grid grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
                     ${this.renderAiBookPickerItems()}
                 </div>
@@ -7369,7 +7369,7 @@ ${allQuestionsText || '（无）'}
             <div class="bg-slate-900 rounded-xl p-6 w-full">
                 <div class="flex items-center justify-between mb-4">
                     <div class="flex items-center gap-3">
-                        <h3 class="text-lg font-bold text-white">🏫 ${className} · 班级 AI 画像分析</h3>
+                        <h3 class="text-lg font-bold text-white">🏫 ${className} · 班级 AI 阅读画像分析</h3>
                         ${statusBadge}
                     </div>
                     <div class="flex items-center">
@@ -7513,7 +7513,7 @@ ${allQuestionsText || '（无）'}
         let scopeSelector = '';
 
         if (this.currentRole === 'admin') {
-            titleText = this.selectedSchool ? `${this.selectedSchool.name}数据统计` : '园所数据统计';
+            titleText = this.selectedSchool ? `${this.selectedSchool.name}数据统计` : '园所阅读数据统计';
             scopeSelector = `
                 <span class="role-badge admin inline-flex items-center gap-1">${Icons.school()} ${this.selectedSchool ? this.selectedSchool.name : '园所详情'}</span>
                 <button onclick="App.clearSelectedSchool()" class="px-3 py-1.5 rounded-lg bg-slate-600/50 border border-slate-500/30 text-slate-300 text-sm hover:bg-slate-500/50 hover:text-white transition-all flex items-center gap-1.5">
@@ -7521,8 +7521,8 @@ ${allQuestionsText || '（无）'}
                 </button>
             `;
         } else if (this.currentRole === 'principal') {
-            titleText = this.selectedSchool ? `${this.selectedSchool.name}数据统计` : '园所数据统计';
-            scopeSelector = `<span class="role-badge principal inline-flex items-center gap-1">${Icons.school()} 园所数据</span>`;
+            titleText = this.selectedSchool ? `${this.selectedSchool.name}数据统计` : '园所阅读数据统计';
+            scopeSelector = `<span class="role-badge principal inline-flex items-center gap-1">${Icons.school()} 园所阅读数据</span>`;
         } else if (this.currentRole === 'teacher') {
             titleText = this.selectedClass ? `${this.selectedClass.name}数据统计` : '班级数据统计';
             scopeSelector = `<span class="role-badge teacher inline-flex items-center gap-1">${Icons.teacher()} 班级数据</span>`;
@@ -8011,7 +8011,7 @@ ${allQuestionsText || '（无）'}
         };
     },
 
-    // 园所"班级开课情况变化"图：state + 工具
+    // 园所"班级活动情况变化"图：state + 工具
     schoolClassChart: {
         types: ['line', 'bar']
     },
@@ -8268,13 +8268,6 @@ ${allQuestionsText || '（无）'}
                 </div>
             </div>` : ''}
             <div>
-                ${this.chartTitle(scopeLabel + '大模型使用概况', 'bg-cyan-500', '统计范围：当前所选时间范围内的 AI 共读会话。\n指标说明：\n· 互动绘本数：触发过 AI 互动的不同绘本数（去重）\n· 互动对话数：所有 AI 会话的累计轮数\n用途：观察 AI 共读的覆盖广度与互动密度。')}
-                <div class="grid grid-cols-2 gap-3">
-                    ${this.miniStat('互动绘本数', d.llmBookCount, 'cyan')}
-                    ${this.miniStat('互动对话数', d.llmChatCount, 'purple')}
-                </div>
-            </div>
-            <div>
                 ${this.chartTitle('绘本分类阅读数据', 'bg-emerald-500', '统计范围：当前所选时间范围内的全部阅读记录。\n口径：按绘本"类型"分组，统计阅读次数和阅读时长。\n用途：识别幼儿近期偏好的内容分类，辅助选书与活动设计。')}
                 ${this.isSchoolScope() ? `
                 <div class="space-y-4">
@@ -8326,7 +8319,7 @@ ${allQuestionsText || '（无）'}
         if (this.isSchoolScope()) {
             Charts.safeInit(() => Charts.initAbilityRadar(this.computeAbilityDistributionForOverview(), 'school-ability-distribution-chart'));
         }
-        // principal 视角的"班级开课情况变化"图（admin 单园弹窗 / teacher 不渲染，DOM 不存在自动短路）
+        // principal 视角的"班级活动情况变化"图（admin 单园弹窗 / teacher 不渲染，DOM 不存在自动短路）
         const dom = document.getElementById('school-class-activity-chart');
         if (!dom) return;
         const data = this.buildSchoolClassUsageSeries();
@@ -9917,7 +9910,7 @@ ${allQuestionsText || '（无）'}
                     <td class="px-4 py-3 text-slate-200">${a.className}</td>
                     <td class="px-4 py-3 text-center text-blue-400">${a.participatingStudents?.length || 0}人</td>
                     <td class="px-4 py-3 text-center">
-                        <button onclick="App.viewActivityDetail(${a.id})" class="text-blue-400 hover:text-blue-300 text-sm">查看</button>
+                        <button onclick="App.viewActivityDetail(${a.id}, 'subpage')" class="text-blue-400 hover:text-blue-300 text-sm">查看</button>
                     </td>
                 </tr>
             `).join('')

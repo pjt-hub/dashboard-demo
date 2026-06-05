@@ -1582,7 +1582,7 @@ body:not(.theme-dark) .skeleton-line {
 .ai-rpt-btn--ghost { background: rgba(51,65,85,0.50); color: #e2e8f0; border-color: rgba(100,116,139,0.40); }
 .ai-rpt-btn--ghost:hover { background: rgba(71,85,105,0.60); }
 
-/* 报告页操作按钮：右下角悬浮工具面板，跟随滚动固定 */
+/* 报告页操作按钮：右下角悬浮，跟随滚动固定 —— 三个独立彩色胶囊，各自底色、分隔浮起 */
 .ai-rpt-dock {
     position: fixed;
     right: 28px;
@@ -1591,45 +1591,57 @@ body:not(.theme-dark) .skeleton-line {
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 6px;
-    padding: 8px;
-    border-radius: 16px;
-    background: color-mix(in srgb, var(--surface-1) 88%, transparent);
-    border: 1px solid var(--border-subtle);
-    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16), 0 4px 10px rgba(15, 23, 42, 0.08);
-    backdrop-filter: blur(14px) saturate(1.4);
-    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    gap: 12px;
 }
-body.theme-dark .ai-rpt-dock {
-    background: rgba(30, 41, 59, 0.78);
-    border-color: rgba(148, 163, 184, 0.18);
-}
-/* 面板内统一为行式按钮：中性底 + 语义色图标，去掉各自的糖果实色 */
 .ai-rpt-dock .ai-rpt-btn {
     justify-content: flex-start;
     gap: 10px;
-    padding: 9px 14px 9px 11px;
-    min-width: 124px;
+    padding: 11px 18px 11px 15px;
+    min-width: 138px;
     font-size: 13px;
-    font-weight: 500;
-    border-radius: 10px;
+    font-weight: 600;
+    border-radius: 12px;
     border: 1px solid transparent;
-    background: transparent;
-    color: var(--text-secondary);
-    box-shadow: none;
-    backdrop-filter: none;
+    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.14), 0 2px 5px rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(8px);
+    transition: transform var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
-.ai-rpt-dock .ai-rpt-btn:hover { background: color-mix(in srgb, var(--text-primary) 7%, transparent); color: var(--text-primary); }
+.ai-rpt-dock .ai-rpt-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(15, 23, 42, 0.20), 0 4px 8px rgba(15, 23, 42, 0.10); }
 .ai-rpt-dock .ai-rpt-btn svg { width: 17px; height: 17px; flex-shrink: 0; }
-.ai-rpt-dock .ai-rpt-btn--emerald svg { color: var(--rpt, var(--brand-500)); }
-.ai-rpt-dock .ai-rpt-btn--violet  svg { color: #7C5CFC; }
-.ai-rpt-dock .ai-rpt-btn--amber   svg { color: #E08600; }
-.ai-rpt-dock .ai-rpt-btn--ghost   svg { color: var(--text-tertiary, #94a3b8); }
+
+/* 导出 = 翠绿 */
+.ai-rpt-dock .ai-rpt-btn--emerald { background: #ECFDF5; color: #047857; border-color: #A7F3D0; }
+.ai-rpt-dock .ai-rpt-btn--emerald svg { color: #059669; }
+.ai-rpt-dock .ai-rpt-btn--emerald:hover { background: #D1FAE5; }
+/* 重新生成 = 靛紫 */
+.ai-rpt-dock .ai-rpt-btn--violet { background: #F5F3FF; color: #6D28D9; border-color: #DDD6FE; }
+.ai-rpt-dock .ai-rpt-btn--violet svg { color: #7C3AED; }
+.ai-rpt-dock .ai-rpt-btn--violet:hover { background: #EDE9FE; }
+/* 新增 = 琥珀 */
+.ai-rpt-dock .ai-rpt-btn--amber { background: #FFFBEB; color: #B45309; border-color: #FDE68A; }
+.ai-rpt-dock .ai-rpt-btn--amber svg { color: #D97706; }
+.ai-rpt-dock .ai-rpt-btn--amber:hover { background: #FEF3C7; }
+/* 历史/其它 = 中性 */
+.ai-rpt-dock .ai-rpt-btn--ghost { background: var(--surface-1); color: var(--text-secondary); border-color: var(--border-subtle); }
+.ai-rpt-dock .ai-rpt-btn--ghost svg { color: var(--text-tertiary, #94a3b8); }
+.ai-rpt-dock .ai-rpt-btn--ghost:hover { background: color-mix(in srgb, var(--text-primary) 5%, var(--surface-1)); }
+
+/* 深色主题：半透明同色调底 */
+body.theme-dark .ai-rpt-dock .ai-rpt-btn--emerald { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.35); }
+body.theme-dark .ai-rpt-dock .ai-rpt-btn--emerald svg { color: #34d399; }
+body.theme-dark .ai-rpt-dock .ai-rpt-btn--emerald:hover { background: rgba(16,185,129,0.28); }
+body.theme-dark .ai-rpt-dock .ai-rpt-btn--violet { background: rgba(139,92,246,0.18); color: #c4b5fd; border-color: rgba(139,92,246,0.35); }
 body.theme-dark .ai-rpt-dock .ai-rpt-btn--violet svg { color: #a78bfa; }
-body.theme-dark .ai-rpt-dock .ai-rpt-btn--amber  svg { color: #fbbf24; }
+body.theme-dark .ai-rpt-dock .ai-rpt-btn--violet:hover { background: rgba(139,92,246,0.28); }
+body.theme-dark .ai-rpt-dock .ai-rpt-btn--amber { background: rgba(245,158,11,0.18); color: #fcd34d; border-color: rgba(245,158,11,0.35); }
+body.theme-dark .ai-rpt-dock .ai-rpt-btn--amber svg { color: #fbbf24; }
+body.theme-dark .ai-rpt-dock .ai-rpt-btn--amber:hover { background: rgba(245,158,11,0.28); }
+body.theme-dark .ai-rpt-dock .ai-rpt-btn--ghost { background: rgba(51,65,85,0.55); color: #e2e8f0; border-color: rgba(148,163,184,0.25); }
+body.theme-dark .ai-rpt-dock .ai-rpt-btn--ghost:hover { background: rgba(71,85,105,0.65); }
+
 @media (max-width: 640px) {
-    .ai-rpt-dock { right: 16px; bottom: 16px; }
-    .ai-rpt-dock .ai-rpt-btn { padding: 8px 12px; font-size: 12px; min-width: 112px; }
+    .ai-rpt-dock { right: 16px; bottom: 16px; gap: 10px; }
+    .ai-rpt-dock .ai-rpt-btn { padding: 9px 14px; font-size: 12px; min-width: 120px; }
 }
 
 /* 报告正文排版：卡片满宽（与上方区块对齐），正文撑满卡片宽度 */
